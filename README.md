@@ -91,8 +91,11 @@ final document.
 
 ## Reader controls
 
-- `j` / `k` or arrow keys: move between sections
-- `Space` or click the code header: fold or unfold the active section's diff
+The reader shows every explanation in document order as one vertically scrollable tree.
+Scroll with the mouse or trackpad.
+
+- Click an explanation header to fold or unfold its body and file diffs
+- Click a file header to fold or unfold just that file's diff
 - `1`: split diff layout
 - `2`: stacked diff layout
 - `q` or `Escape`: quit

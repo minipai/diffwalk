@@ -17,9 +17,12 @@ explanations and their exact corresponding diffs.
   blocks are applied to the old content, then `diff` v9 creates a legal Git patch.
 - Blocks can be explained separately even when Pierre renders them inside the
   same visual hunk.
-- The TUI has no sidebar. `j`/`k` changes section, `Space` or clicking the code
-  header folds that section's diff, `1`/`2` selects split/stack layout, and `q`
-  quits. Fold state is remembered independently per section.
+- The reader shows every explanation in document order as one vertically
+  scrollable tree. Clicking an explanation header folds its body and file
+  diffs; clicking a file header folds just that file's diff. Fold state is
+  remembered independently per explanation and per file, keyed per section so
+  the same path in different explanations folds separately. `1`/`2` select
+  split/stack layout and `q` quits.
 
 ## Source map
 
@@ -30,6 +33,7 @@ explanations and their exact corresponding diffs.
   section patches.
 - `src/cli.ts`: executable entry point for `inspect`, `build`, and `view`.
 - `src/document.ts`: converts document patches into Hunk files.
+- `src/reader.ts`: pure fold-state and visible-tree logic for the reader.
 - `src/main.tsx`: OpenTUI/React reader using Hunk's exported primitives.
-- `test/*.test.ts`: nine focused tests for authoring, Git capture, and document input.
+- `test/*.test.ts`: focused tests for authoring, Git capture, document input, and reader folding.
 - `.agents/skills/diffwalk/SKILL.md`: teaches agents the authoring workflow and invariants.
