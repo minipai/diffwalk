@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "kind": "proposed"
+  },
+  "sections": [
+    {
+      "explain": {
+        "title": "Make the greeting warmer",
+        "body": "The first section demonstrates a one-line modification."
+      },
+      "diff": "diff --git a/src/greeting.ts b/src/greeting.ts\n--- a/src/greeting.ts\n+++ b/src/greeting.ts\n@@ -1,3 +1,3 @@\n export function greeting(name: string) {\n-  return `Hello, ${name}.`\n+  return `Welcome, ${name}!`\n }\n"
+    },
+    {
+      "explain": {
+        "title": "Add a farewell",
+        "body": "The second section makes navigation and per-section folding easy to verify."
+      },
+      "diff": "diff --git a/src/farewell.ts b/src/farewell.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/farewell.ts\n@@ -0,0 +1,3 @@\n+export function farewell(name: string) {\n+  return `See you soon, ${name}!`\n+}\n"
+    }
+  ]
+}
