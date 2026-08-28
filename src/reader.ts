@@ -1,6 +1,11 @@
 import type { HunkDiffFile } from 'hunkdiff/opentui'
 import type { ExplainSection } from './document'
 
+export interface ReaderCursor {
+  sectionId: string
+  path: string | null
+}
+
 export interface ReaderFoldState {
   explanations: ReadonlySet<string>
   files: ReadonlySet<string>
@@ -72,4 +77,43 @@ export function visibleTreeRows(sections: ExplainSection[], state: ReaderFoldSta
     }
   }
   return rows
+}
+
+export function cursorOfRow(row: ReaderTreeRow): ReaderCursor {
+  if (row.kind === 'explain') return { sectionId: row.section.id, path: null }
+  return { sectionId: row.sectionId, path: filePath(row.file) }
+}
+
+export function cursorIndex(rows: ReaderTreeRow[], cursor: ReaderCursor | null): number {
+  if (rows.length === 0) return -1
+  if (cursor === null) return 0
+  const direct = rows.findIndex(
+    (row) =>
+      cursorOfRow(row).sectionId === cursor.sectionId && cursorOfRow(row).path === cursor.path,
+  )
+  if (direct !== -1) return direct
+  const ancestor = rows.findIndex(
+    (row) => row.kind === 'explain' && row.section.id === cursor.sectionId,
+  )
+  return ancestor === -1 ? 0 : ancestor
+}
+
+export function moveCursor(
+  rows: ReaderTreeRow[],
+  cursor: ReaderCursor | null,
+  delta: number,
+): ReaderCursor | null {
+  if (rows.length === 0) return cursor
+  const target = Math.max(0, Math.min(rows.length - 1, cursorIndex(rows, cursor) + delta))
+  return cursorOfRow(rows[target]!)
+}
+
+export function toggleRow(state: ReaderFoldState, row: ReaderTreeRow): ReaderFoldState {
+  if (row.kind === 'explain') return toggleExplanation(state, row.section.id)
+  return toggleFile(state, row.sectionId, filePath(row.file))
+}
+
+export function rowId(row: ReaderTreeRow): string {
+  if (row.kind === 'explain') return row.section.id
+  return fileKey(row.sectionId, filePath(row.file))
 }

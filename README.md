@@ -92,10 +92,16 @@ final document.
 ## Reader controls
 
 The reader shows every explanation in document order as one vertically scrollable tree.
-Scroll with the mouse or trackpad.
+Move between explanation and file headers with the keyboard; the focused header stays in
+view while scrolling.
 
-- Click an explanation header to fold or unfold its body and file diffs
-- Click a file header to fold or unfold just that file's diff
+- `j` / `↓`: move focus to the next visible header
+- `k` / `↑`: move focus to the previous visible header
+- `Enter` / `Space`: fold or unfold the focused header
+- Click an explanation header to focus, fold, or unfold its body and file diffs
+- Click a file header to focus, fold, or unfold just that file's diff
 - `1`: split diff layout
 - `2`: stacked diff layout
 - `q` or `Escape`: quit
+
+Scroll with the mouse or trackpad as well.

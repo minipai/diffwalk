@@ -1,17 +1,22 @@
 /** @jsxImportSource @opentui/react */
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createCliRenderer, type KeyEvent } from '@opentui/core'
+import { createCliRenderer, type KeyEvent, type ScrollBoxRenderable } from '@opentui/core'
 import { createRoot, useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { HunkDiffBody, type HunkDiffLayout, type HunkDiffFile } from 'hunkdiff/opentui'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { parseExplainSectionsJson, type ExplainSection } from './document'
 import {
   createFoldState,
+  cursorIndex,
+  cursorOfRow,
   filePath,
-  toggleExplanation,
-  toggleFile,
+  moveCursor,
+  rowId,
+  toggleRow,
   visibleTreeRows,
+  type ReaderCursor,
+  type ReaderTreeRow,
 } from './reader'
 
 const colors = {
@@ -21,13 +26,18 @@ const colors = {
   border: '#284264',
   primary: '#eef4ff',
   accent: '#7fd1ff',
+  focus: '#2a5c8a',
 }
 
-function ExplainApp({ sections, onQuit }: { sections: ExplainSection[]; onQuit: () => void }) {
+export function ExplainApp({ sections, onQuit }: { sections: ExplainSection[]; onQuit: () => void }) {
   const terminal = useTerminalDimensions()
   const [foldState, setFoldState] = useState(createFoldState)
   const [layout, setLayout] = useState<HunkDiffLayout>('split')
+  const [cursor, setCursor] = useState<ReaderCursor | null>(null)
+  const scrollRef = useRef<ScrollBoxRenderable>(null)
   const rows = visibleTreeRows(sections, foldState)
+  const cursorRowIndex = cursorIndex(rows, cursor)
+  const cursorRowId = cursorRowIndex === -1 ? null : rowId(rows[cursorRowIndex]!)
   const mainWidth = Math.max(34, terminal.width - 2)
   const contentHeight = Math.max(8, terminal.height - 2)
 
@@ -35,7 +45,30 @@ function ExplainApp({ sections, onQuit }: { sections: ExplainSection[]; onQuit: 
     if (key.name === 'q' || key.name === 'escape') return onQuit()
     if (key.name === '1') return setLayout('split')
     if (key.name === '2') return setLayout('stack')
+    if (rows.length === 0) return
+    if (key.name === 'j' || key.name === 'down') {
+      setCursor((current) => moveCursor(rows, current, 1))
+      return
+    }
+    if (key.name === 'k' || key.name === 'up') {
+      setCursor((current) => moveCursor(rows, current, -1))
+      return
+    }
+    if (key.name === 'return' || key.name === 'space') {
+      const row = rows[cursorRowIndex]
+      if (row) toggleRowAt(row)
+    }
   })
+
+  useEffect(() => {
+    if (cursorRowId === null) return
+    scrollRef.current?.scrollChildIntoView(cursorRowId)
+  }, [cursorRowId, foldState])
+
+  function toggleRowAt(row: ReaderTreeRow) {
+    setFoldState((state) => toggleRow(state, row))
+    setCursor(cursorOfRow(row))
+  }
 
   return (
     <box
@@ -55,13 +88,20 @@ function ExplainApp({ sections, onQuit }: { sections: ExplainSection[]; onQuit: 
         }}
       >
         <text fg={colors.primary}>
-          {` Explain tree · click a header to fold or unfold · 1 split · 2 stack · q quit `}
+          {` Explain tree · j/k or ↑/↓ move · Enter/Space fold · click a header to fold · 1 split · 2 stack · q quit `}
         </text>
       </box>
 
       <box style={{ width: '100%', height: 1 }} />
 
-      <scrollbox width="100%" height={contentHeight} scrollY viewportCulling focused={false}>
+      <scrollbox
+        ref={scrollRef}
+        width="100%"
+        height={contentHeight}
+        scrollY
+        viewportCulling
+        focused={false}
+      >
         <box
           style={{
             width: mainWidth,
@@ -70,24 +110,26 @@ function ExplainApp({ sections, onQuit }: { sections: ExplainSection[]; onQuit: 
             paddingRight: 1,
           }}
         >
-          {rows.map((row) =>
+          {rows.map((row, index) =>
             row.kind === 'explain' ? (
               <ExplainNode
                 key={row.section.id}
+                id={rowId(row)}
                 section={row.section}
                 folded={row.folded}
-                onToggle={() => setFoldState((state) => toggleExplanation(state, row.section.id))}
+                selected={index === cursorRowIndex}
+                onToggle={() => toggleRowAt(row)}
               />
             ) : (
               <FileNode
                 key={row.file.id}
+                id={rowId(row)}
                 file={row.file}
                 folded={row.folded}
+                selected={index === cursorRowIndex}
                 layout={layout}
                 width={Math.max(8, mainWidth - 6)}
-                onToggle={() =>
-                  setFoldState((state) => toggleFile(state, row.sectionId, filePath(row.file)))
-                }
+                onToggle={() => toggleRowAt(row)}
               />
             ),
           )}
@@ -98,28 +140,33 @@ function ExplainApp({ sections, onQuit }: { sections: ExplainSection[]; onQuit: 
 }
 
 function ExplainNode({
+  id,
   section,
   folded,
+  selected,
   onToggle,
 }: {
+  id: string
   section: ExplainSection
   folded: boolean
+  selected: boolean
   onToggle: () => void
 }) {
   const fileCount = section.files.length
   return (
     <box style={{ width: '100%', flexDirection: 'column' }}>
       <box
+        id={id}
         style={{
           width: '100%',
           height: 1,
           flexDirection: 'row',
-          backgroundColor: folded ? colors.panel : colors.panelActive,
+          backgroundColor: selected ? colors.focus : folded ? colors.panel : colors.panelActive,
         }}
         onMouseUp={onToggle}
       >
         <text fg={colors.accent}>{`${folded ? '▸' : '▾'} `}</text>
-        <text fg={colors.primary}>{section.title}</text>
+        <text fg={selected ? colors.accent : colors.primary}>{section.title}</text>
         <text fg={colors.primary}>{` · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`}</text>
       </box>
       {!folded && (
@@ -152,14 +199,18 @@ function ExplainNode({
 }
 
 function FileNode({
+  id,
   file,
   folded,
+  selected,
   layout,
   width,
   onToggle,
 }: {
+  id: string
   file: HunkDiffFile
   folded: boolean
+  selected: boolean
   layout: HunkDiffLayout
   width: number
   onToggle: () => void
@@ -179,16 +230,17 @@ function FileNode({
       }}
     >
       <box
+        id={id}
         style={{
           width: '100%',
           height: 1,
           flexDirection: 'row',
-          backgroundColor: folded ? colors.panel : colors.panelActive,
+          backgroundColor: selected ? colors.focus : folded ? colors.panel : colors.panelActive,
         }}
         onMouseUp={onToggle}
       >
         <text fg={colors.accent}>{`${folded ? '▸' : '▾'} `}</text>
-        <text fg={colors.primary}>{label}</text>
+        <text fg={selected ? colors.accent : colors.primary}>{label}</text>
         <text fg={colors.primary}>{`  +${file.stats.additions} −${file.stats.deletions}`}</text>
       </box>
       {!folded && (
