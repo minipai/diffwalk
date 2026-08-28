@@ -32,3 +32,4 @@ explanations and their exact corresponding diffs.
 - `src/document.ts`: converts document patches into Hunk files.
 - `src/main.tsx`: OpenTUI/React reader using Hunk's exported primitives.
 - `test/*.test.ts`: nine focused tests for authoring, Git capture, and document input.
+- `.agents/skills/diffwalk/SKILL.md`: teaches agents the authoring workflow and invariants.

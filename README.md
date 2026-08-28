@@ -21,6 +21,23 @@ Run the included document to smoke-test the TUI without installing the executabl
 pnpm diffwalk view fixtures/document.json
 ```
 
+## Agent skill
+
+The repository includes an Agent Skill that teaches compatible coding agents how to capture
+changes, author ordered sections, and build the document without hand-writing patches. Its
+source lives at `.agents/skills/diffwalk`.
+
+Link it into the shared user-level Agent Skills directory to make it available from other
+repositories:
+
+```bash
+mkdir -p "$HOME/.agents/skills"
+ln -s "$(pwd)/.agents/skills/diffwalk" "$HOME/.agents/skills/diffwalk"
+```
+
+Agents that use another skill directory can point that directory at the same `SKILL.md`.
+Start a new agent session after installing the skill so it can be discovered.
+
 ## Usage
 
 Run `diffwalk inspect` inside the Git working tree whose changes you want to explain:
