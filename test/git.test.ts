@@ -27,7 +27,7 @@ describe('captureGitChanges', () => {
     await git(['add', '-A'], directory)
     await writeFile(join(directory, 'untracked.ts'), 'untracked\n')
     await mkdir(join(directory, '.explain'))
-    await writeFile(join(directory, '.explain', 'draft.json'), '{}\n')
+    await writeFile(join(directory, '.explain', 'capture.json'), '{}\n')
 
     const capture = await captureGitChanges('HEAD', directory)
 

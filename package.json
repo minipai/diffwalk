@@ -27,6 +27,7 @@
     "hunkdiff": "0.20.0",
     "marked": "18.0.11",
     "react": "19.2.8",
+    "yaml": "^2.9.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

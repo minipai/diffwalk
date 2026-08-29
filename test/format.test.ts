@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { explainDocumentSchema, explainDraftSchema } from '../src/format'
+import { captureSchema, explainDocumentSchema, explanationsSchema } from '../src/format'
 
 function diff(patchText = 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n') {
   return patchText
@@ -16,6 +16,31 @@ const commitDiffSource = {
   capturedAt: '2026-08-28T00:00:00.000Z',
   from: { revision: 'main', commit: '0123456789abcdef' },
   to: { revision: 'feature', commit: 'fedcba9876543210' },
+} as const
+
+const capture = {
+  captureId: 'a'.repeat(64),
+  source: workingTreeSource,
+  files: [
+    {
+      path: 'example.ts',
+      status: 'modified',
+      oldContent: 'old\n',
+      newContent: 'new\n',
+    },
+  ],
+  changes: [
+    {
+      id: 'change-001',
+      path: 'example.ts',
+      oldStart: 1,
+      oldCount: 1,
+      newStart: 1,
+      newCount: 1,
+      before: 'old\n',
+      after: 'new\n',
+    },
+  ],
 } as const
 
 describe('explanation schema html field', () => {
@@ -50,19 +75,6 @@ describe('explanation schema html field', () => {
 
     expect(document.sections[0]!.explain.html).toBeUndefined()
     expect(document.formatVersion).toBe(1)
-  })
-
-  test('html is optional in draft sections', () => {
-    const draft = explainDraftSchema.parse({
-      draftVersion: 1,
-      source: workingTreeSource,
-      files: [],
-      changes: [{ id: 'change-001', path: 'a.ts', oldStart: 1, oldCount: 1, newStart: 1, newCount: 1, before: 'old\n', after: 'new\n' }],
-      sections: [{ explain: { title: 'Plain draft', body: 'No html.' }, changes: ['change-001'] }],
-    })
-
-    expect(draft.draftVersion).toBe(1)
-    expect(draft.sections[0]!.explain.html).toBeUndefined()
   })
 
   test('unknown explanation fields stay rejected', () => {
@@ -138,30 +150,108 @@ describe('document source variants', () => {
   })
 })
 
-describe('draft source', () => {
-  test('requires the strict working-tree shape', () => {
-    const draft = explainDraftSchema.parse({
-      draftVersion: 1,
-      source: workingTreeSource,
-      files: [],
-      changes: [],
-      sections: [],
-    })
+describe('capture schema', () => {
+  test('accepts the machine-owned capture shape with no sections', () => {
+    const parsed = captureSchema.parse(capture)
 
-    expect(draft.source).toEqual(workingTreeSource)
+    expect(parsed.captureId).toBe('a'.repeat(64))
+    expect(parsed.source).toEqual(workingTreeSource)
+    expect(parsed.files).toHaveLength(1)
+    expect(parsed.changes).toHaveLength(1)
+    expect('sections' in parsed).toBe(false)
   })
 
-  test('rejects non-working-tree and legacy draft sources', () => {
-    const cases: unknown[] = [
-      { kind: 'git', base: 'HEAD', baseCommit: 'abc', capturedAt: '2026-08-28T00:00:00.000Z' },
-      commitDiffSource,
-      proposalSource,
-      { kind: 'working-tree', capturedAt: '2026-08-28T00:00:00.000Z', from: { revision: 'HEAD' } },
-    ]
+  test('rejects captures with authored sections or extra fields', () => {
+    expect(() =>
+      captureSchema.parse({ ...capture, sections: [{ title: 'x', changes: ['change-001'] }] }),
+    ).toThrow()
+    expect(() => captureSchema.parse({ ...capture, extra: 'x' })).toThrow()
+  })
 
-    for (const source of cases) {
-      const input: unknown = { draftVersion: 1, source, files: [], changes: [], sections: [] }
-      expect(() => explainDraftSchema.parse(input)).toThrow()
-    }
+  test('requires a captureId and strict working-tree source', () => {
+    expect(() => captureSchema.parse({ ...capture, captureId: '' })).toThrow()
+    expect(() =>
+      captureSchema.parse({
+        ...capture,
+        source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' },
+      }),
+    ).toThrow()
+    expect(() =>
+      captureSchema.parse({
+        ...capture,
+        source: {
+          kind: 'working-tree',
+          capturedAt: '2026-08-28T00:00:00.000Z',
+          from: { revision: 'HEAD' },
+        },
+      }),
+    ).toThrow()
+  })
+
+  test('requires files and changes to be present arrays', () => {
+    expect(() => captureSchema.parse({ ...capture, files: undefined })).toThrow()
+    expect(() => captureSchema.parse({ ...capture, changes: undefined })).toThrow()
+  })
+})
+
+describe('explanations schema', () => {
+  test('accepts ordered sections with change IDs', () => {
+    const parsed = explanationsSchema.parse({
+      captureId: 'b'.repeat(64),
+      sections: [
+        {
+          title: 'Keep the greeting concise',
+          body: 'The extra phrase is no longer needed.',
+          changes: ['change-001'],
+        },
+        {
+          title: 'With a fragment',
+          html: '<figure><svg viewBox="0 0 1 1"></svg></figure>',
+          changes: ['change-001', 'change-002'],
+        },
+      ],
+    })
+
+    expect(parsed.sections).toHaveLength(2)
+    expect(parsed.sections[0]!.body).toBe('The extra phrase is no longer needed.')
+    expect(parsed.sections[0]!.html).toBeUndefined()
+    expect(parsed.sections[1]!.html).toContain('<figure>')
+  })
+
+  test('body defaults to empty and html is optional', () => {
+    const parsed = explanationsSchema.parse({
+      captureId: 'c'.repeat(64),
+      sections: [{ title: 'Terse', changes: ['change-001'] }],
+    })
+
+    expect(parsed.sections[0]!.body).toBe('')
+  })
+
+  test('rejects missing captureId or sections without changes, allows empty sections', () => {
+    expect(() =>
+      explanationsSchema.parse({ sections: [{ title: 'x', changes: ['change-001'] }] }),
+    ).toThrow()
+    expect(explanationsSchema.parse({ captureId: 'x', sections: [] }).sections).toEqual([])
+    expect(() =>
+      explanationsSchema.parse({
+        captureId: 'x',
+        sections: [{ title: 'x', body: 'no ids' }],
+      }),
+    ).toThrow()
+  })
+
+  test('rejects unknown section fields and empty titles', () => {
+    expect(() =>
+      explanationsSchema.parse({
+        captureId: 'x',
+        sections: [{ title: 'x', changes: ['c'], explain: {} }],
+      }),
+    ).toThrow()
+    expect(() =>
+      explanationsSchema.parse({
+        captureId: 'x',
+        sections: [{ title: '', changes: ['c'] }],
+      }),
+    ).toThrow()
   })
 })

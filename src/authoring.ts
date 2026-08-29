@@ -1,18 +1,18 @@
+import { createHash } from 'node:crypto'
 import { formatPatch, structuredPatch, type StructuredPatch } from 'diff'
 import { parseDiffFromFile } from 'hunkdiff/opentui'
 import {
+  captureSchema,
   explainDocumentSchema,
-  explainDraftSchema,
+  type CaptureSource,
   type ChangeBlock,
   type DraftFile,
+  type ExplainCapture,
   type ExplainDocument,
-  type ExplainDraft,
+  type Explanations,
 } from './format'
 
-export function createExplainDraft(
-  files: DraftFile[],
-  source: ExplainDraft['source'],
-): ExplainDraft {
+export function createExplainCapture(files: DraftFile[], source: CaptureSource): ExplainCapture {
   let nextId = 1
   const changes: ChangeBlock[] = []
 
@@ -67,23 +67,55 @@ export function createExplainDraft(
     changes.push(...fileChanges)
   }
 
-  return explainDraftSchema.parse({
-    draftVersion: 1,
+  return captureSchema.parse({
+    captureId: captureIdFor(files),
     source,
     files,
     changes,
-    sections: [],
   })
 }
 
-export function buildExplainDocument(input: unknown): ExplainDocument {
-  const draft = explainDraftSchema.parse(input)
-  const filesByPath = new Map(draft.files.map((file) => [file.path, file]))
-  const changesById = new Map(draft.changes.map((change) => [change.id, change]))
-  if (changesById.size !== draft.changes.length) throw new Error('Draft contains duplicate change IDs')
+export function captureIdFor(files: DraftFile[]): string {
+  const hash = createHash('sha256')
+  for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
+    hash.update(file.status)
+    hash.update('\0')
+    hash.update(file.path)
+    hash.update('\0')
+    hash.update(file.oldPath ?? '')
+    hash.update('\0')
+    hash.update(file.oldContent)
+    hash.update('\0')
+    hash.update(file.newContent)
+    hash.update('\0')
+  }
+  return hash.digest('hex')
+}
+
+export function stalePairingMessage(capture: ExplainCapture, explanations: Explanations): string {
+  return `The explanations target capture ${explanations.captureId} but capture.json holds ${capture.captureId}. The captured working tree changed after the explanations were authored. Edit .explain/explanations.yaml to the new captureId and change IDs, or delete it and re-run \`diffwalk inspect\` for a fresh skeleton.`
+}
+
+export function materializeExplainDocument(
+  capture: ExplainCapture,
+  explanations: Explanations,
+): ExplainDocument {
+  if (capture.captureId !== explanations.captureId) {
+    throw new Error(stalePairingMessage(capture, explanations))
+  }
+
+  if (capture.changes.length === 0 && explanations.sections.length === 0) {
+    throw new Error('No captured changes or authored sections to materialize; nothing to view, report, or export.')
+  }
+
+  const filesByPath = new Map(capture.files.map((file) => [file.path, file]))
+  const changesById = new Map(capture.changes.map((change) => [change.id, change]))
+  if (changesById.size !== capture.changes.length) {
+    throw new Error('Capture contains duplicate change IDs')
+  }
 
   const assigned = new Set<string>()
-  const sections = draft.sections.map((section) => {
+  const sections = explanations.sections.map((section) => {
     const selected = section.changes.map((id) => {
       const change = changesById.get(id)
       if (!change) throw new Error(`Unknown change ID: ${id}`)
@@ -107,19 +139,23 @@ export function buildExplainDocument(input: unknown): ExplainDocument {
     }
 
     return {
-      explain: section.explain,
+      explain: {
+        title: section.title,
+        body: section.body,
+        ...(section.html !== undefined ? { html: section.html } : {}),
+      },
       diff: formatPatch(patches),
     }
   })
 
-  const unassigned = draft.changes.filter((change) => !assigned.has(change.id))
+  const unassigned = capture.changes.filter((change) => !assigned.has(change.id))
   if (unassigned.length > 0) {
     throw new Error(`Unassigned change IDs: ${unassigned.map((change) => change.id).join(', ')}`)
   }
 
   return explainDocumentSchema.parse({
     formatVersion: 1,
-    source: draft.source,
+    source: capture.source,
     sections,
   })
 }

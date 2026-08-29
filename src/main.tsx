@@ -1,11 +1,10 @@
 /** @jsxImportSource @opentui/react */
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
 import { createCliRenderer, type KeyEvent, type ScrollBoxRenderable } from '@opentui/core'
 import { createRoot, useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { HunkDiffBody, type HunkDiffLayout, type HunkDiffFile } from 'hunkdiff/opentui'
 import { useEffect, useRef, useState } from 'react'
-import { parseExplainSectionsJson, type ExplainSection } from './document'
+import { explainSectionsFromDocument, type ExplainSection } from './document'
+import type { ExplainDocument } from './format'
 import {
   createFoldState,
   cursorIndex,
@@ -252,9 +251,8 @@ function FileNode({
   )
 }
 
-export async function viewDocument(inputPath: string) {
-  const json = await readFile(resolve(inputPath), 'utf8')
-  const sections = parseExplainSectionsJson(json)
+export async function viewDocument(document: ExplainDocument) {
+  const sections = explainSectionsFromDocument(document)
   const renderer = await createCliRenderer({
     screenMode: 'alternate-screen',
     useMouse: true,

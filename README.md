@@ -15,135 +15,131 @@ pnpm build
 pnpm test
 ```
 
-Run the included document to smoke-test the TUI without installing the executable:
+## Quick start
 
-```bash
-pnpm diffwalk view fixtures/document.json
-```
-
-Render the same document as a portable, self-contained HTML report:
-
-```bash
-pnpm diffwalk report fixtures/document.json --output report.html
-```
-
-The report opens in any browser as a local file: it embeds the document, Markdown
-rendering, the diff renderer, and all styles, so it makes no CDN or network requests.
-It bundles the full Pierre diff runtime (about 10.7 MB) so every language is
-syntax-highlighted offline.
-
-## Agent skill
-
-The repository includes an Agent Skill that teaches compatible coding agents how to capture
-changes, author ordered sections, and build the document without hand-writing patches. Its
-source lives at `.agents/skills/diffwalk`.
-
-Link it into the shared user-level Agent Skills directory to make it available from other
-repositories:
-
-```bash
-mkdir -p "$HOME/.agents/skills"
-ln -s "$(pwd)/.agents/skills/diffwalk" "$HOME/.agents/skills/diffwalk"
-```
-
-Agents that use another skill directory can point that directory at the same `SKILL.md`.
-Start a new agent session after installing the skill so it can be discovered.
-
-## Usage
-
-Run `diffwalk inspect` inside the Git working tree whose changes you want to explain:
+Inside the Git working tree whose changes you want to explain:
 
 ```bash
 diffwalk inspect
 ```
 
 This captures staged, unstaged, renamed, deleted, and untracked UTF-8 files relative to
-`HEAD` and writes `.explain/draft.json`. You can select a different Git base or output path:
+`HEAD` and writes two authoring files:
+
+- `.explain/capture.json` — machine-owned capture data (source, full file snapshots,
+  change blocks, and a `captureId`). Never edit it by hand.
+- `.explain/explanations.yaml` — a small authoring skeleton on first use. This is the
+  only file you edit.
+
+Order the `sections` array and assign change IDs. Each section has a title, a Markdown
+`body`, an optional trusted `html` fragment, and one or more change IDs:
+
+```yaml
+captureId: d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4
+sections:
+  - title: Keep the greeting concise
+    body: |
+      The extra phrase is no longer needed.
+    changes:
+      - change-001
+  - title: Add a farewell
+    body: "A small module that says goodbye."
+    html: "<figure><svg viewBox=\"0 0 640 180\" role=\"img\">...</svg></figure>"
+    changes:
+      - change-002
+```
+
+Every change ID must be assigned exactly once. Validate, then read or share:
 
 ```bash
-diffwalk inspect --base main --output .explain/draft.json
+diffwalk check
+diffwalk view
+diffwalk report
 ```
 
-Edit the draft's `sections` array into the desired reading order. Each section has an
-explanation and one or more temporary IDs from the top-level `changes` array:
-
-```json
-{
-  "explain": {
-    "title": "Keep the greeting concise",
-    "body": "The extra phrase is no longer needed."
-  },
-  "changes": ["change-003"]
-}
-```
-
-Every change ID must be assigned exactly once. Build the draft into a final document,
-then open it in the reader:
+The default workflow stays terse; every command also accepts explicit overrides:
 
 ```bash
-diffwalk build
-diffwalk view .explain/document.json
+diffwalk inspect --base main --output .explain/capture.json
+diffwalk check --input .explain/capture.json --explanations .explain/explanations.yaml
+diffwalk view --input .explain/capture.json --explanations .explain/explanations.yaml
+diffwalk report --output report.html
+diffwalk export --output .explain/document.json
 ```
 
-Custom input and output paths are also supported:
+## Inspecting what was captured
+
+Capture data is machine-owned, so read it through focused commands instead of opening
+`capture.json`:
 
 ```bash
-diffwalk build --input path/to/draft.json --output path/to/document.json
-diffwalk view path/to/document.json
+diffwalk changes             # concise human summary of every change block
+diffwalk changes --json      # structured IDs, paths, coordinates, before, after
+diffwalk change change-001   # one captured block with its contents
+diffwalk file src/a.ts --before   # the exact captured old side of a file
+diffwalk file src/a.ts --after    # the exact captured new side
 ```
 
-When working from this checkout without installing or linking its executable, prefix the
-same commands with `pnpm` (for example, `pnpm diffwalk inspect`).
+`changes --json` never includes full captured file contents. `change` rejects unknown
+IDs and `file` rejects unknown paths or an invalid `--before`/`--after` selection.
 
-The final document contains only ordered sections shaped as
-`{ "explain": { "title": "...", "body": "..." }, "diff": "..." }`. Temporary change IDs
-and captured full file contents remain in the authoring draft and are not copied into the
-final document.
+## How the authoring files pair
+
+`capture.json` holds a `captureId` that identifies the captured code contents, not the
+capture timestamp: identical captures pair consistently, and changed contents produce a
+different identity. `explanations.yaml` names the `captureId` it was authored against.
+`diffwalk inspect` never overwrites an authored `explanations.yaml`: if the working tree
+changed, it refreshes `capture.json` and `diffwalk check` reports the stale `captureId`
+with a next step instead of silently breaking your authoring file.
+
+## Validation
+
+`diffwalk check` reads capture plus explanations and rejects stale `captureId`
+pairing, malformed YAML, duplicate or unknown change assignments, unassigned IDs, and
+any change block that no longer materializes to an exact patch. On success it reports
+section, change, and file counts.
+
+The explanations file is parsed as strict safe YAML 1.2: custom tags, duplicate keys,
+and anchors or aliases are rejected, and YAML 1.1-style coercions (`yes`, `on`) stay
+plain strings.
+
+## The reader
+
+The reader shows every explanation in document order as one vertically scrollable tree
+with exact patches materialized in memory from capture plus explanations. It reads only
+the Markdown `body` and never interprets HTML.
 
 ## HTML reports
 
-Turn a final document into a single self-contained HTML report:
-
 ```bash
-diffwalk report .explain/document.json --output report.html
+diffwalk report
 ```
 
-Without `--output` the report is written next to the document with a `.html` extension.
-The report is one portable file: it embeds the document data, the Markdown-rendered
-explanations, the `@pierre/diffs` runtime that parses and renders each exact diff, and all
-styles. It works offline as a local file with JavaScript enabled and requests no CDN or
-external assets.
+writes `.explain/report.html` by default. The report is one portable file: it embeds
+the document data, the Markdown-rendered explanations, the `@pierre/diffs` runtime that
+parses and renders each exact diff, and all styles. It works offline as a local file
+with JavaScript enabled and requests no CDN or external assets.
 
 `body` is rendered as Markdown and raw HTML inside it is escaped. Agent-authored
-supplementary markup belongs in the optional `html` field of an explanation, which the
-report inserts after the Markdown body as trusted authored HTML:
+supplementary markup belongs in the optional `html` field of a section, which the
+report inserts after the Markdown body as trusted authored HTML. Fragments are treated
+as trusted input: build reports only from documents you or a trusted agent authored.
+The `body` must remain a complete explanation on its own, and visuals should embed
+their assets (including SVG) directly in the fragment so the report stays
+self-contained.
 
-```json
-{
-  "explain": {
-    "title": "Give the reader a stable cursor model",
-    "body": "Keyboard navigation needs an identity that survives folding.",
-    "html": "<figure><svg viewBox=\"0 0 640 180\" role=\"img\">...</svg></figure>"
-  },
-  "diff": "diff --git ..."
-}
-```
+## Export
 
-Fragments are treated as trusted input: build reports only from documents you or a
-trusted agent authored. The `body` must remain a complete explanation on its own, and
-visuals should embed their assets (including SVG) directly in the fragment so the report
-stays self-contained. The TUI still reads only `body` and never interprets HTML.
+`diffwalk export` materializes capture plus explanations and writes the portable
+ExplainDocument JSON (format version 1) for integrations or archiving. View and report
+do not require it; they validate and materialize directly from the authoring files.
 
-The report shell offers native section and file folding plus unified/split layout
-selection. It intentionally does not reproduce the TUI's keyboard navigation. Reports are
-built only from version 1 documents; a section whose diff Pierre cannot parse stops the
-command with a clear message instead of being dropped.
+## Captured data sensitivity
+
+`capture.json` contains full file contents from your working tree and base commit.
+Treat it as potentially sensitive and do not publish or send it without authorization.
 
 ## Reader controls
-
-The reader shows every explanation in document order as one vertically scrollable tree.
-Move between explanation and file headers with the keyboard; the focused header stays in
-view while scrolling.
 
 - `j` / `↓`: move focus to the next visible header
 - `k` / `↑`: move focus to the previous visible header
@@ -155,3 +151,21 @@ view while scrolling.
 - `q` or `Escape`: quit
 
 Scroll with the mouse or trackpad as well.
+
+## Agent skill
+
+The repository includes an Agent Skill that teaches compatible coding agents how to
+capture changes, author ordered sections, and validate with Diffwalk without
+hand-writing patches. Its source lives at `.agents/skills/diffwalk`.
+
+Link it into the shared user-level Agent Skills directory to make it available from
+other repositories:
+
+```bash
+mkdir -p "$HOME/.agents/skills"
+ln -s "$(pwd)/.agents/skills/diffwalk" "$HOME/.agents/skills/diffwalk"
+```
+
+Agents that use another skill directory can point that directory at the same
+`SKILL.md`. Start a new agent session after installing the skill so it can be
+discovered.

@@ -5,25 +5,38 @@ explanations and their exact corresponding diffs.
 
 ## Product decisions
 
-- The final read model is ordered `sections`, where every item is
-  `{ explain: { title, body, html? }, diff }`.
-- The final document `source` is one of: `commit-diff` (a `from`/`to` commit endpoint
-  pair), `working-tree` (a `from` commit endpoint against the working tree), or
-  `proposal` (no endpoints), each with an ISO `capturedAt`. A commit endpoint is a
-  required `{ revision, commit }` pair. The authoring draft always carries the
-  `working-tree` shape because inspect captures a Git base against the working tree.
-- The report surface renders `body` as Markdown with raw HTML escaped, then inserts the
-  optional trusted `html` fragment after it. The TUI reads only `body`.
-- Authoring uses a separate draft containing captured full file contents,
-  temporary `change-*` IDs, and `{ explain, changes[] }` sections.
-- Temporary change IDs never appear in the final document.
-- Every captured change ID must be assigned exactly once. Build rejects unknown,
-  duplicate, and unassigned IDs.
+- Authoring is split into two files. `capture.json` is machine-owned capture data:
+  a `captureId`, a `working-tree` `source` with a `from` commit endpoint and an ISO
+  `capturedAt`, full old/new file snapshots, and derived `change-*` blocks. It never
+  contains authored sections. `explanations.yaml` is the only author-edited file: it
+  names the `captureId` it was authored against and holds ordered sections of
+  `{ title, body?, html?, changes[] }`.
+- `captureId` identifies captured code contents, not the capture timestamp. It is a
+  SHA-256 over a canonical serialization of the captured file snapshots (status, path,
+  old path, old content, new content), so identical captures pair consistently while
+  changed content produces a different identity.
+- `inspect` never overwrites an existing authored `explanations.yaml`. On first use it
+  writes a small skeleton; on re-runs it preserves the authored file and refreshes
+  `capture.json`. When the captured contents change, the preserved explanations target
+  a stale `captureId` and `check` reports the mismatch with a next step.
+- `explanations.yaml` is parsed as strict safe YAML 1.2 (the `yaml` package, core
+  schema). Custom tags, duplicate keys, anchors, and aliases are rejected; YAML 1.1
+  coercions (`yes`, `on`) stay plain strings; the result is validated by a strict Zod
+  schema so numbers, booleans, and nulls are never coerced into strings.
+- The final read model remains an ordered document of `{ explain: { title, body,
+  html? }, diff }`. Every captured change ID must be assigned exactly once;
+  materialization rejects unknown, duplicate, and unassigned IDs.
+- `check`, `view`, `report`, and `export` read capture plus explanations, validate the
+  pairing and assignments, and materialize exact patches in memory. No `document.json`
+  is required at runtime; `export` writes the portable ExplainDocument JSON (format
+  version 1) only for integrations and archiving.
 - The agent should not hand-write unified patches for real working-tree changes.
   Pierre identifies `ChangeContent` blocks from complete old/new files; selected
   blocks are applied to the old content, then `diff` v9 creates a legal Git patch.
-- Blocks can be explained separately even when Pierre renders them inside the
-  same visual hunk.
+  Blocks can be explained separately even when Pierre renders them inside the same
+  visual hunk.
+- The report surface renders `body` as Markdown with raw HTML escaped, then inserts the
+  optional trusted `html` fragment after it. The TUI reads only `body`.
 - The reader shows every explanation in document order as one vertically
   scrollable tree. `j`/`↓` and `k`/`↑` move a cursor across the visible
   explanation and file headers, `Enter`/`Space` folds or unfolds the focused
@@ -36,7 +49,7 @@ explanations and their exact corresponding diffs.
   rests on a hidden child. `1`/`2` select split/stack layout and `q`/`Escape`
   quits.
 
-- The HTML report is generated from a version 1 document by `diffwalk report`.
+- The HTML report is generated from the materialized document by `diffwalk report`.
   Diffwalk owns the shell: source metadata, section ordering, Markdown bodies,
   optional trusted `html` fragments, native section/file folds, unified/split
   selection, responsive and print styles. `@pierre/diffs` owns diff parsing,
@@ -54,14 +67,19 @@ explanations and their exact corresponding diffs.
 
 ## Source map
 
-- `src/format.ts`: Zod schemas for the authoring draft and final document.
+- `src/format.ts`: Zod schemas for the machine-owned capture and the author-edited
+  explanations, plus the version 1 ExplainDocument.
 - `src/git.ts`: captures staged, unstaged, deleted, renamed, and untracked UTF-8
   files from an immutable Git base commit.
-- `src/authoring.ts`: creates change blocks, validates assignments, and materializes
-  section patches.
-- `src/cli.ts`: executable entry point for `inspect`, `build`, `report`, and `view`.
-- `src/cli-args.ts`: command-specific argument parsing for the report command.
-- `src/document.ts`: converts document patches into Hunk files.
+- `src/authoring.ts`: derives change blocks and the content `captureId`, and
+  materializes exact section patches from capture plus explanations.
+- `src/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.
+- `src/cli-args.ts`: shared flag/positional parsing and usage errors.
+- `src/help.ts`: top-level and per-command help for purpose, quick start, file
+  ownership, defaults, options, and next steps.
+- `src/cli.ts`: executable entry point for `inspect`, `changes`, `change`, `file`,
+  `check`, `view`, `report`, `export`, and `help`.
+- `src/document.ts`: converts an ExplainDocument's patches into Hunk files.
 - `src/reader.ts`: pure fold-state, visible-tree, and cursor logic for the reader.
 - `src/main.tsx`: OpenTUI/React reader using Hunk's exported primitives.
 - `src/report-patches.ts`: shared Pierre parse seam used by the generator, the browser
@@ -71,9 +89,14 @@ explanations and their exact corresponding diffs.
   and client-bundle loading.
 - `src/report-client.ts`: browser entry that mounts a `FileDiff` per file and switches
   unified/split through `setOptions`.
-- `test/*.test.ts`: focused tests for authoring, Git capture, document input, reader
-  folding, report schemas, Markdown escaping, embedded-data escaping, Pierre parse
-  failures, report CLI parsing, and atomic writes.
+- `test/*.test.ts`: focused tests for schemas, capture identity, strict YAML parsing,
+  materialization, Git capture, document input, reader folding, report schemas,
+  Markdown escaping, embedded-data escaping, Pierre parse failures, CLI argument
+  parsing, help, and atomic writes.
+- `test/cli.test.ts`: end-to-end CLI tests in real temporary Git repositories for
+  inspect file behavior (including preservation of authored explanations and stale
+  pairing), inspection commands, validation, report/export inputs, and rejection of
+  the removed `build`/draft workflow.
 - `test/reader-ui.test.tsx`: end-to-end reader tests through a rendered OpenTUI/React app
   for keyboard navigation, folding, focus, scrolling, mouse folding, and quitting.
 - `.agents/skills/diffwalk/SKILL.md`: teaches agents the authoring workflow and invariants.

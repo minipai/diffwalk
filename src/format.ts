@@ -38,7 +38,7 @@ export const commitEndpointSchema = z
   })
   .strict()
 
-export const draftSourceSchema = z
+export const captureSourceSchema = z
   .object({
     kind: z.literal('working-tree'),
     capturedAt: z.string().datetime(),
@@ -70,20 +70,28 @@ export const documentSourceSchema = z.discriminatedUnion('kind', [
     .strict(),
 ])
 
-export const explainDraftSchema = z
+export const captureSchema = z
   .object({
-    draftVersion: z.literal(1),
-    source: draftSourceSchema,
+    captureId: z.string().min(1),
+    source: captureSourceSchema,
     files: z.array(draftFileSchema),
     changes: z.array(changeBlockSchema),
-    sections: z.array(
-      z
-        .object({
-          explain: explanationSchema,
-          changes: z.array(z.string().min(1)).min(1),
-        })
-        .strict(),
-    ),
+  })
+  .strict()
+
+export const explanationSectionSchema = z
+  .object({
+    title: z.string().min(1),
+    body: z.preprocess((value) => value ?? '', z.string()).default(''),
+    html: z.string().optional(),
+    changes: z.array(z.string().min(1)).min(1),
+  })
+  .strict()
+
+export const explanationsSchema = z
+  .object({
+    captureId: z.string().min(1),
+    sections: z.array(explanationSectionSchema),
   })
   .strict()
 
@@ -106,5 +114,7 @@ export const explainDocumentSchema = z
 
 export type DraftFile = z.infer<typeof draftFileSchema>
 export type ChangeBlock = z.infer<typeof changeBlockSchema>
-export type ExplainDraft = z.infer<typeof explainDraftSchema>
+export type CaptureSource = z.infer<typeof captureSourceSchema>
+export type ExplainCapture = z.infer<typeof captureSchema>
+export type Explanations = z.infer<typeof explanationsSchema>
 export type ExplainDocument = z.infer<typeof explainDocumentSchema>

@@ -1,6 +1,6 @@
 ---
 name: diffwalk
-description: Use the Diffwalk CLI to capture Git working-tree changes, group generated change IDs into ordered explanations, build exact patches, and open the reader. Trigger when the user asks to use Diffwalk or create/update its `.explain` draft or document; do not trigger for ordinary code review that does not involve Diffwalk.
+description: Use the Diffwalk CLI to capture Git working-tree changes, author ordered explanations in explanations.yaml, validate with check, and open the reader or HTML report. Trigger when the user asks to use Diffwalk or create/update its `.explain` capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
 ---
 
 # Diffwalk
@@ -10,18 +10,20 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
 ## Workflow
 
 1. Confirm `diffwalk` is available with `command -v diffwalk`. If it is missing, report that installation is required; do not modify shell configuration without authorization.
-2. Run `diffwalk inspect`. Use `--base <revision>` or `--output <path>` only when the user requests a non-default base or path.
-3. Read the generated `.explain/draft.json`. Treat its `source`, `files`, and `changes` fields as captured data: edit only `sections`.
-4. Arrange `sections` in the intended reading order. Each section must contain:
+2. Run `diffwalk inspect`. Use `--base <revision>`, `--output <path>`, or `--explanations <path>` only when the user requests a non-default base or path.
+3. Inspect what was captured with the focused read commands. Never open `capture.json` directly:
+   - `diffwalk changes` for a concise summary, or `diffwalk changes --json` for structured IDs, paths, coordinates, before, and after.
+   - `diffwalk change <id>` to read one captured change block.
+   - `diffwalk file <path> --before` / `diffwalk file <path> --after` to read one captured file side.
+4. Edit the generated `.explain/explanations.yaml`. Treat its `captureId` as captured data: edit only `sections`. Each section must contain:
 
-   ```json
-   {
-     "explain": {
-       "title": "A concise change title",
-       "body": "Why this change exists and what it does."
-     },
-     "changes": ["change-001"]
-   }
+   ```yaml
+   sections:
+     - title: A concise change title
+       body: |
+         Why this change exists and what it does.
+       changes:
+         - change-001
    ```
 
    Keep `body` a complete explanation on its own. When a visual would help, add an
@@ -31,27 +33,32 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
    including SVG — directly in the fragment so the report stays one self-contained file.
    Do not put raw HTML in `body`: it is rendered as Markdown and raw tags are escaped.
 
-5. Assign every top-level change ID exactly once. Do not invent IDs, reuse an ID, or leave an ID unassigned. A section may contain multiple IDs when they form one coherent explanation.
-6. Run `diffwalk build`. This writes `.explain/document.json` by default.
-7. Run `diffwalk view .explain/document.json` when the user asks to open or inspect the terminal reader. Exit with `q`.
-8. Run `diffwalk report .explain/document.json --output report.html` when the user asks for an HTML report. The report is one portable file with no CDN or external assets and opens as a local file with JavaScript enabled.
+5. Assign every captured change ID exactly once. Do not invent IDs, reuse an ID, or leave an ID unassigned. A section may contain multiple IDs when they form one coherent explanation.
+6. Run `diffwalk check` before viewing or reporting. Fix any stale `captureId`, malformed YAML, duplicate or unknown assignment, unassigned ID, or materialization mismatch it reports.
+7. Run `diffwalk view` when the user asks to open or inspect the terminal reader. Exit with `q`.
+8. Run `diffwalk report` when the user asks for an HTML report. The report is one portable file with no CDN or external assets and opens as a local file with JavaScript enabled. Pass `--output <path>` when the user names a destination.
 
 ## Invariants
 
 - Never hand-write the final unified diffs. Diffwalk materializes selected change blocks from captured old/new contents and generates the patches.
+- Never edit or hand-parse `capture.json`. It is machine-owned; read it only through `changes`, `change`, and `file`.
 - Treat each change ID as independently assignable even when multiple IDs appear inside one rendered hunk.
 - Keep explanations ordered for comprehension rather than source-file order when that improves the walkthrough.
-- Do not edit captured file contents or change coordinates to force a build. Re-run `diffwalk inspect` when the working tree has changed.
+- Do not edit captured file contents or change coordinates to force a check. Re-run `diffwalk inspect` when the working tree has changed; it never overwrites an authored `explanations.yaml`.
 - Stop and report errors for binary files, symbolic links, unsupported file types, or file-mode changes. Do not bypass these boundaries.
-- The draft contains full file contents. Treat it as potentially sensitive and do not publish or send it without the user's authorization.
+- The capture contains full file contents. Treat it as potentially sensitive and do not publish or send it without the user's authorization.
 
 ## Commands
 
 ```bash
-diffwalk inspect [--base HEAD] [--output .explain/draft.json]
-diffwalk build [--input .explain/draft.json] [--output .explain/document.json]
-diffwalk report <document.json> [--output report.html]
-diffwalk view <document.json>
+diffwalk inspect [--base HEAD] [--output .explain/capture.json] [--explanations .explain/explanations.yaml]
+diffwalk changes [--json] [--input .explain/capture.json]
+diffwalk change <id> [--input .explain/capture.json]
+diffwalk file <path> (--before | --after) [--input .explain/capture.json]
+diffwalk check [--input .explain/capture.json] [--explanations .explain/explanations.yaml]
+diffwalk view [--input .explain/capture.json] [--explanations .explain/explanations.yaml]
+diffwalk report [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output .explain/report.html]
+diffwalk export [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output .explain/document.json]
 ```
 
 ## Trusted-html boundary

@@ -1,5 +1,5 @@
 import { createHunkDiffFilesFromPatch, type HunkDiffFile } from 'hunkdiff/opentui'
-import { explainDocumentSchema } from './format'
+import { explainDocumentSchema, type ExplainDocument } from './format'
 
 export interface ExplainSection {
   id: string
@@ -11,7 +11,10 @@ export interface ExplainSection {
 
 export function parseExplainSectionsJson(json: string): ExplainSection[] {
   const value: unknown = JSON.parse(json)
-  const document = explainDocumentSchema.parse(value)
+  return explainSectionsFromDocument(explainDocumentSchema.parse(value))
+}
+
+export function explainSectionsFromDocument(document: ExplainDocument): ExplainSection[] {
   return document.sections.map((section, index) => {
     const id = `explanation:${index}`
     const files = createHunkDiffFilesFromPatch(section.diff, id)

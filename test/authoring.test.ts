@@ -1,16 +1,20 @@
 import { describe, expect, test } from 'bun:test'
 import { createHunkDiffFilesFromPatch } from 'hunkdiff/opentui'
-import { buildExplainDocument, createExplainDraft } from '../src/authoring'
-import type { ExplainDraft } from '../src/format'
+import {
+  captureIdFor,
+  createExplainCapture,
+  materializeExplainDocument,
+} from '../src/authoring'
+import type { CaptureSource, ExplainCapture } from '../src/format'
 
-const source: ExplainDraft['source'] = {
+const source: CaptureSource = {
   kind: 'working-tree',
   from: { revision: 'HEAD', commit: '0123456789abcdef' },
   capturedAt: '2026-08-28T00:00:00.000Z',
 }
 
-function draftWithTwoChanges() {
-  return createExplainDraft(
+function captureWithTwoChanges(): ExplainCapture {
+  return createExplainCapture(
     [
       {
         path: 'example.ts',
@@ -23,67 +27,75 @@ function draftWithTwoChanges() {
   )
 }
 
-describe('explain authoring', () => {
-  test('exposes separate change blocks even when Pierre renders one nearby hunk', () => {
-    const draft = draftWithTwoChanges()
+function allChangesAssigned(capture: ExplainCapture) {
+  return {
+    captureId: capture.captureId,
+    sections: capture.changes.map((change, index) => ({
+      title: `Section ${index + 1}`,
+      body: '',
+      changes: [change.id],
+    })),
+  }
+}
 
-    expect(draft.changes).toEqual([
+describe('explain capture', () => {
+  test('exposes separate change blocks even when Pierre renders one nearby hunk', () => {
+    const capture = captureWithTwoChanges()
+
+    expect(capture.changes).toEqual([
       expect.objectContaining({ id: 'change-001', before: 'b\n', after: 'B\n' }),
       expect.objectContaining({ id: 'change-002', before: 'e\n', after: 'E\n' }),
     ])
+    expect(capture).not.toHaveProperty('sections')
   })
 
-  test('materializes each explanation as an independently parseable Git patch', () => {
-    const draft = draftWithTwoChanges()
-    draft.sections = [
-      {
-        explain: { title: 'Later change first', body: 'Explain E before B.' },
-        changes: ['change-002'],
-      },
-      {
-        explain: { title: 'Earlier change second', body: 'Then explain B.' },
-        changes: ['change-001'],
-      },
-    ]
+  test('captureId identifies captured contents, not the capture timestamp', () => {
+    const morning = createExplainCapture(
+      [{ path: 'a.ts', status: 'modified', oldContent: 'old\n', newContent: 'new\n' }],
+      { ...source, capturedAt: '2026-08-28T08:00:00.000Z' },
+    )
+    const evening = createExplainCapture(
+      [{ path: 'a.ts', status: 'modified', oldContent: 'old\n', newContent: 'new\n' }],
+      { ...source, capturedAt: '2026-08-28T20:00:00.000Z' },
+    )
+    const changed = createExplainCapture(
+      [{ path: 'a.ts', status: 'modified', oldContent: 'old\n', newContent: 'different\n' }],
+      { ...source, capturedAt: '2026-08-28T08:00:00.000Z' },
+    )
 
-    const document = buildExplainDocument(draft)
-
-    expect(document.sections.map((section) => section.explain.title)).toEqual([
-      'Later change first',
-      'Earlier change second',
-    ])
-    expect(document.sections[0]!.diff).toContain('+E')
-    expect(document.sections[0]!.diff).not.toContain('+B')
-    expect(document.sections[1]!.diff).toContain('+B')
-    expect(document.sections[1]!.diff).not.toContain('+E')
-    for (const section of document.sections) {
-      expect(createHunkDiffFilesFromPatch(section.diff)).toHaveLength(1)
-    }
+    expect(morning.captureId).toBe(evening.captureId)
+    expect(changed.captureId).not.toBe(morning.captureId)
+    expect(
+      captureIdFor([
+        { path: 'a.ts', status: 'modified', oldContent: 'old\n', newContent: 'new\n' },
+      ]),
+    ).toBe(morning.captureId)
   })
 
-  test('requires every change ID exactly once', () => {
-    const unassigned = draftWithTwoChanges()
-    unassigned.sections = [
-      { explain: { title: 'One', body: '' }, changes: ['change-001'] },
+  test('captureId is independent of file array order', () => {
+    const files = [
+      { path: 'b.ts', status: 'modified' as const, oldContent: '1\n', newContent: '2\n' },
+      { path: 'a.ts', status: 'modified' as const, oldContent: 'x\n', newContent: 'y\n' },
     ]
-    expect(() => buildExplainDocument(unassigned)).toThrow('Unassigned change IDs: change-002')
-
-    const duplicate = draftWithTwoChanges()
-    duplicate.sections = [
-      { explain: { title: 'One', body: '' }, changes: ['change-001'] },
-      { explain: { title: 'Again', body: '' }, changes: ['change-001', 'change-002'] },
-    ]
-    expect(() => buildExplainDocument(duplicate)).toThrow('assigned more than once')
-
-    const unknown = draftWithTwoChanges()
-    unknown.sections = [
-      { explain: { title: 'Unknown', body: '' }, changes: ['change-999'] },
-    ]
-    expect(() => buildExplainDocument(unknown)).toThrow('Unknown change ID: change-999')
+    const shuffled = [files[1]!, files[0]!]
+    expect(captureIdFor(files)).toBe(captureIdFor(shuffled))
   })
 
-  test('emits parseable patches for added, deleted, and pure renamed files', () => {
-    const draft = createExplainDraft(
+  test('change IDs are assigned in sorted file order', () => {
+    const capture = createExplainCapture(
+      [
+        { path: 'z.ts', status: 'modified', oldContent: 'a\n', newContent: 'b\n' },
+        { path: 'a.ts', status: 'modified', oldContent: 'c\n', newContent: 'd\n' },
+      ],
+      source,
+    )
+
+    expect(capture.changes.map((change) => change.path)).toEqual(['a.ts', 'z.ts'])
+    expect(capture.changes.map((change) => change.id)).toEqual(['change-001', 'change-002'])
+  })
+
+  test('emits placeholder blocks for added, deleted, and pure renamed files', () => {
+    const capture = createExplainCapture(
       [
         { path: 'added.ts', status: 'added', oldContent: '', newContent: 'added\n' },
         { path: 'deleted.ts', status: 'deleted', oldContent: 'deleted\n', newContent: '' },
@@ -97,52 +109,136 @@ describe('explain authoring', () => {
       ],
       source,
     )
-    draft.sections = draft.changes.map((change, index) => ({
-      explain: { title: `Change ${index + 1}`, body: '' },
-      changes: [change.id],
-    }))
 
-    const document = buildExplainDocument(draft)
-
-    expect(document.sections[0]!.diff).toContain('new file mode')
-    expect(document.sections[1]!.diff).toContain('deleted file mode')
-    expect(document.sections[2]!.diff).toContain('rename from old-name.ts')
-    for (const section of document.sections) {
-      expect(createHunkDiffFilesFromPatch(section.diff)).toHaveLength(1)
-    }
+    expect(capture.changes.map((change) => change.id)).toEqual([
+      'change-001',
+      'change-002',
+      'change-003',
+    ])
+    expect(capture.changes.map((change) => change.path)).toEqual([
+      'added.ts',
+      'deleted.ts',
+      'new-name.ts',
+    ])
   })
+})
 
-  test('carries optional html through build without touching capture or assignment invariants', () => {
-    const draft = draftWithTwoChanges()
-    const fragment = '<figure><svg viewBox="0 0 640 180" role="img"><rect width="10" height="10"/></svg></figure>'
-    draft.sections = [
-      {
-        explain: {
-          title: 'Later change first',
-          body: 'Explain E before B.',
-          html: fragment,
-        },
-        changes: ['change-002'],
-      },
-      {
-        explain: { title: 'Earlier change second', body: 'Then explain B.' },
-        changes: ['change-001'],
-      },
-    ]
+describe('explain materialization', () => {
+  test('materializes each explanation as an independently parseable Git patch', () => {
+    const capture = captureWithTwoChanges()
+    const explanations = {
+      captureId: capture.captureId,
+      sections: [
+        { title: 'Later change first', body: 'Explain E before B.', changes: ['change-002'] },
+        { title: 'Earlier change second', body: 'Then explain B.', changes: ['change-001'] },
+      ],
+    }
 
-    const document = buildExplainDocument(draft)
+    const document = materializeExplainDocument(capture, explanations)
 
     expect(document.formatVersion).toBe(1)
-    expect(draft.draftVersion).toBe(1)
-    expect(document.sections[0]!.explain.html).toBe(fragment)
-    expect(document.sections[0]!.explain.body).toBe('Explain E before B.')
-    expect(document.sections[1]!.explain.html).toBeUndefined()
+    expect(document.source).toEqual(capture.source)
     expect(document.sections.map((section) => section.explain.title)).toEqual([
       'Later change first',
       'Earlier change second',
     ])
     expect(document.sections[0]!.diff).toContain('+E')
+    expect(document.sections[0]!.diff).not.toContain('+B')
     expect(document.sections[1]!.diff).toContain('+B')
+    expect(document.sections[1]!.diff).not.toContain('+E')
+    for (const section of document.sections) {
+      expect(createHunkDiffFilesFromPatch(section.diff)).toHaveLength(1)
+    }
+  })
+
+  test('requires the explanations to target the captured captureId', () => {
+    const capture = captureWithTwoChanges()
+    const explanations = allChangesAssigned(capture)
+    explanations.captureId = 'f'.repeat(64)
+
+    expect(() => materializeExplainDocument(capture, explanations)).toThrow(
+      /capture /,
+    )
+  })
+
+  test('requires every change ID exactly once', () => {
+    const capture = captureWithTwoChanges()
+
+    const unassigned = {
+      captureId: capture.captureId,
+      sections: [{ title: 'One', body: '', changes: ['change-001'] }],
+    }
+    expect(() => materializeExplainDocument(capture, unassigned)).toThrow(
+      'Unassigned change IDs: change-002',
+    )
+
+    const duplicate = {
+      captureId: capture.captureId,
+      sections: [
+        { title: 'One', body: '', changes: ['change-001'] },
+        { title: 'Again', body: '', changes: ['change-001', 'change-002'] },
+      ],
+    }
+    expect(() => materializeExplainDocument(capture, duplicate)).toThrow('assigned more than once')
+
+    const unknown = {
+      captureId: capture.captureId,
+      sections: [{ title: 'Unknown', body: '', changes: ['change-999'] }],
+    }
+    expect(() => materializeExplainDocument(capture, unknown)).toThrow('Unknown change ID: change-999')
+  })
+
+  test('rejects a change block that no longer matches captured content', () => {
+    const capture = captureWithTwoChanges()
+    const explanations = allChangesAssigned(capture)
+    const tampered: ExplainCapture = structuredClone(capture)
+    tampered.changes[0]!.before = 'WRONG\n'
+
+    expect(() => materializeExplainDocument(tampered, explanations)).toThrow(
+      'no longer matches captured file content',
+    )
+  })
+
+  test('rejects a capture with duplicate change IDs', () => {
+    const capture = captureWithTwoChanges()
+    capture.changes[1]!.id = 'change-001'
+
+    expect(() => materializeExplainDocument(capture, allChangesAssigned(capture))).toThrow(
+      'Capture contains duplicate change IDs',
+    )
+  })
+
+  test('rejects a section that lists the same change ID twice', () => {
+    const capture = captureWithTwoChanges()
+    const explanations = {
+      captureId: capture.captureId,
+      sections: [
+        { title: 'Repeated', body: '', changes: ['change-001', 'change-001'] },
+        { title: 'Other', body: '', changes: ['change-002'] },
+      ],
+    }
+
+    expect(() => materializeExplainDocument(capture, explanations)).toThrow(
+      'assigned more than once',
+    )
+  })
+
+  test('carries optional html through materialization', () => {
+    const capture = captureWithTwoChanges()
+    const fragment = '<figure><svg viewBox="0 0 640 180" role="img"><rect width="10" height="10"/></svg></figure>'
+    const explanations = {
+      captureId: capture.captureId,
+      sections: [
+        { title: 'Later change first', body: 'Explain E before B.', html: fragment, changes: ['change-002'] },
+        { title: 'Earlier change second', body: 'Then explain B.', changes: ['change-001'] },
+      ],
+    }
+
+    const document = materializeExplainDocument(capture, explanations)
+
+    expect(document.sections[0]!.explain.html).toBe(fragment)
+    expect(document.sections[0]!.explain.body).toBe('Explain E before B.')
+    expect(document.sections[1]!.explain.html).toBeUndefined()
     for (const section of document.sections) {
       expect(createHunkDiffFilesFromPatch(section.diff)).toHaveLength(1)
     }
