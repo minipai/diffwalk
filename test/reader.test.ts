@@ -31,7 +31,7 @@ function hunkDiff(path: string, oldLine: string, newLine: string): string {
 function sectionDocument(...diffs: { title: string; body: string; diff: string }[]): string {
   return JSON.stringify({
     formatVersion: 1,
-    source: { kind: 'proposed' },
+    source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' },
     sections: diffs.map(({ title, body, diff }) => ({ explain: { title, body }, diff })),
   })
 }

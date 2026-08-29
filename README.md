@@ -21,6 +21,17 @@ Run the included document to smoke-test the TUI without installing the executabl
 pnpm diffwalk view fixtures/document.json
 ```
 
+Render the same document as a portable, self-contained HTML report:
+
+```bash
+pnpm diffwalk report fixtures/document.json --output report.html
+```
+
+The report opens in any browser as a local file: it embeds the document, Markdown
+rendering, the diff renderer, and all styles, so it makes no CDN or network requests.
+It bundles the full Pierre diff runtime (about 10.7 MB) so every language is
+syntax-highlighted offline.
+
 ## Agent skill
 
 The repository includes an Agent Skill that teaches compatible coding agents how to capture
@@ -88,6 +99,45 @@ The final document contains only ordered sections shaped as
 `{ "explain": { "title": "...", "body": "..." }, "diff": "..." }`. Temporary change IDs
 and captured full file contents remain in the authoring draft and are not copied into the
 final document.
+
+## HTML reports
+
+Turn a final document into a single self-contained HTML report:
+
+```bash
+diffwalk report .explain/document.json --output report.html
+```
+
+Without `--output` the report is written next to the document with a `.html` extension.
+The report is one portable file: it embeds the document data, the Markdown-rendered
+explanations, the `@pierre/diffs` runtime that parses and renders each exact diff, and all
+styles. It works offline as a local file with JavaScript enabled and requests no CDN or
+external assets.
+
+`body` is rendered as Markdown and raw HTML inside it is escaped. Agent-authored
+supplementary markup belongs in the optional `html` field of an explanation, which the
+report inserts after the Markdown body as trusted authored HTML:
+
+```json
+{
+  "explain": {
+    "title": "Give the reader a stable cursor model",
+    "body": "Keyboard navigation needs an identity that survives folding.",
+    "html": "<figure><svg viewBox=\"0 0 640 180\" role=\"img\">...</svg></figure>"
+  },
+  "diff": "diff --git ..."
+}
+```
+
+Fragments are treated as trusted input: build reports only from documents you or a
+trusted agent authored. The `body` must remain a complete explanation on its own, and
+visuals should embed their assets (including SVG) directly in the fragment so the report
+stays self-contained. The TUI still reads only `body` and never interprets HTML.
+
+The report shell offers native section and file folding plus unified/split layout
+selection. It intentionally does not reproduce the TUI's keyboard navigation. Reports are
+built only from version 1 documents; a section whose diff Pierre cannot parse stops the
+command with a clear message instead of being dropped.
 
 ## Reader controls
 

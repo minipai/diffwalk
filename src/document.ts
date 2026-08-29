@@ -5,6 +5,7 @@ export interface ExplainSection {
   id: string
   title: string
   body: string
+  html?: string
   files: HunkDiffFile[]
 }
 
@@ -21,6 +22,7 @@ export function parseExplainSectionsJson(json: string): ExplainSection[] {
       id,
       title: section.explain.title,
       body: section.explain.body,
+      html: section.explain.html,
       files,
     }
   })

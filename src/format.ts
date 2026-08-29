@@ -4,6 +4,7 @@ export const explanationSchema = z
   .object({
     title: z.string().min(1),
     body: z.string().default(''),
+    html: z.string().optional(),
   })
   .strict()
 
@@ -30,17 +31,49 @@ export const changeBlockSchema = z
   })
   .strict()
 
+export const commitEndpointSchema = z
+  .object({
+    revision: z.string().min(1),
+    commit: z.string().min(1),
+  })
+  .strict()
+
+export const draftSourceSchema = z
+  .object({
+    kind: z.literal('working-tree'),
+    capturedAt: z.string().datetime(),
+    from: commitEndpointSchema,
+  })
+  .strict()
+
+export const documentSourceSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('commit-diff'),
+      capturedAt: z.string().datetime(),
+      from: commitEndpointSchema,
+      to: commitEndpointSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('working-tree'),
+      capturedAt: z.string().datetime(),
+      from: commitEndpointSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('proposal'),
+      capturedAt: z.string().datetime(),
+    })
+    .strict(),
+])
+
 export const explainDraftSchema = z
   .object({
     draftVersion: z.literal(1),
-    source: z
-      .object({
-        kind: z.literal('git'),
-        base: z.string().min(1),
-        baseCommit: z.string().min(1),
-        capturedAt: z.string().datetime(),
-      })
-      .strict(),
+    source: draftSourceSchema,
     files: z.array(draftFileSchema),
     changes: z.array(changeBlockSchema),
     sections: z.array(
@@ -57,17 +90,7 @@ export const explainDraftSchema = z
 export const explainDocumentSchema = z
   .object({
     formatVersion: z.literal(1),
-    source: z.discriminatedUnion('kind', [
-      z
-        .object({
-          kind: z.literal('git'),
-          base: z.string().min(1),
-          baseCommit: z.string().min(1),
-          capturedAt: z.string().datetime(),
-        })
-        .strict(),
-      z.object({ kind: z.literal('proposed') }).strict(),
-    ]),
+    source: documentSourceSchema,
     sections: z
       .array(
         z

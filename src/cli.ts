@@ -3,7 +3,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { buildExplainDocument, createExplainDraft } from './authoring'
+import { parseReportArgs } from './cli-args'
 import { captureGitChanges } from './git'
+import { explainDocumentSchema } from './format'
+import { loadReportClient, renderReport, writeReport } from './report'
 
 const defaults = {
   draft: '.explain/draft.json',
@@ -13,6 +16,7 @@ const defaults = {
 const usage = `Usage:
   diffwalk inspect [--base HEAD] [--output .explain/draft.json]
   diffwalk build [--input .explain/draft.json] [--output .explain/document.json]
+  diffwalk report <document.json> [--output report.html]
   diffwalk view <document.json>`
 
 async function main() {
@@ -22,9 +26,8 @@ async function main() {
     const options = parseOptions(args, { base: 'HEAD', output: defaults.draft })
     const capture = await captureGitChanges(options.base)
     const draft = createExplainDraft(capture.files, {
-      kind: 'git',
-      base: options.base,
-      baseCommit: capture.baseCommit,
+      kind: 'working-tree',
+      from: { revision: options.base, commit: capture.baseCommit },
       capturedAt: new Date().toISOString(),
     })
     await writeJson(options.output, draft)
@@ -46,6 +49,19 @@ async function main() {
   if (command === 'view' && args.length === 1) {
     const { viewDocument } = await import('./main')
     await viewDocument(args[0]!)
+    return
+  }
+
+  if (command === 'report') {
+    const options = parseReportArgs(args)
+    const input: unknown = JSON.parse(await readFile(resolve(options.document), 'utf8'))
+    const document = explainDocumentSchema.parse(input)
+    const clientBundle = await loadReportClient()
+    const html = renderReport(document, clientBundle)
+    await writeReport(options.output, html)
+    console.log(
+      `Wrote a ${html.length} byte report for ${document.sections.length} sections to ${options.output}`,
+    )
     return
   }
 

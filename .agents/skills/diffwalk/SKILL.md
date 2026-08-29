@@ -24,9 +24,17 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
    }
    ```
 
+   Keep `body` a complete explanation on its own. When a visual would help, add an
+   optional `html` field holding agent-authored markup such as cards, tables, or inline
+   SVG. The report inserts `html` after the rendered Markdown `body` and treats it as
+   trusted authored HTML; the terminal reader reads only `body`. Embed any assets —
+   including SVG — directly in the fragment so the report stays one self-contained file.
+   Do not put raw HTML in `body`: it is rendered as Markdown and raw tags are escaped.
+
 5. Assign every top-level change ID exactly once. Do not invent IDs, reuse an ID, or leave an ID unassigned. A section may contain multiple IDs when they form one coherent explanation.
 6. Run `diffwalk build`. This writes `.explain/document.json` by default.
 7. Run `diffwalk view .explain/document.json` when the user asks to open or inspect the terminal reader. Exit with `q`.
+8. Run `diffwalk report .explain/document.json --output report.html` when the user asks for an HTML report. The report is one portable file with no CDN or external assets and opens as a local file with JavaScript enabled.
 
 ## Invariants
 
@@ -42,5 +50,18 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
 ```bash
 diffwalk inspect [--base HEAD] [--output .explain/draft.json]
 diffwalk build [--input .explain/draft.json] [--output .explain/document.json]
+diffwalk report <document.json> [--output report.html]
 diffwalk view <document.json>
 ```
+
+## Trusted-html boundary
+
+- `body` is rendered as Markdown in reports; raw HTML in `body` is escaped. All authored
+  markup goes in `html`, which the report inserts after the Markdown body as trusted HTML.
+- The report embeds every document diff and renders it with the `@pierre/diffs` runtime
+  bundled into the file; there is no CDN or external asset, so the report works offline.
+- A section whose diff cannot be parsed stops `diffwalk report` with a clear message; it
+  is never silently dropped.
+- Build reports only from documents you or a trusted agent authored. `html` is inserted
+  without sanitization and can run scripts, so never add untrusted or third-party content
+  to a report.

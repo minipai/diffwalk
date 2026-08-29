@@ -6,7 +6,7 @@ describe('parseExplainSectionsJson', () => {
     const sections = parseExplainSectionsJson(
       JSON.stringify({
         formatVersion: 1,
-        source: { kind: 'proposed' },
+        source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' },
         sections: [
           {
             explain: { title: 'A direct section', body: 'No range mapping is needed.' },
@@ -36,7 +36,7 @@ describe('parseExplainSectionsJson', () => {
   test('requires at least one section', () => {
     expect(() =>
       parseExplainSectionsJson(
-        JSON.stringify({ formatVersion: 1, source: { kind: 'proposed' }, sections: [] }),
+        JSON.stringify({ formatVersion: 1, source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' }, sections: [] }),
       ),
     ).toThrow()
   })

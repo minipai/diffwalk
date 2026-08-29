@@ -4,9 +4,8 @@ import { buildExplainDocument, createExplainDraft } from '../src/authoring'
 import type { ExplainDraft } from '../src/format'
 
 const source: ExplainDraft['source'] = {
-  kind: 'git',
-  base: 'HEAD',
-  baseCommit: '0123456789abcdef',
+  kind: 'working-tree',
+  from: { revision: 'HEAD', commit: '0123456789abcdef' },
   capturedAt: '2026-08-28T00:00:00.000Z',
 }
 
@@ -108,6 +107,42 @@ describe('explain authoring', () => {
     expect(document.sections[0]!.diff).toContain('new file mode')
     expect(document.sections[1]!.diff).toContain('deleted file mode')
     expect(document.sections[2]!.diff).toContain('rename from old-name.ts')
+    for (const section of document.sections) {
+      expect(createHunkDiffFilesFromPatch(section.diff)).toHaveLength(1)
+    }
+  })
+
+  test('carries optional html through build without touching capture or assignment invariants', () => {
+    const draft = draftWithTwoChanges()
+    const fragment = '<figure><svg viewBox="0 0 640 180" role="img"><rect width="10" height="10"/></svg></figure>'
+    draft.sections = [
+      {
+        explain: {
+          title: 'Later change first',
+          body: 'Explain E before B.',
+          html: fragment,
+        },
+        changes: ['change-002'],
+      },
+      {
+        explain: { title: 'Earlier change second', body: 'Then explain B.' },
+        changes: ['change-001'],
+      },
+    ]
+
+    const document = buildExplainDocument(draft)
+
+    expect(document.formatVersion).toBe(1)
+    expect(draft.draftVersion).toBe(1)
+    expect(document.sections[0]!.explain.html).toBe(fragment)
+    expect(document.sections[0]!.explain.body).toBe('Explain E before B.')
+    expect(document.sections[1]!.explain.html).toBeUndefined()
+    expect(document.sections.map((section) => section.explain.title)).toEqual([
+      'Later change first',
+      'Earlier change second',
+    ])
+    expect(document.sections[0]!.diff).toContain('+E')
+    expect(document.sections[1]!.diff).toContain('+B')
     for (const section of document.sections) {
       expect(createHunkDiffFilesFromPatch(section.diff)).toHaveLength(1)
     }

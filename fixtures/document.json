@@ -1,7 +1,8 @@
 {
   "formatVersion": 1,
   "source": {
-    "kind": "proposed"
+    "kind": "proposal",
+    "capturedAt": "2026-08-28T00:00:00.000Z"
   },
   "sections": [
     {
