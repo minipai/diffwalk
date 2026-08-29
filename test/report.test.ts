@@ -195,7 +195,7 @@ describe('renderReport shell', () => {
     expect(html).toContain('<dt>Captured at</dt><dd>2026-08-28T00:00:00.000Z</dd>')
   })
 
-  test('source metadata tracks shrink and long values wrap on narrow screens', () => {
+  test('source metadata compacts to one ellipsized line per row in the sticky header', () => {
     const html = renderReport(
       {
         formatVersion: 1,
@@ -209,17 +209,18 @@ describe('renderReport shell', () => {
       stubClient,
     )
 
-    expect(html).toContain('grid-template-columns: auto minmax(0, 1fr);')
-    expect(html).toContain('.source-metadata dd { margin: 0; min-width: 0; }')
-    expect(html).toContain('overflow-wrap: anywhere;')
+    expect(html).toContain('grid-template-columns: max-content minmax(0, 1fr);')
+    expect(html).toContain('.source-metadata dd { margin: 0; min-width: 0;')
+    expect(html).toContain('text-overflow: ellipsis; white-space: nowrap;')
   })
 
-  test('layout radio defaults to split and submits natively', () => {
+  test('layout radio defaults to split without an apply step', () => {
     const html = renderReport(document([section(simplePatch(), 'Layout')]), stubClient)
 
     expect(html).toContain('value="split" checked')
     expect(html).not.toContain('value="unified" checked')
-    expect(html).toContain('<button type="submit">Apply</button>')
+    expect(html).not.toContain('<button type="submit">Apply</button>')
+    expect(html).toContain('<button type="submit" hidden aria-hidden="true" tabindex="-1"></button>')
   })
 
   test('unified layout is preselected when requested', () => {
@@ -228,6 +229,72 @@ describe('renderReport shell', () => {
     })
 
     expect(html).toContain('value="unified" checked')
+  })
+
+  test('review map lists every section in document order with zero-padded anchors and counts', () => {
+    const html = renderReport(
+      document([
+        section(simplePatch('a', 'b'), 'First section'),
+        section([simplePatch('c', 'd'), simplePatch('e', 'f')].join(''), 'Second section'),
+      ]),
+      stubClient,
+    )
+
+    const mapStart = html.indexOf('class="review-map"')
+    const first = html.indexOf('First section', mapStart)
+    const second = html.indexOf('Second section', mapStart)
+    expect(mapStart).toBeGreaterThan(-1)
+    expect(first).toBeGreaterThan(-1)
+    expect(second).toBeGreaterThan(first)
+    expect(html).toContain('href="#section-0"')
+    expect(html).toContain('href="#section-1"')
+    expect(html).toContain('class="review-map-index">01<')
+    expect(html).toContain('class="review-map-index">02<')
+    expect(html).toContain('id="section-0"')
+    expect(html).toContain('id="section-1"')
+    expect(html).toContain('>2 sections<')
+    expect(html).toContain('>3 files<')
+    expect(html).toContain(
+      '.review-map-title { min-width: 0; white-space: normal; overflow-wrap: anywhere; }',
+    )
+  })
+
+  test('review map counts use singular labels for a single section and file', () => {
+    const html = renderReport(document([section(simplePatch(), 'Lonely')]), stubClient)
+
+    expect(html).toContain('class="review-map-index">01<')
+    expect(html).toContain('>1 section<')
+    expect(html).toContain('>1 file<')
+  })
+
+  test('responsive shell hides review map and metadata and compacts the header on narrow screens', () => {
+    const html = renderReport(document([section(simplePatch(), 'Responsive')]), stubClient)
+
+    expect(html).toContain('@media (max-width: 900px)')
+    expect(html).toContain('.review-map { display: none; }')
+    expect(html).toContain('.source-metadata { display: none; }')
+    expect(html).toContain('.review-workspace { display: block; }')
+    expect(html).toContain('grid-template-columns: 1fr auto')
+    expect(html).toContain('@media (max-width: 520px)')
+  })
+
+  test('section titles wrap long unbroken words instead of clipping inside the fold', () => {
+    const html = renderReport(document([section(simplePatch(), 'Wrap me')]), stubClient)
+
+    expect(html).toContain('.section-fold > summary {')
+    expect(html).toContain('overflow-wrap: anywhere;')
+  })
+
+  test('print output hides review map and layout controls and keeps source metadata', () => {
+    const html = renderReport(document([section(simplePatch(), 'Print')]), stubClient)
+
+    expect(html).toContain('@media print')
+    expect(html).toContain('.layout-form { display: none; }')
+    expect(html).toContain('.review-map { display: none; }')
+    expect(html).toContain('.report-header { position: static;')
+    expect(html).toContain('.source-metadata { display: grid; }')
+    expect(html).toContain('grid-template-columns: 1fr; gap: 4px 22px;')
+    expect(html).toContain('.source-metadata dd { white-space: normal; overflow: visible; }')
   })
 })
 

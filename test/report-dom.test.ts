@@ -48,7 +48,7 @@ function shellWithoutClient(html: string): string {
   return html.slice(0, clientStart) + html.slice(clientEnd + '</script>'.length)
 }
 
-function loadReport(html: string): Window {
+function loadReport(html: string, options: { narrow?: boolean } = {}): Window {
   const dom = new Window({ url: 'file:///tmp/diffwalk-report.html' })
   windows.push(dom)
   const win = dom.window
@@ -90,20 +90,19 @@ function loadReport(html: string): Window {
       return []
     }
   } as unknown as typeof IntersectionObserver
-  if (typeof matchMedia === 'undefined') {
-    globalThis.matchMedia = ((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener() {},
-      removeListener() {},
-      addEventListener() {},
-      removeEventListener() {},
-      dispatchEvent() {
-        return false
-      },
-    })) as unknown as typeof matchMedia
-  }
+  const narrow = options.narrow ?? false
+  globalThis.matchMedia = ((query: string) => ({
+    matches: narrow,
+    media: query,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {
+      return false
+    },
+  })) as unknown as typeof matchMedia
   dom.document.write(shellWithoutClient(html))
   dom.document.close()
   return dom
@@ -161,15 +160,90 @@ function codeColumns(dom: Window, index: number) {
 
 function submitLayout(dom: Window, value: 'split' | 'unified') {
   const doc = dom.document as unknown as Document
-  const form = doc.querySelector<HTMLFormElement>('[data-layout-form]')
   const input = doc.querySelector<HTMLInputElement>(`input[name="layout"][value="${value}"]`)
   input!.checked = true
-  form!.dispatchEvent(
-    new dom.window.Event('submit', { bubbles: true, cancelable: true }) as unknown as Event,
+  input!.dispatchEvent(
+    new dom.window.Event('change', { bubbles: true, cancelable: true }) as unknown as Event,
   )
 }
 
+function diffContainers(dom: Window) {
+  const doc = dom.document as unknown as Document
+  return [...doc.querySelectorAll('.file-diff diffs-container')]
+}
+
+function expectSameContainers(before: Element[], after: Element[]) {
+  expect(after).toHaveLength(before.length)
+  for (let index = 0; index < before.length; index++) {
+    expect(after[index]).toBe(before[index])
+  }
+}
+
 describe('report browser client', () => {
+  test('review map anchors resolve to section ids in document order with counts', () => {
+    const html = renderReport(
+      document([
+        section(simplePatch('a', 'b'), 'First section'),
+        section([simplePatch('c', 'd'), simplePatch('e', 'f')].join(''), 'Second section'),
+      ]),
+      clientBundle,
+    )
+    const dom = loadReport(html)
+    const doc = dom.document as unknown as Document
+
+    const links = doc.querySelectorAll('.review-map a')
+    expect(links).toHaveLength(2)
+    expect([...links].map((link) => link.getAttribute('href'))).toEqual([
+      '#section-0',
+      '#section-1',
+    ])
+    expect([...links].map((link) => link.querySelector('.review-map-index')?.textContent)).toEqual(
+      ['01', '02'],
+    )
+    for (const link of links) {
+      const href = link.getAttribute('href')!
+      expect(doc.getElementById(href.slice(1))).not.toBeNull()
+    }
+    const counts = [...doc.querySelectorAll('.review-map-counts span')].map(
+      (span) => span.textContent,
+    )
+    expect(counts).toEqual(['2 sections', '3 files'])
+  })
+
+  test(
+    'narrow viewport defaults split reports to unified but preserves explicit switching',
+    async () => {
+      const html = renderReport(
+        document([
+          section(simplePatch('one', 'one!'), 'Narrow section'),
+          section(simplePatch('two', 'two!'), 'Second narrow'),
+        ]),
+        clientBundle,
+      )
+      const dom = loadReport(html, { narrow: true })
+
+      runReportClient()
+
+      await waitFor(() => mountedCount(dom) === 2, 90000)
+      const doc = dom.document as unknown as Document
+      const unified = doc.querySelector<HTMLInputElement>('input[name="layout"][value="unified"]')
+      const split = doc.querySelector<HTMLInputElement>('input[name="layout"][value="split"]')
+      expect(unified?.checked).toBe(true)
+      expect(split?.checked).toBe(false)
+      await waitForQuiescent(dom)
+      for (let index = 0; index < 2; index++) expect(codeColumns(dom, index)).toBe(1)
+
+      submitLayout(dom, 'split')
+      await waitForQuiescent(dom)
+      for (let index = 0; index < 2; index++) expect(codeColumns(dom, index)).toBe(2)
+
+      submitLayout(dom, 'unified')
+      await waitForQuiescent(dom)
+      for (let index = 0; index < 2; index++) expect(codeColumns(dom, index)).toBe(1)
+    },
+    120000,
+  )
+
   test(
     'mounts every file diff and toggles unified/split on the same instances',
     async () => {
@@ -197,13 +271,70 @@ describe('report browser client', () => {
       await waitForQuiescent(dom)
       for (let index = 0; index < 3; index++) expect(codeColumns(dom, index)).toBe(2)
 
+      const containersBefore = diffContainers(dom)
+      expect(containersBefore).toHaveLength(3)
+
       submitLayout(dom, 'unified')
       await waitForQuiescent(dom)
       for (let index = 0; index < 3; index++) expect(codeColumns(dom, index)).toBe(1)
+      expectSameContainers(containersBefore, diffContainers(dom))
 
       submitLayout(dom, 'split')
       await waitForQuiescent(dom)
       for (let index = 0; index < 3; index++) expect(codeColumns(dom, index)).toBe(2)
+      expectSameContainers(containersBefore, diffContainers(dom))
+    },
+    120000,
+  )
+
+  test(
+    'beforeprint reopens every closed details element',
+    async () => {
+      const html = renderReport(
+        document([
+          section(simplePatch('one', 'one!'), 'First section'),
+          section([simplePatch('a', 'b'), simplePatch('c', 'd')].join(''), 'Second section'),
+        ]),
+        clientBundle,
+      )
+      const dom = loadReport(html)
+      runReportClient()
+
+      await waitFor(() => mountedCount(dom) === 3, 90000)
+      const doc = dom.document as unknown as Document
+      const details = [...doc.querySelectorAll<HTMLDetailsElement>('details')]
+      expect(details).toHaveLength(5)
+      for (const detail of details) detail.open = false
+      expect(details.every((detail) => !detail.open)).toBe(true)
+
+      dom.window.dispatchEvent(new dom.window.Event('beforeprint'))
+      for (const detail of details) expect(detail.open).toBe(true)
+    },
+    120000,
+  )
+
+  test(
+    'narrow viewport keeps an explicitly unified report unified on initial mount',
+    async () => {
+      const html = renderReport(
+        document([
+          section(simplePatch('one', 'one!'), 'Unified section'),
+          section(simplePatch('two', 'two!'), 'Second unified'),
+        ]),
+        clientBundle,
+        { layout: 'unified' },
+      )
+      const dom = loadReport(html, { narrow: true })
+      runReportClient()
+
+      await waitFor(() => mountedCount(dom) === 2, 90000)
+      const doc = dom.document as unknown as Document
+      const unified = doc.querySelector<HTMLInputElement>('input[name="layout"][value="unified"]')
+      const split = doc.querySelector<HTMLInputElement>('input[name="layout"][value="split"]')
+      expect(unified?.checked).toBe(true)
+      expect(split?.checked).toBe(false)
+      await waitForQuiescent(dom)
+      for (let index = 0; index < 2; index++) expect(codeColumns(dom, index)).toBe(1)
     },
     120000,
   )

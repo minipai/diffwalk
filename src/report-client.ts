@@ -23,6 +23,16 @@ function initialLayout(): 'split' | 'unified' {
   return checked?.value === 'unified' ? 'unified' : 'split'
 }
 
+function isNarrowViewport(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(max-width: 900px)').matches
+}
+
+function reflectLayout(value: 'split' | 'unified') {
+  const form = document.querySelector<HTMLFormElement>('[data-layout-form]')
+  const input = form?.querySelector<HTMLInputElement>(`input[name="layout"][value="${value}"]`)
+  if (input) input.checked = true
+}
+
 function showSectionError(sectionIndex: number, error: unknown) {
   const section = document.querySelector(`[data-section-index="${sectionIndex}"]`)
   const files = section?.querySelector('.section-files')
@@ -65,6 +75,11 @@ function mountSections(data: ReportData, layout: 'split' | 'unified'): MountedDi
 
 function wireLayout(mounted: MountedDiff[]) {
   const form = document.querySelector<HTMLFormElement>('[data-layout-form]')
+  form?.addEventListener('change', (event) => {
+    if (!(event.target as Element).matches('input[name="layout"]')) return
+    const submitter = form.querySelector<HTMLButtonElement>('button[type="submit"]')
+    form.requestSubmit(submitter ?? undefined)
+  })
   form?.addEventListener('submit', (event) => {
     event.preventDefault()
     const value = new FormData(form).get('layout')
@@ -87,7 +102,11 @@ function prepareForPrint() {
 export function mountReport() {
   const data = readReportData()
   if (!data) return
-  const layout = initialLayout()
+  let layout = initialLayout()
+  if (isNarrowViewport() && layout === 'split') {
+    layout = 'unified'
+    reflectLayout(layout)
+  }
   const mounted = mountSections(data, layout)
   wireLayout(mounted)
   prepareForPrint()
