@@ -1,3 +1,5 @@
 allowBuilds:
   bun: true
+  esbuild: true
+  workerd: true
 enableGlobalVirtualStore: false

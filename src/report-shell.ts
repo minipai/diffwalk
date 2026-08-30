@@ -10,6 +10,11 @@ export interface ReportOptions {
   layout?: ReportLayout
 }
 
+export interface HostedAssets {
+  stylesHref: string
+  clientSrc: string
+}
+
 interface ReportSectionData {
   diff: string
   fileCount: number
@@ -70,21 +75,38 @@ export function renderReport(
   clientBundle: string,
   options: ReportOptions = {},
 ): string {
-  const body = renderReportBody(document, options)
+  return renderShell(
+    renderReportBody(document, options),
+    `<style>\n${shellStyles}\n</style>`,
+    `<script>${escapeScriptTerminators(clientBundle)}</script>`,
+  )
+}
+
+export function renderHostedReport(
+  document: ExplainDocument,
+  assets: HostedAssets,
+  options: ReportOptions = {},
+): string {
+  return renderShell(
+    renderReportBody(document, options),
+    `<link rel="stylesheet" href="${escapeHtml(assets.stylesHref)}">`,
+    `<script src="${escapeHtml(assets.clientSrc)}" defer></script>`,
+  )
+}
+
+function renderShell(body: ReportBody, styles: string, client: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(body.title)}</title>
-<style>
-${shellStyles}
-</style>
+${styles}
 </head>
 <body>
 ${body.markup}
 <script type="application/json" id="diffwalk-report-data">${embedData(body.data)}</script>
-<script>${escapeScriptTerminators(clientBundle)}</script>
+${client}
 </body>
 </html>
 `

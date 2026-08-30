@@ -65,6 +65,16 @@ explanations and their exact corresponding diffs.
   document content or authored fragments can never terminate the embedded
   scripts.
 
+- `diffwalk publish` uploads the materialized version 1 ExplainDocument to the report
+  service, which stores JSON only and renders `/r/:id` through the same shell the local
+  report uses. The hosted page links the shared stylesheet and client instead of
+  inlining them, so the renderer is deployed once and cached across every report.
+  Publication is unlisted rather than private: the link is the only credential a reader
+  needs. Each report mints a revocation token returned once and kept only as a SHA-256
+  digest, so a lost token means the report stays published. The publish response carries
+  no URL; the CLI builds the link from the service origin it dialed, because deriving it
+  in the Worker would trust the request's `Host` header.
+
 ## Source map
 
 - `src/format.ts`: Zod schemas for the machine-owned capture and the author-edited
@@ -78,15 +88,18 @@ explanations and their exact corresponding diffs.
 - `src/help.ts`: top-level and per-command help for purpose, quick start, file
   ownership, defaults, options, and next steps.
 - `src/cli.ts`: executable entry point for `inspect`, `changes`, `change`, `file`,
-  `check`, `view`, `report`, `export`, and `help`.
+  `check`, `view`, `report`, `export`, `publish`, `unpublish`, and `help`.
 - `src/document.ts`: converts an ExplainDocument's patches into Hunk files.
 - `src/reader.ts`: pure fold-state, visible-tree, and cursor logic for the reader.
 - `src/main.tsx`: OpenTUI/React reader using Hunk's exported primitives.
 - `src/report-patches.ts`: shared Pierre parse seam used by the generator, the browser
   client, and tests.
 - `src/report-markdown.ts`: Markdown rendering with raw HTML escaped.
-- `src/report.ts`: report shell generation, embedded-data escaping, atomic report writes,
-  and client-bundle loading.
+- `src/report.ts`: atomic report writes and client-bundle loading.
+- `src/report-shell.ts`: the one report shell, embedded-data escaping, and shell styles,
+  rendered with inlined assets for the offline file or linked assets for the hosted page.
+- `src/publish.ts`: report service origin checks, publish credential lookup, and the
+  publish and unpublish requests.
 - `src/report-client.ts`: browser entry that mounts a `FileDiff` per file and switches
   unified/split through `setOptions`.
 - `test/*.test.ts`: focused tests for schemas, capture identity, strict YAML parsing,
@@ -99,4 +112,17 @@ explanations and their exact corresponding diffs.
   the removed `build`/draft workflow.
 - `test/reader-ui.test.tsx`: end-to-end reader tests through a rendered OpenTUI/React app
   for keyboard navigation, folding, focus, scrolling, mouse folding, and quitting.
+- `worker/index.ts`: the Cloudflare Worker that stores, renders, and revokes reports and
+  sets the report origin's Content Security Policy, security headers, and caching.
+- `worker/reports.ts`: report IDs, revocation tokens, token digests, constant-time secret
+  comparison, and the bounded document size.
+- `worker/build-assets.ts`: writes the shared stylesheet and client bundle into the Static
+  Assets directory before deploy.
+- `wrangler.jsonc`: the declarative Worker deployment: Static Assets, the R2 binding,
+  routes, custom domain, and observability.
+- `infra/setup.sh`: idempotent zone configuration Wrangler does not own: the R2 bucket,
+  WAF managed rules, and rate limits.
+- `worker/index.test.ts`: Worker route behavior against a stub bucket, covering
+  authentication, validation, size limits, revocation, and error states.
+- `test/publish.test.ts`: CLI publish and unpublish behavior against a stubbed fetch.
 - `.agents/skills/diffwalk/SKILL.md`: teaches agents the authoring workflow and invariants.

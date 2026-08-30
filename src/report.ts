@@ -3,8 +3,8 @@ import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
 
-export { renderReport, shellStyles } from './report-shell'
-export type { ReportLayout, ReportOptions } from './report-shell'
+export { renderHostedReport, renderReport, shellStyles } from './report-shell'
+export type { HostedAssets, ReportLayout, ReportOptions } from './report-shell'
 
 export async function writeReport(output: string, html: string): Promise<void> {
   const absolutePath = resolve(output)

@@ -55,6 +55,7 @@ Every change ID must be assigned exactly once. Validate, then read or share:
 diffwalk check
 diffwalk view
 diffwalk report
+diffwalk publish
 ```
 
 The default workflow stays terse; every command also accepts explicit overrides:
@@ -65,6 +66,7 @@ diffwalk check --input .explain/capture.json --explanations .explain/explanation
 diffwalk view --input .explain/capture.json --explanations .explain/explanations.yaml
 diffwalk report --output report.html
 diffwalk export --output .explain/document.json
+diffwalk publish --service https://reports.example
 ```
 
 ## Inspecting what was captured
@@ -127,6 +129,54 @@ as trusted input: build reports only from documents you or a trusted agent autho
 The `body` must remain a complete explanation on its own, and visuals should embed
 their assets (including SVG) directly in the fragment so the report stays
 self-contained.
+
+## Hosted reports
+
+```bash
+diffwalk publish
+```
+
+materializes the same document `report` renders, uploads it to the report service, and
+prints an unlisted link. The service stores only that JSON and renders it with its own
+shared renderer, so no HTML file is uploaded and every report reuses one cached copy of
+the renderer instead of carrying its own.
+
+Publishing is anonymous and unlisted, not private. The link cannot be guessed, but
+anyone holding it can read the report without signing in. Treat the link as the secret,
+and do not publish a document you would not hand to everyone who might receive it.
+
+Publishing prints a revocation token once. Keep it: it is the only way to take that
+report down.
+
+```bash
+diffwalk unpublish <report-id> --token <revocation-token>
+```
+
+A revocation token removes exactly one report and cannot touch another. Losing it means
+the report stays published.
+
+Reports are immutable. Publishing a revision creates a separate report at a separate
+link, and the earlier link keeps serving the earlier report until it is revoked.
+
+The trusted-fragment boundary from `diffwalk report` still applies: a section's `html` is
+served verbatim, so publish only what you or a trusted agent authored. The report origin
+is kept powerless on purpose — no cookies, no inline scripts, no outbound connections —
+but that contains a bad fragment rather than sanitizing one.
+
+### Running the service
+
+The service is one Cloudflare Worker with a private R2 bucket and its shared assets:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...   # zone WAF and ruleset edit
+export CLOUDFLARE_ZONE_ID=...
+./infra/setup.sh                  # bucket, r2.dev off, WAF, rate limits
+pnpm deploy
+```
+
+`wrangler.jsonc` owns the Worker, its Static Assets, and its R2 binding. `infra/setup.sh`
+owns the zone-level settings wrangler does not manage, and re-running it is a no-op. Point
+the CLI at another deployment with `--service` or `DIFFWALK_SERVICE_URL`.
 
 ## Export
 

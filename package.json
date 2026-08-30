@@ -12,8 +12,10 @@
   ],
   "scripts": {
     "build": "bun build ./src/cli.ts --target=bun --packages=external --outfile=dist/diffwalk.js && bun build ./src/report-client.ts --target=browser --format=iife --minify --outfile=dist/report-client.js",
+    "build:worker": "bun run ./worker/build-assets.ts",
+    "deploy": "pnpm build:worker && wrangler deploy",
     "diffwalk": "bun run ./src/cli.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "test": "bun test",
     "pretest": "pnpm build",
     "check": "pnpm typecheck && pnpm test",
@@ -31,10 +33,12 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260828.1",
     "@types/bun": "1.4.0",
     "@types/react": "19.2.18",
     "happy-dom": "20.11.12",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "wrangler": "^4.127.1"
   },
   "engines": {
     "bun": ">=1.3.0"

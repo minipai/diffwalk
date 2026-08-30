@@ -7,6 +7,8 @@ export const commandNames = [
   'view',
   'report',
   'export',
+  'publish',
+  'unpublish',
   'help',
 ] as const
 
@@ -32,6 +34,7 @@ Quick start:
   diffwalk check                      validate capture + explanations
   diffwalk view                       open the terminal reader
   diffwalk report                     write a self-contained HTML report
+  diffwalk publish                    publish a hosted report and print its link
 
 Commands:
   inspect    capture Git changes and write .explain/capture.json plus an explanations.yaml skeleton
@@ -42,6 +45,8 @@ Commands:
   view       open the terminal reader
   report     write a self-contained HTML report
   export     write the portable ExplainDocument JSON for integrations
+  publish    publish the report to the hosted service and print its unlisted link
+  unpublish  remove a published report with its revocation token
   help       show help for a command
 
 File ownership:
@@ -56,6 +61,7 @@ Defaults:
 
 Next steps:
   After authoring, run \`diffwalk check\`, then \`diffwalk view\` or \`diffwalk report\`.
+  Share a link instead of a file with \`diffwalk publish\`.
   Run \`diffwalk help <command>\` for command-specific options.
   Use \`diffwalk changes --json\` and \`diffwalk change <id>\` to inspect what was captured.
 `
@@ -217,6 +223,47 @@ Options:
 
 Next steps:
   Validate first with \`diffwalk check\`. The exported document remains format version 1.
+`
+    case 'publish':
+      return `diffwalk publish — publish a hosted report and print its link
+
+Validates ${defaults.capture} and ${defaults.explanations}, materializes the exact
+patches, and uploads the version 1 ExplainDocument to the report service. The service
+stores the document and renders it with its own shared renderer, so no HTML file is
+uploaded or stored. Publication is unlisted: anyone holding the link can read it.
+
+Reports are immutable. Publishing again creates a separate report and a separate link.
+No account or publish credential is required.
+
+Usage:
+  diffwalk publish [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--service https://reports.diffwalk.dev]
+
+Options:
+  --input <path>         capture path (default ${defaults.capture})
+  --explanations <path>  explanations path (default ${defaults.explanations})
+  --service <url>        report service origin (default $DIFFWALK_SERVICE_URL, else the hosted service)
+  -h, --help             show this help
+
+Next steps:
+  Validate first with \`diffwalk check\`. Keep the printed revocation token: it is the
+  only way to run \`diffwalk unpublish\` later. For an offline copy use \`diffwalk report\`.
+`
+    case 'unpublish':
+      return `diffwalk unpublish — remove a published report
+
+Deletes one published report from the report service. The revocation token printed when
+the report was published is required, and it revokes only that report.
+
+Usage:
+  diffwalk unpublish <report-id> --token <revocation-token> [--service https://reports.diffwalk.dev]
+
+Options:
+  --token <token>        the revocation token printed at publish time (required)
+  --service <url>        report service origin (default $DIFFWALK_SERVICE_URL, else the hosted service)
+  -h, --help             show this help
+
+Next steps:
+  A removed report's link stops working. Publish a revision with \`diffwalk publish\`.
 `
     case 'help':
       return `diffwalk help — show help

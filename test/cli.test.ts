@@ -18,11 +18,16 @@ interface CliResult {
   stderr: string
 }
 
-async function runCli(args: string[], cwd: string): Promise<CliResult> {
+async function runCli(
+  args: string[],
+  cwd: string,
+  environment: Record<string, string> = {},
+): Promise<CliResult> {
   const child = Bun.spawn(['bun', cliPath, ...args], {
     cwd,
     stdout: 'pipe',
     stderr: 'pipe',
+    env: { ...process.env, ...environment },
   })
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
@@ -93,7 +98,7 @@ describe('help', () => {
 
   test('help <command> describes options, defaults, and next steps', async () => {
     const repo = await fixtureRepo()
-    for (const command of ['inspect', 'changes', 'change', 'file', 'check', 'view', 'report', 'export']) {
+    for (const command of ['inspect', 'changes', 'change', 'file', 'check', 'view', 'report', 'export', 'publish']) {
       const result = await runCli(['help', command], repo)
       expect(result.exitCode).toBe(0)
       expect(result.stdout).toContain(`diffwalk ${command} —`)
@@ -101,6 +106,16 @@ describe('help', () => {
       expect(result.stdout).toContain('Next steps:')
       expect(result.stdout).toContain('.explain/capture.json')
     }
+  })
+
+  test('help unpublish describes the revocation token it requires', async () => {
+    const repo = await fixtureRepo()
+    const result = await runCli(['help', 'unpublish'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('diffwalk unpublish —')
+    expect(result.stdout).toContain('--token')
+    expect(result.stdout).toContain('Next steps:')
   })
 
   test('help for an unknown command exits nonzero', async () => {
@@ -577,6 +592,160 @@ describe('export', () => {
     expect(result.exitCode).toBe(0)
     const files = await readdir(explainDir(repo))
     expect(files).toContain('document.json')
+  })
+})
+
+interface FakeService {
+  origin: string
+  published: unknown[]
+  revoked: { id: string; token: string }[]
+  stop: () => void
+}
+
+const reportId = 'Zm9vYmFyYmF6cXV4MTIz'
+const revocationToken = 'end-to-end-revocation-token'
+
+function startFakeService(): FakeService {
+  const published: unknown[] = []
+  const revoked: { id: string; token: string }[] = []
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url)
+      const credential = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '')
+
+      if (request.method === 'POST' && url.pathname === '/api/reports') {
+        published.push(await request.json())
+        return Response.json({ id: reportId, revocationToken }, { status: 201 })
+      }
+
+      const revoke = /^\/api\/reports\/(.+)$/.exec(url.pathname)
+      if (request.method === 'DELETE' && revoke) {
+        if (credential !== revocationToken) {
+          return Response.json(
+            { error: 'That credential does not revoke this report' },
+            { status: 403 },
+          )
+        }
+        revoked.push({ id: revoke[1]!, token: credential })
+        return new Response(null, { status: 204 })
+      }
+
+      return Response.json({ error: 'No such endpoint' }, { status: 404 })
+    },
+  })
+
+  return {
+    origin: `http://127.0.0.1:${server.port}`,
+    published,
+    revoked,
+    stop: () => server.stop(true),
+  }
+}
+
+describe('publish', () => {
+  test('uploads the materialized document and prints the link and its revocation token', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      const result = await runCli(['publish', '--service', service.origin], repo)
+
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain(`${service.origin}/r/${reportId}`)
+      expect(result.stdout).toContain(revocationToken)
+      expect(result.stdout).toContain(`diffwalk unpublish ${reportId} --token ${revocationToken}`)
+
+      expect(service.published).toHaveLength(1)
+      const uploaded = service.published[0] as Record<string, unknown>
+      expect(uploaded['formatVersion']).toBe(1)
+      expect(Array.isArray(uploaded['sections'])).toBe(true)
+      expect(uploaded['captureId']).toBeUndefined()
+      expect(uploaded['files']).toBeUndefined()
+      expect(JSON.stringify(uploaded)).not.toContain('<!doctype html>')
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('publishing without authored explanations fails before contacting the service', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    const service = startFakeService()
+
+    try {
+      const result = await runCli(['publish', '--service', service.origin], repo)
+
+      expect(result.exitCode).not.toBe(0)
+      expect(service.published).toHaveLength(0)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('a plaintext service is refused before anything is uploaded', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+
+    const result = await runCli(['publish', '--service', 'http://reports.example.test'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('over HTTPS')
+  })
+})
+
+describe('unpublish', () => {
+  test('removes a report with its revocation token', async () => {
+    const repo = await fixtureRepo()
+    const service = startFakeService()
+
+    try {
+      const result = await runCli(
+        ['unpublish', reportId, '--token', revocationToken, '--service', service.origin],
+        repo,
+      )
+
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain(`Removed report ${reportId}`)
+      expect(service.revoked).toEqual([{ id: reportId, token: revocationToken }])
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('a wrong token leaves the report in place and explains why', async () => {
+    const repo = await fixtureRepo()
+    const service = startFakeService()
+
+    try {
+      const result = await runCli(
+        ['unpublish', reportId, '--token', 'wrong-token', '--service', service.origin],
+        repo,
+      )
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('Could not remove the report')
+      expect(result.stderr).toContain('403')
+      expect(service.revoked).toHaveLength(0)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('a missing token or report ID is a usage error with help', async () => {
+    const repo = await fixtureRepo()
+
+    const noToken = await runCli(['unpublish', reportId], repo)
+    expect(noToken.exitCode).not.toBe(0)
+    expect(noToken.stderr).toContain('--token')
+    expect(noToken.stderr).toContain('diffwalk unpublish')
+
+    const noId = await runCli(['unpublish', '--token', revocationToken], repo)
+    expect(noId.exitCode).not.toBe(0)
+    expect(noId.stderr).toContain('exactly 1 argument')
   })
 })
 

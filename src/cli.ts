@@ -14,6 +14,7 @@ import {
 } from './format'
 import { captureGitChanges } from './git'
 import { commandHelp, isCommandName, topLevelHelp, type CommandName } from './help'
+import { publishDocument, reportService, unpublishDocument } from './publish'
 import { loadReportClient, renderReport, writeReport } from './report'
 
 const defaults = {
@@ -56,6 +57,15 @@ const flagSpecs: Record<CommandName, FlagSpec[]> = {
     { name: 'input', takesValue: true },
     { name: 'explanations', takesValue: true },
     { name: 'output', takesValue: true },
+  ],
+  publish: [
+    { name: 'input', takesValue: true },
+    { name: 'explanations', takesValue: true },
+    { name: 'service', takesValue: true },
+  ],
+  unpublish: [
+    { name: 'token', takesValue: true },
+    { name: 'service', takesValue: true },
   ],
   help: [],
 }
@@ -121,6 +131,12 @@ async function main() {
       break
     case 'export':
       await exportCommand(parsed)
+      break
+    case 'publish':
+      await publishCommand(parsed)
+      break
+    case 'unpublish':
+      await unpublishCommand(parsed)
       break
   }
 }
@@ -249,6 +265,31 @@ async function exportCommand(parsed: ParsedArgs) {
   const output = option(parsed, 'output') ?? defaults.document
   await writeJson(output, document)
   console.log(`Wrote ${document.sections.length} explanation sections to ${output}`)
+}
+
+async function publishCommand(parsed: ParsedArgs) {
+  requirePositionalCount(parsed, 0)
+  const document = await materialize(parsed)
+  const service = reportService(option(parsed, 'service'))
+  const published = await publishDocument(document, service)
+  console.log(
+    `Published ${document.sections.length} explanation sections to ${published.url}`,
+  )
+  console.log(`Revocation token: ${published.revocationToken}`)
+  console.log(
+    `Store that token now; it is shown once. Remove the report with \`diffwalk unpublish ${published.id} --token ${published.revocationToken}\`.`,
+  )
+}
+
+async function unpublishCommand(parsed: ParsedArgs) {
+  const [id] = requirePositionalCount(parsed, 1)
+  const token = option(parsed, 'token')
+  if (token === undefined) {
+    throw new UsageError('Pass the report\'s revocation token with --token')
+  }
+  const service = reportService(option(parsed, 'service'))
+  await unpublishDocument(id!, service, token)
+  console.log(`Removed report ${id} from ${service}`)
 }
 
 async function materialize(parsed: ParsedArgs): Promise<ExplainDocument> {

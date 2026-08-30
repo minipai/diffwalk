@@ -1,3 +1,6 @@
 .explain/
 dist/
 node_modules/
+worker/public/
+.wrangler/
+plan.md
