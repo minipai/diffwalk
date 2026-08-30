@@ -9,8 +9,9 @@ explanations and their exact corresponding diffs.
   a `captureId`, a `working-tree` `source` with a `from` commit endpoint and an ISO
   `capturedAt`, full old/new file snapshots, and derived `change-*` blocks. It never
   contains authored sections. `explanations.yaml` is the only author-edited file: it
-  names the `captureId` it was authored against and holds ordered sections of
-  `{ title, body?, html?, changes[] }`.
+  names the `captureId` it was authored against, carries a required `title` and an
+  optional `summary`, and holds ordered sections of `{ title, steps[] }` where a step is
+  `{ text?, changes[]? }` with at least one of the two.
 - `captureId` identifies captured code contents, not the capture timestamp. It is a
   SHA-256 over a canonical serialization of the captured file snapshots (status, path,
   old path, old content, new content), so identical captures pair consistently while
@@ -23,9 +24,14 @@ explanations and their exact corresponding diffs.
   schema). Custom tags, duplicate keys, anchors, and aliases are rejected; YAML 1.1
   coercions (`yes`, `on`) stay plain strings; the result is validated by a strict Zod
   schema so numbers, booleans, and nulls are never coerced into strings.
-- The final read model remains an ordered document of `{ explain: { title, body,
-  html? }, diff }`. Every captured change ID must be assigned exactly once;
-  materialization rejects unknown, duplicate, and unassigned IDs.
+- The final read model is an ordered document of `{ title, summary, sections: [{ title,
+  steps: [{ text, diff? }] }] }`. Prose and diffs interleave inside a section because a
+  step materializes its own patch from its own change IDs. Every captured change must be
+  shown at least once; materialization rejects unknown IDs and unexplained changes.
+- Showing a change in more than one step is allowed. Re-showing a hunk is how an author
+  builds an argument, so `check` names the repeats and still succeeds; only an
+  unexplained change fails. Completeness is the guarantee a reader relies on, not
+  uniqueness.
 - `check`, `view`, `report`, and `export` read capture plus explanations, validate the
   pairing and assignments, and materialize exact patches in memory. No `document.json`
   is required at runtime; `export` writes the portable ExplainDocument JSON (format
@@ -35,14 +41,20 @@ explanations and their exact corresponding diffs.
   blocks are applied to the old content, then `diff` v9 creates a legal Git patch.
   Blocks can be explained separately even when Pierre renders them inside the same
   visual hunk.
-- The report surface renders `body` as Markdown with raw HTML escaped, then inserts the
-  optional trusted `html` fragment after it. The TUI reads only `body`.
+- Step `text` and the document `summary` render as Markdown with inline HTML passed
+  through, so a diagram can sit exactly where the argument needs it. Authored text is
+  trusted; containment is the report origin's Content Security Policy, not escaping.
+  Images must be inline `<svg>` or `data:` URIs: a remote URL renders in the local file
+  but is blocked on the hosted report. The TUI shows the text as written.
 - The reader shows every explanation in document order as one vertically
   scrollable tree. `j`/`↓` and `k`/`↑` move a cursor across the visible
-  explanation and file headers, `Enter`/`Space` folds or unfolds the focused
-  header, and the focused header is scrolled back into view when the cursor
-  moves. Clicking an explanation header folds its body and file diffs; clicking
-  a file header folds just that file's diff. Fold state is remembered
+  explanation, step, and file headers, `Enter`/`Space` folds or unfolds the
+  focused header, and the focused header is scrolled back into view when the
+  cursor moves. A step earns a row only when it carries text, so a step that is
+  nothing but changes does not render a blank line above its own diffs. Clicking
+  an explanation header folds its steps and file diffs; clicking a step folds the
+  rest of its text and its diffs; clicking a file header folds just that file's
+  diff. Fold state is remembered
   independently per explanation and per file, keyed per section so the same
   path in different explanations folds separately. When a fold hides the
   focused node, the cursor moves to the nearest visible ancestor so it never
@@ -90,11 +102,12 @@ explanations and their exact corresponding diffs.
 - `src/cli.ts`: executable entry point for `inspect`, `changes`, `change`, `file`,
   `check`, `view`, `report`, `export`, `publish`, `unpublish`, and `help`.
 - `src/document.ts`: converts an ExplainDocument's patches into Hunk files.
-- `src/reader.ts`: pure fold-state, visible-tree, and cursor logic for the reader.
+- `src/reader.ts`: pure fold-state, visible-tree, and cursor logic over explanations,
+  steps, and files.
 - `src/main.tsx`: OpenTUI/React reader using Hunk's exported primitives.
 - `src/report-patches.ts`: shared Pierre parse seam used by the generator, the browser
   client, and tests.
-- `src/report-markdown.ts`: Markdown rendering with raw HTML escaped.
+- `src/report-markdown.ts`: Markdown rendering with inline HTML passed through.
 - `src/report.ts`: atomic report writes and client-bundle loading.
 - `src/report-shell.ts`: the one report shell, embedded-data escaping, and shell styles,
   rendered with inlined assets for the offline file or linked assets for the hosted page.

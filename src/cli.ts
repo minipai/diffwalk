@@ -3,7 +3,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { createExplainCapture, materializeExplainDocument } from './authoring'
+import { createExplainCapture, duplicatedChangeIds, materializeExplainDocument } from './authoring'
 import { parseArgs, requirePositionalCount, UsageError, type ParsedArgs, type FlagSpec } from './cli-args'
 import { parseExplanations } from './explanations'
 import {
@@ -158,10 +158,7 @@ async function inspectCommand(parsed: ParsedArgs) {
   if (existsSync(explanationsPath)) {
     console.log(`Kept existing ${explanationsPath} (inspect never overwrites it)`)
   } else {
-    await writeText(
-      explanationsPath,
-      `captureId: ${capture.captureId}\nsections: []\n`,
-    )
+    await writeText(explanationsPath, explanationsSkeleton(capture.captureId))
     console.log(`Wrote a ${explanationsPath} skeleton to author`)
   }
 
@@ -234,9 +231,16 @@ async function checkCommand(parsed: ParsedArgs) {
   )
   const document = materializeExplainDocument(capture, explanations)
   const fileCount = new Set(capture.files.map((file) => file.path)).size
+  const steps = document.sections.reduce((total, section) => total + section.steps.length, 0)
   console.log(
-    `OK: ${document.sections.length} sections cover ${capture.changes.length} of ${capture.changes.length} changes across ${fileCount} files · capture ${shortId(capture.captureId)}`,
+    `OK: ${document.sections.length} sections and ${steps} steps cover ${capture.changes.length} of ${capture.changes.length} changes across ${fileCount} files · capture ${shortId(capture.captureId)}`,
   )
+  // Showing a change twice is a legitimate way to build an argument, so it is reported
+  // rather than rejected. Only an unexplained change fails the check.
+  const repeated = duplicatedChangeIds(explanations)
+  if (repeated.length > 0) {
+    console.log(`${repeated.length} changes are shown more than once: ${repeated.join(', ')}`)
+  }
   console.log('Next: `diffwalk view`, `diffwalk export`, or `diffwalk report`.')
 }
 
@@ -350,6 +354,15 @@ function changeLine(change: {
   newCount: number
 }) {
   return `${change.id}  ${change.path}  ${coordinates(change)}`
+}
+
+function explanationsSkeleton(captureId: string): string {
+  return `captureId: ${captureId}
+title: Name this change set
+summary: |
+  Optional. Markdown, and inline HTML is allowed, so an <svg> diagram can open the report.
+sections: []
+`
 }
 
 function shortId(captureId: string): string {

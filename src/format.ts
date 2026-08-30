@@ -1,13 +1,5 @@
 import { z } from 'zod'
 
-export const explanationSchema = z
-  .object({
-    title: z.string().min(1),
-    body: z.string().default(''),
-    html: z.string().optional(),
-  })
-  .strict()
-
 export const draftFileSchema = z
   .object({
     path: z.string().min(1),
@@ -79,32 +71,54 @@ export const captureSchema = z
   })
   .strict()
 
+export const explanationStepSchema = z
+  .object({
+    text: z.preprocess((value) => value ?? '', z.string()).default(''),
+    changes: z.array(z.string().min(1)).min(1).optional(),
+  })
+  .strict()
+  .refine((step) => step.text.trim() !== '' || step.changes !== undefined, {
+    message: 'a step needs text, changes, or both',
+  })
+
 export const explanationSectionSchema = z
   .object({
     title: z.string().min(1),
-    body: z.preprocess((value) => value ?? '', z.string()).default(''),
-    html: z.string().optional(),
-    changes: z.array(z.string().min(1)).min(1),
+    steps: z.array(explanationStepSchema).min(1),
   })
   .strict()
 
 export const explanationsSchema = z
   .object({
     captureId: z.string().min(1),
+    title: z.string().min(1),
+    summary: z.preprocess((value) => value ?? '', z.string()).default(''),
     sections: z.array(explanationSectionSchema),
   })
   .strict()
 
+export const documentStepSchema = z
+  .object({
+    text: z.string().default(''),
+    diff: z.string().min(1).optional(),
+  })
+  .strict()
+  .refine((step) => step.text.trim() !== '' || step.diff !== undefined, {
+    message: 'a step needs text, a diff, or both',
+  })
+
 export const explainDocumentSchema = z
   .object({
     formatVersion: z.literal(1),
+    title: z.string().min(1),
+    summary: z.string().default(''),
     source: documentSourceSchema,
     sections: z
       .array(
         z
           .object({
-            explain: explanationSchema,
-            diff: z.string().min(1),
+            title: z.string().min(1),
+            steps: z.array(documentStepSchema).min(1),
           })
           .strict(),
       )
@@ -116,5 +130,7 @@ export type DraftFile = z.infer<typeof draftFileSchema>
 export type ChangeBlock = z.infer<typeof changeBlockSchema>
 export type CaptureSource = z.infer<typeof captureSourceSchema>
 export type ExplainCapture = z.infer<typeof captureSchema>
+export type ExplanationStep = z.infer<typeof explanationStepSchema>
 export type Explanations = z.infer<typeof explanationsSchema>
+export type DocumentStep = z.infer<typeof documentStepSchema>
 export type ExplainDocument = z.infer<typeof explainDocumentSchema>

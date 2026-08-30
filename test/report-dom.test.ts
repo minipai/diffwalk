@@ -23,20 +23,18 @@ function simplePatch(oldLine = 'old', newLine = 'new'): string {
   ].join('\n')
 }
 
-function section(patch: string, title: string, options: { body?: string; html?: string } = {}) {
+function section(patch: string, title: string, options: { text?: string } = {}) {
   return {
-    explain: {
-      title,
-      body: options.body ?? 'A complete explanation on its own.',
-      ...(options.html !== undefined ? { html: options.html } : {}),
-    },
-    diff: patch,
+    title,
+    steps: [{ text: options.text ?? 'A complete explanation on its own.', diff: patch }],
   }
 }
 
 function document(sections: ExplainDocument['sections']): ExplainDocument {
   return {
     formatVersion: 1,
+    title: 'A change set',
+    summary: '',
     source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' },
     sections,
   }
@@ -340,13 +338,12 @@ describe('report browser client', () => {
   )
 
   test(
-    'renders the markdown body and inserts the trusted fragment',
+    'renders markdown and authored markup from the same step text',
     async () => {
       const html = renderReport(
         document([
           section(simplePatch(), 'Rendered', {
-            body: 'A **bold** point.',
-            html: '<figure data-probe="yes"><svg viewBox="0 0 1 1"></svg></figure>',
+            text: 'A **bold** point.\n\n<figure data-probe="yes"><svg viewBox="0 0 1 1"></svg></figure>',
           }),
         ]),
         clientBundle,
@@ -357,22 +354,20 @@ describe('report browser client', () => {
 
       await waitFor(() => mountedCount(dom) === 1)
       const doc = dom.document as unknown as Document
-      expect(doc.querySelector('.section-body')?.innerHTML).toContain('<strong>bold</strong>')
-      expect(doc.querySelector('.section-fragment [data-probe="yes"]')).not.toBeNull()
+      expect(doc.querySelector('.step-text')?.innerHTML).toContain('<strong>bold</strong>')
+      expect(doc.querySelector('.step-text [data-probe="yes"]')).not.toBeNull()
     },
     120000,
   )
 
   test(
-    'raw html in the body is escaped into text, never a live element',
+    'a summary opens the page and renders its authored diagram as a live element',
     async () => {
       const html = renderReport(
-        document([
-          section(simplePatch(), 'Safe body', {
-            body: '<img src=x onerror="window.__reportPwned = 1">',
-            html: '<div data-frag="yes"></div>',
-          }),
-        ]),
+        {
+          ...document([section(simplePatch(), 'With a summary')]),
+          summary: 'The shape of it.\n\n<figure data-summary="yes"><svg viewBox="0 0 1 1"></svg></figure>',
+        },
         clientBundle,
       )
       const dom = loadReport(html)
@@ -381,19 +376,14 @@ describe('report browser client', () => {
 
       await waitFor(() => mountedCount(dom) === 1)
       const doc = dom.document as unknown as Document
-      expect(
-        (dom.window as unknown as Record<string, unknown>).__reportPwned,
-      ).toBeUndefined()
-      expect(doc.querySelector('.section-body img')).toBeNull()
-      expect(doc.querySelector('.section-body script')).toBeNull()
-      expect(doc.querySelector('.section-body')?.textContent).toContain('<img src=x onerror=')
-      expect(doc.querySelector('.section-fragment [data-frag="yes"]')).not.toBeNull()
+      expect(doc.querySelector('.cover-summary [data-summary="yes"] svg')).not.toBeNull()
+      expect(doc.querySelector('.cover-summary')?.textContent).toContain('The shape of it.')
     },
     120000,
   )
 
   test(
-    'an unparseable section surfaces an inline error while others still mount',
+    'an unparseable step surfaces an inline error while others still mount',
     async () => {
       const html = renderReport(
         document([
@@ -411,7 +401,7 @@ describe('report browser client', () => {
       const doc = dom.document as unknown as Document
       await waitFor(() => doc.querySelector('.diff-error') != null)
       expect(doc.querySelector('.diff-error')?.textContent).toContain(
-        'Could not render this section',
+        'Could not render this step',
       )
       await waitFor(() => mountedCount(dom) === 1)
     },

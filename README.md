@@ -31,25 +31,38 @@ This captures staged, unstaged, renamed, deleted, and untracked UTF-8 files rela
 - `.explain/explanations.yaml` — a small authoring skeleton on first use. This is the
   only file you edit.
 
-Order the `sections` array and assign change IDs. Each section has a title, a Markdown
-`body`, an optional trusted `html` fragment, and one or more change IDs:
+Name the change set, then order the `sections` array. Each section is a title over an
+ordered list of `steps`, and a step carries `text`, `changes`, or both, so prose and
+diffs interleave in the order you write them:
 
 ```yaml
 captureId: d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4
+title: Keep the greeting concise
+summary: |
+  Optional opening, shown above the review map.
+
+  <figure><svg viewBox="0 0 640 180" role="img">...</svg></figure>
 sections:
   - title: Keep the greeting concise
-    body: |
-      The extra phrase is no longer needed.
-    changes:
-      - change-001
+    steps:
+      - text: |
+          The extra phrase is no longer needed.
+        changes:
+          - change-001
   - title: Add a farewell
-    body: "A small module that says goodbye."
-    html: "<figure><svg viewBox=\"0 0 640 180\" role=\"img\">...</svg></figure>"
-    changes:
-      - change-002
+    steps:
+      - text: Why a farewell belongs here at all.
+      - text: A small module that says goodbye.
+        changes:
+          - change-002
 ```
 
-Every change ID must be assigned exactly once. Validate, then read or share:
+`title` is required: it becomes the report heading and the browser tab, which is how two
+shared links tell themselves apart. `summary` is optional.
+
+Every change must be shown at least once. Showing one in more than one step is allowed
+and reported, because re-showing a hunk is how an argument gets built. Validate, then
+read or share:
 
 ```bash
 diffwalk check
@@ -97,9 +110,9 @@ with a next step instead of silently breaking your authoring file.
 ## Validation
 
 `diffwalk check` reads capture plus explanations and rejects stale `captureId`
-pairing, malformed YAML, duplicate or unknown change assignments, unassigned IDs, and
-any change block that no longer materializes to an exact patch. On success it reports
-section, change, and file counts.
+pairing, malformed YAML, unknown change IDs, changes left unexplained, and any change
+block that no longer materializes to an exact patch. On success it reports section,
+step, change, and file counts, and names any change shown in more than one place.
 
 The explanations file is parsed as strict safe YAML 1.2: custom tags, duplicate keys,
 and anchors or aliases are rejected, and YAML 1.1-style coercions (`yes`, `on`) stay
@@ -108,8 +121,9 @@ plain strings.
 ## The reader
 
 The reader shows every explanation in document order as one vertically scrollable tree
-with exact patches materialized in memory from capture plus explanations. It reads only
-the Markdown `body` and never interprets HTML.
+with exact patches materialized in memory from capture plus explanations. A step with
+text is its own row between the explanation and the diffs it introduces. The terminal
+shows the text as written and never interprets HTML.
 
 ## HTML reports
 
@@ -122,13 +136,13 @@ the document data, the Markdown-rendered explanations, the `@pierre/diffs` runti
 parses and renders each exact diff, and all styles. It works offline as a local file
 with JavaScript enabled and requests no CDN or external assets.
 
-`body` is rendered as Markdown and raw HTML inside it is escaped. Agent-authored
-supplementary markup belongs in the optional `html` field of a section, which the
-report inserts after the Markdown body as trusted authored HTML. Fragments are treated
-as trusted input: build reports only from documents you or a trusted agent authored.
-The `body` must remain a complete explanation on its own, and visuals should embed
-their assets (including SVG) directly in the fragment so the report stays
-self-contained.
+`text` and `summary` are rendered as Markdown, and inline HTML passes through, so a
+diagram can sit exactly where the argument needs it. That makes authored text trusted
+input: build reports only from documents you or a trusted agent authored.
+
+Embed every image as an inline `<svg>` or a `data:` URI. A remote image URL renders in
+the local file but is blocked on the hosted report, so the same document would look
+different through a link.
 
 ## Hosted reports
 
@@ -158,10 +172,10 @@ the report stays published.
 Reports are immutable. Publishing a revision creates a separate report at a separate
 link, and the earlier link keeps serving the earlier report until it is revoked.
 
-The trusted-fragment boundary from `diffwalk report` still applies: a section's `html` is
-served verbatim, so publish only what you or a trusted agent authored. The report origin
-is kept powerless on purpose — no cookies, no inline scripts, no outbound connections —
-but that contains a bad fragment rather than sanitizing one.
+The trusted-text boundary from `diffwalk report` still applies: authored markup is served
+verbatim, so publish only what you or a trusted agent authored. The report origin is kept
+powerless on purpose — no cookies, no inline scripts, no outbound connections — but that
+contains bad markup rather than sanitizing it.
 
 ### Running the service
 
@@ -194,7 +208,8 @@ Treat it as potentially sensitive and do not publish or send it without authoriz
 - `j` / `↓`: move focus to the next visible header
 - `k` / `↑`: move focus to the previous visible header
 - `Enter` / `Space`: fold or unfold the focused header
-- Click an explanation header to focus, fold, or unfold its body and file diffs
+- Click an explanation header to focus, fold, or unfold its steps and file diffs
+- Click a step to focus, fold, or unfold the rest of its text and its diffs
 - Click a file header to focus, fold, or unfold just that file's diff
 - `1`: split diff layout
 - `2`: stacked diff layout

@@ -1,9 +1,15 @@
 import { FileDiff, type FileDiffMetadata, type FileDiffOptions } from '@pierre/diffs'
 import { parseSectionPatch } from './report-patches'
 
+interface ReportDiffMount {
+  section: number
+  step: number
+  diff: string
+}
+
 interface ReportData {
   source: unknown
-  sections: { diff: string; fileCount: number }[]
+  diffs: ReportDiffMount[]
 }
 
 interface MountedDiff {
@@ -33,15 +39,16 @@ function reflectLayout(value: 'split' | 'unified') {
   if (input) input.checked = true
 }
 
-function showSectionError(sectionIndex: number, error: unknown) {
-  const section = document.querySelector(`[data-section-index="${sectionIndex}"]`)
-  const files = section?.querySelector('.section-files')
-  if (!files) return
+function showStepError(mount: ReportDiffMount, error: unknown) {
+  const step = document.querySelector(
+    `[data-section-index="${mount.section}"] [data-step-index="${mount.step}"] .step-files`,
+  )
+  if (!step) return
   const message = error instanceof Error ? error.message : String(error)
   const note = document.createElement('div')
   note.className = 'diff-error'
-  note.textContent = `Could not render this section's diff: ${message}`
-  files.appendChild(note)
+  note.textContent = `Could not render this step's diff: ${message}`
+  step.appendChild(note)
 }
 
 function baseOptions(diffStyle: 'split' | 'unified') {
@@ -52,18 +59,20 @@ function baseOptions(diffStyle: 'split' | 'unified') {
   } satisfies FileDiffOptions<undefined>
 }
 
-function mountSections(data: ReportData, layout: 'split' | 'unified'): MountedDiff[] {
+function mountDiffs(data: ReportData, layout: 'split' | 'unified'): MountedDiff[] {
   const mounted: MountedDiff[] = []
-  for (const [sectionIndex, section] of data.sections.entries()) {
+  for (const mount of data.diffs) {
     let files: FileDiffMetadata[]
     try {
-      files = parseSectionPatch(section.diff)
+      files = parseSectionPatch(mount.diff)
     } catch (error) {
-      showSectionError(sectionIndex, error)
+      showStepError(mount, error)
       continue
     }
     for (const [fileIndex, fileDiff] of files.entries()) {
-      const wrapper = document.getElementById(`section-${sectionIndex}-file-${fileIndex}`)
+      const wrapper = document.getElementById(
+        `section-${mount.section}-step-${mount.step}-file-${fileIndex}`,
+      )
       if (!wrapper) continue
       const instance = new FileDiff(baseOptions(layout))
       instance.render({ fileDiff, containerWrapper: wrapper })
@@ -107,7 +116,7 @@ export function mountReport() {
     layout = 'unified'
     reflectLayout(layout)
   }
-  const mounted = mountSections(data, layout)
+  const mounted = mountDiffs(data, layout)
   wireLayout(mounted)
   prepareForPrint()
 }

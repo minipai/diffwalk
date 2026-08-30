@@ -90,6 +90,22 @@ Options:
 File ownership:
   ${defaults.capture} is machine-owned. ${defaults.explanations} is the only file you edit.
 
+Authoring shape:
+  captureId: <from capture.json>
+  title: <names the whole change set; becomes the report heading>
+  summary: |
+    Optional opening. Markdown, and inline HTML is allowed.
+  sections:
+    - title: <one idea>
+      steps:
+        - text: |
+            Markdown. Inline HTML is allowed, so an <svg> diagram can sit here.
+          changes: [change-001]
+
+  A step needs text, changes, or both, so prose and diffs interleave in the order you
+  write them. Embed images as data: URIs or inline <svg>: an external image URL is
+  blocked on the hosted report even though it loads in the local HTML file.
+
 Next steps:
   Edit ${defaults.explanations} to order sections and assign change IDs, then run
   \`diffwalk check\`. Inspect capture IDs with \`diffwalk changes\`.
@@ -150,9 +166,10 @@ Next steps:
       return `diffwalk check — validate capture and explanations
 
 Reads ${defaults.capture} and ${defaults.explanations} and validates the pairing: the
-explanations must target the capture's captureId, every section must reference known
-change IDs exactly once, nothing may be left unassigned, and every selected block must
-materialize to an exact patch. On success it reports section, change, and file counts.
+explanations must target the capture's captureId, every referenced change ID must be
+known, nothing may be left unexplained, and every selected block must materialize to an
+exact patch. Showing a change in more than one step is allowed and reported, not
+rejected. On success it reports section, step, change, and file counts.
 
 Usage:
   diffwalk check [--input .explain/capture.json] [--explanations .explain/explanations.yaml]

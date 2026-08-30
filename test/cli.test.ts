@@ -55,18 +55,23 @@ async function writeExplanations(repo: string, yaml: string) {
   await writeFile(join(explainDir(repo), 'explanations.yaml'), yaml)
 }
 
-async function authorEveryChange(repo: string) {
-  const capture = await readCapture(repo)
-  const yaml =
-    `captureId: ${capture.captureId}\n` +
+function everyChangeYaml(captureId: string, changes: { id: string }[]): string {
+  return (
+    `captureId: ${captureId}\n` +
+    `title: A change set\n` +
     `sections:\n` +
-    capture.changes
+    changes
       .map(
         (change, index) =>
-          `  - title: Section ${index + 1}\n    body: Body\n    changes:\n      - ${change.id}\n`,
+          `  - title: Section ${index + 1}\n    steps:\n      - text: Text\n        changes:\n          - ${change.id}\n`,
       )
       .join('')
-  await writeExplanations(repo, yaml)
+  )
+}
+
+async function authorEveryChange(repo: string) {
+  const capture = await readCapture(repo)
+  await writeExplanations(repo, everyChangeYaml(capture.captureId, capture.changes))
 }
 
 async function fixtureRepo(): Promise<string> {
@@ -209,20 +214,21 @@ describe('inspect', () => {
 
     const yaml = await readExplanationsYaml(repo)
     expect(yaml).toContain(`captureId: ${capture.captureId}`)
+    expect(yaml).toContain('title: Name this change set')
     expect(yaml).toContain('sections: []')
   })
 
   test('never overwrites an authored explanations.yaml', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
-    await writeExplanations(repo, '# my authored file\ncaptureId: stale\nsections: []\n')
+    await writeExplanations(repo, '# my authored file\ncaptureId: stale\ntitle: Mine\nsections: []\n')
 
     const result = await runCli(['inspect'], repo)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Kept existing .explain/explanations.yaml')
     expect(await readExplanationsYaml(repo)).toBe(
-      '# my authored file\ncaptureId: stale\nsections: []\n',
+      '# my authored file\ncaptureId: stale\ntitle: Mine\nsections: []\n',
     )
   })
 
@@ -269,14 +275,7 @@ describe('inspect', () => {
     }
     await writeFile(
       join(repo, explanationsPath),
-      `captureId: ${capture.captureId}\n` +
-        `sections:\n` +
-        capture.changes
-          .map(
-            (change, index) =>
-              `  - title: Section ${index + 1}\n    body: Body\n    changes:\n      - ${change.id}\n`,
-          )
-          .join(''),
+everyChangeYaml(capture.captureId, capture.changes),
     )
 
     const check = await runCli(
@@ -415,7 +414,7 @@ describe('check', () => {
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toMatch(
-      /OK: \d+ sections cover \d+ of \d+ changes across \d+ files · capture /,
+      /OK: \d+ sections and \d+ steps cover \d+ of \d+ changes across \d+ files · capture /,
     )
     expect(result.stdout).toContain('Next:')
   })
@@ -462,7 +461,7 @@ describe('check', () => {
     const capture = await readCapture(repo)
     await writeExplanations(
       repo,
-      `captureId: ${capture.captureId}\nsections:\n  - title: 42\n    changes:\n      - change-001\n`,
+      `captureId: ${capture.captureId}\ntitle: A change set\nsections:\n  - title: 42\n    steps:\n      - changes:\n          - change-001\n`,
     )
 
     const result = await runCli(['check'], repo)
@@ -487,27 +486,41 @@ describe('check', () => {
     expect(result.stderr).toContain('No captured changes or authored sections')
   })
 
-  test('rejects unknown and duplicate assignments', async () => {
+  test('rejects an unknown change ID', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     const capture = await readCapture(repo)
     await writeExplanations(
       repo,
-      `captureId: ${capture.captureId}\nsections:\n  - title: Nope\n    changes:\n      - change-999\n`,
+      `captureId: ${capture.captureId}\ntitle: A change set\nsections:\n  - title: Nope\n    steps:\n      - changes:\n          - change-999\n`,
     )
 
     const unknown = await runCli(['check'], repo)
     expect(unknown.exitCode).not.toBe(0)
     expect(unknown.stderr).toContain('Unknown change ID: change-999')
+  })
 
+  // Showing a change twice is how an author builds an argument, so check reports it and
+  // still succeeds. Only an unexplained change fails.
+  test('reports a change shown more than once without failing', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    const capture = await readCapture(repo)
     const first = capture.changes[0]!
+    const rest = capture.changes.slice(1)
     await writeExplanations(
       repo,
-      `captureId: ${capture.captureId}\nsections:\n  - title: One\n    changes:\n      - ${first.id}\n  - title: Two\n    changes:\n      - ${first.id}\n`,
+      `captureId: ${capture.captureId}\n` +
+        `title: A change set\n` +
+        `sections:\n` +
+        `  - title: For context\n    steps:\n      - text: A first look.\n        changes:\n          - ${first.id}\n` +
+        `  - title: In detail\n    steps:\n      - text: The same hunk again.\n        changes:\n` +
+        [first, ...rest].map((change) => `          - ${change.id}\n`).join(''),
     )
-    const duplicate = await runCli(['check'], repo)
-    expect(duplicate.exitCode).not.toBe(0)
-    expect(duplicate.stderr).toContain('assigned more than once')
+
+    const result = await runCli(['check'], repo)
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain(`1 changes are shown more than once: ${first.id}`)
   })
 
   test('rejects a materialization mismatch', async () => {
@@ -539,7 +552,7 @@ describe('report', () => {
     expect(result.stdout).toContain('Wrote a')
     expect(result.stdout).toContain(output)
     const html = await readFile(output, 'utf8')
-    expect(html).toContain('Diffwalk change report')
+    expect(html).toContain('<title>A change set</title>')
     expect(html).toContain('Section 1')
     expect(html).not.toMatch(/<script[^>]+src=/)
   })
@@ -570,15 +583,18 @@ describe('export', () => {
     expect(result.stdout).toContain('Wrote')
     const document = JSON.parse(await readFile(output, 'utf8')) as {
       formatVersion: number
+      title: string
+      summary: string
       source: { kind: string }
-      sections: { explain: { title: string }; diff: string }[]
+      sections: { title: string; steps: { text: string; diff?: string }[] }[]
     }
     expect(document.formatVersion).toBe(1)
+    expect(document.title).toBe('A change set')
     expect(document.source.kind).toBe('working-tree')
     expect(document.sections.length).toBeGreaterThan(0)
     for (const section of document.sections) {
-      expect(section.explain.title).toMatch(/^Section \d+$/)
-      expect(section.diff).toContain('diff --git')
+      expect(section.title).toMatch(/^Section \d+$/)
+      expect(section.steps[0]!.diff).toContain('diff --git')
     }
   })
 

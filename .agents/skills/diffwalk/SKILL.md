@@ -15,26 +15,40 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
    - `diffwalk changes` for a concise summary, or `diffwalk changes --json` for structured IDs, paths, coordinates, before, and after.
    - `diffwalk change <id>` to read one captured change block.
    - `diffwalk file <path> --before` / `diffwalk file <path> --after` to read one captured file side.
-4. Edit the generated `.explain/explanations.yaml`. Treat its `captureId` as captured data: edit only `sections`. Each section must contain:
+4. Edit the generated `.explain/explanations.yaml`. Treat its `captureId` as captured data: write `title`, an optional `summary`, and `sections`:
 
    ```yaml
+   title: What this whole change set does
+   summary: |
+     Optional opening for someone deciding whether to read.
    sections:
      - title: A concise change title
-       body: |
-         Why this change exists and what it does.
-       changes:
-         - change-001
+       steps:
+         - text: |
+             Why this change exists and what it does.
+           changes:
+             - change-001
+         - text: |
+             What the next piece adds, once the first is understood.
+           changes:
+             - change-002
    ```
 
-   Keep `body` a complete explanation on its own. When a visual would help, add an
-   optional `html` field holding agent-authored markup such as cards, tables, or inline
-   SVG. The report inserts `html` after the rendered Markdown `body` and treats it as
-   trusted authored HTML; the terminal reader reads only `body`. Embed any assets —
-   including SVG — directly in the fragment so the report stays one self-contained file.
-   Do not put raw HTML in `body`: it is rendered as Markdown and raw tags are escaped.
+   `title` is required: it becomes the report heading and the browser tab, which is how
+   two shared links tell themselves apart.
 
-5. Assign every captured change ID exactly once. Do not invent IDs, reuse an ID, or leave an ID unassigned. A section may contain multiple IDs when they form one coherent explanation.
-6. Run `diffwalk check` before viewing or reporting. Fix any stale `captureId`, malformed YAML, duplicate or unknown assignment, unassigned ID, or materialization mismatch it reports.
+   A step carries `text`, `changes`, or both, so prose and diffs interleave in the order
+   you write them. Prefer several short steps over one long one: the point of a step is
+   that the reader sees the diff while the sentence about it is still on screen.
+
+   `text` is Markdown and inline HTML passes through, so a diagram can sit exactly where
+   the argument needs it. Embed every image as an inline `<svg>` or a `data:` URI: a
+   remote image URL renders in the local file but is blocked on the hosted report.
+
+5. Show every captured change at least once. Do not invent IDs or leave one unexplained.
+   Showing a change in more than one step is allowed when re-showing a hunk builds the
+   argument; `check` names the repeats and still succeeds.
+6. Run `diffwalk check` before viewing or reporting. Fix any stale `captureId`, malformed YAML, unknown ID, unexplained change, or materialization mismatch it reports.
 7. Run `diffwalk view` when the user asks to open or inspect the terminal reader. Exit with `q`.
 8. Run `diffwalk report` when the user asks for an HTML report. The report is one portable file with no CDN or external assets and opens as a local file with JavaScript enabled. Pass `--output <path>` when the user names a destination.
 
@@ -61,14 +75,14 @@ diffwalk report [--input .explain/capture.json] [--explanations .explain/explana
 diffwalk export [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output .explain/document.json]
 ```
 
-## Trusted-html boundary
+## Trusted-text boundary
 
-- `body` is rendered as Markdown in reports; raw HTML in `body` is escaped. All authored
-  markup goes in `html`, which the report inserts after the Markdown body as trusted HTML.
+- `text` and `summary` render as Markdown in reports, and inline HTML passes through, so
+  authored markup lands exactly where it was written.
 - The report embeds every document diff and renders it with the `@pierre/diffs` runtime
   bundled into the file; there is no CDN or external asset, so the report works offline.
 - A section whose diff cannot be parsed stops `diffwalk report` with a clear message; it
   is never silently dropped.
-- Build reports only from documents you or a trusted agent authored. `html` is inserted
-  without sanitization and can run scripts, so never add untrusted or third-party content
-  to a report.
+- Build reports only from documents you or a trusted agent authored. Authored markup is
+  inserted without sanitization and can run scripts, so never add untrusted or
+  third-party content to a report.

@@ -68,14 +68,16 @@ function simplePatch(oldLine = 'old', newLine = 'new'): string {
 function document(titles: string[] = ['A section']): ExplainDocument {
   return {
     formatVersion: 1,
+    title: 'A change set',
+    summary: '',
     source: {
       kind: 'working-tree',
       capturedAt: '2026-08-28T00:00:00.000Z',
       from: { revision: 'HEAD', commit: '0123456789abcdef' },
     },
     sections: titles.map((title, index) => ({
-      explain: { title, body: `Body for ${title}.` },
-      diff: simplePatch(`old${index}`, `new${index}`),
+      title,
+      steps: [{ text: `Text for ${title}.`, diff: simplePatch(`old${index}`, `new${index}`) }],
     })),
   }
 }
@@ -152,7 +154,7 @@ describe('publishing', () => {
 
   test('an oversized body is rejected without creating an object', async () => {
     const huge = document()
-    huge.sections[0]!.explain.body = 'x'.repeat(1024 * 1024 + 1)
+    huge.sections[0]!.steps[0]!.text = 'x'.repeat(1024 * 1024 + 1)
     const response = await worker.fetch(publishRequest(huge), env)
 
     expect(response.status).toBe(413)

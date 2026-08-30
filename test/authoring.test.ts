@@ -3,6 +3,7 @@ import { createHunkDiffFilesFromPatch } from 'hunkdiff/opentui'
 import {
   captureIdFor,
   createExplainCapture,
+  duplicatedChangeIds,
   materializeExplainDocument,
 } from '../src/authoring'
 import type { CaptureSource, ExplainCapture } from '../src/format'
@@ -30,10 +31,11 @@ function captureWithTwoChanges(): ExplainCapture {
 function allChangesAssigned(capture: ExplainCapture) {
   return {
     captureId: capture.captureId,
+    title: 'A change set',
+    summary: '',
     sections: capture.changes.map((change, index) => ({
       title: `Section ${index + 1}`,
-      body: '',
-      changes: [change.id],
+      steps: [{ text: '', changes: [change.id] }],
     })),
   }
 }
@@ -124,31 +126,68 @@ describe('explain capture', () => {
 })
 
 describe('explain materialization', () => {
-  test('materializes each explanation as an independently parseable Git patch', () => {
+  test('materializes each step as an independently parseable Git patch', () => {
     const capture = captureWithTwoChanges()
     const explanations = {
       captureId: capture.captureId,
+      title: 'Two changes, explained out of order',
+      summary: 'An opening that orients the reader.',
       sections: [
-        { title: 'Later change first', body: 'Explain E before B.', changes: ['change-002'] },
-        { title: 'Earlier change second', body: 'Then explain B.', changes: ['change-001'] },
+        {
+          title: 'Later change first',
+          steps: [{ text: 'Explain E before B.', changes: ['change-002'] }],
+        },
+        {
+          title: 'Earlier change second',
+          steps: [{ text: 'Then explain B.', changes: ['change-001'] }],
+        },
       ],
     }
 
     const document = materializeExplainDocument(capture, explanations)
 
     expect(document.formatVersion).toBe(1)
+    expect(document.title).toBe('Two changes, explained out of order')
+    expect(document.summary).toBe('An opening that orients the reader.')
     expect(document.source).toEqual(capture.source)
-    expect(document.sections.map((section) => section.explain.title)).toEqual([
+    expect(document.sections.map((section) => section.title)).toEqual([
       'Later change first',
       'Earlier change second',
     ])
-    expect(document.sections[0]!.diff).toContain('+E')
-    expect(document.sections[0]!.diff).not.toContain('+B')
-    expect(document.sections[1]!.diff).toContain('+B')
-    expect(document.sections[1]!.diff).not.toContain('+E')
+    expect(document.sections[0]!.steps[0]!.diff).toContain('+E')
+    expect(document.sections[0]!.steps[0]!.diff).not.toContain('+B')
+    expect(document.sections[1]!.steps[0]!.diff).toContain('+B')
+    expect(document.sections[1]!.steps[0]!.diff).not.toContain('+E')
     for (const section of document.sections) {
-      expect(createHunkDiffFilesFromPatch(section.diff)).toHaveLength(1)
+      expect(createHunkDiffFilesFromPatch(section.steps[0]!.diff!)).toHaveLength(1)
     }
+  })
+
+  test('interleaves text-only steps with steps that carry a diff', () => {
+    const capture = captureWithTwoChanges()
+    const explanations = {
+      captureId: capture.captureId,
+      title: 'Interleaved',
+      summary: '',
+      sections: [
+        {
+          title: 'Build the argument in order',
+          steps: [
+            { text: 'First the setup, with no diff of its own.' },
+            { text: 'Then the change it prepares.', changes: ['change-001'] },
+            { text: 'And finally the payoff.', changes: ['change-002'] },
+          ],
+        },
+      ],
+    }
+
+    const document = materializeExplainDocument(capture, explanations)
+    const steps = document.sections[0]!.steps
+
+    expect(steps).toHaveLength(3)
+    expect(steps[0]!.diff).toBeUndefined()
+    expect(steps[1]!.diff).toContain('+B')
+    expect(steps[2]!.diff).toContain('+E')
   })
 
   test('requires the explanations to target the captured captureId', () => {
@@ -156,36 +195,60 @@ describe('explain materialization', () => {
     const explanations = allChangesAssigned(capture)
     explanations.captureId = 'f'.repeat(64)
 
-    expect(() => materializeExplainDocument(capture, explanations)).toThrow(
-      /capture /,
-    )
+    expect(() => materializeExplainDocument(capture, explanations)).toThrow(/capture /)
   })
 
-  test('requires every change ID exactly once', () => {
+  test('requires every change to be shown at least once and to be known', () => {
     const capture = captureWithTwoChanges()
 
-    const unassigned = {
+    const unexplained = {
       captureId: capture.captureId,
-      sections: [{ title: 'One', body: '', changes: ['change-001'] }],
+      title: 'Partial',
+      summary: '',
+      sections: [{ title: 'One', steps: [{ text: '', changes: ['change-001'] }] }],
     }
-    expect(() => materializeExplainDocument(capture, unassigned)).toThrow(
+    expect(() => materializeExplainDocument(capture, unexplained)).toThrow(
       'Unassigned change IDs: change-002',
     )
 
-    const duplicate = {
-      captureId: capture.captureId,
-      sections: [
-        { title: 'One', body: '', changes: ['change-001'] },
-        { title: 'Again', body: '', changes: ['change-001', 'change-002'] },
-      ],
-    }
-    expect(() => materializeExplainDocument(capture, duplicate)).toThrow('assigned more than once')
-
     const unknown = {
       captureId: capture.captureId,
-      sections: [{ title: 'Unknown', body: '', changes: ['change-999'] }],
+      title: 'Unknown',
+      summary: '',
+      sections: [{ title: 'Unknown', steps: [{ text: '', changes: ['change-999'] }] }],
     }
-    expect(() => materializeExplainDocument(capture, unknown)).toThrow('Unknown change ID: change-999')
+    expect(() => materializeExplainDocument(capture, unknown)).toThrow(
+      'Unknown change ID: change-999',
+    )
+  })
+
+  // Re-showing a hunk is how an author builds an argument, so it materializes twice
+  // instead of failing. `check` reports the repeat; only an unexplained change fails.
+  test('allows the same change to be shown more than once', () => {
+    const capture = captureWithTwoChanges()
+    const explanations = {
+      captureId: capture.captureId,
+      title: 'Shown twice',
+      summary: '',
+      sections: [
+        { title: 'For context', steps: [{ text: 'A first look.', changes: ['change-001'] }] },
+        {
+          title: 'In detail',
+          steps: [{ text: 'The same hunk, argued.', changes: ['change-001', 'change-002'] }],
+        },
+      ],
+    }
+
+    const document = materializeExplainDocument(capture, explanations)
+
+    expect(document.sections[0]!.steps[0]!.diff).toContain('+B')
+    expect(document.sections[1]!.steps[0]!.diff).toContain('+B')
+    expect(duplicatedChangeIds(explanations)).toEqual(['change-001'])
+  })
+
+  test('reports nothing duplicated when every change is shown once', () => {
+    const capture = captureWithTwoChanges()
+    expect(duplicatedChangeIds(allChangesAssigned(capture))).toEqual([])
   })
 
   test('rejects a change block that no longer matches captured content', () => {
@@ -206,41 +269,5 @@ describe('explain materialization', () => {
     expect(() => materializeExplainDocument(capture, allChangesAssigned(capture))).toThrow(
       'Capture contains duplicate change IDs',
     )
-  })
-
-  test('rejects a section that lists the same change ID twice', () => {
-    const capture = captureWithTwoChanges()
-    const explanations = {
-      captureId: capture.captureId,
-      sections: [
-        { title: 'Repeated', body: '', changes: ['change-001', 'change-001'] },
-        { title: 'Other', body: '', changes: ['change-002'] },
-      ],
-    }
-
-    expect(() => materializeExplainDocument(capture, explanations)).toThrow(
-      'assigned more than once',
-    )
-  })
-
-  test('carries optional html through materialization', () => {
-    const capture = captureWithTwoChanges()
-    const fragment = '<figure><svg viewBox="0 0 640 180" role="img"><rect width="10" height="10"/></svg></figure>'
-    const explanations = {
-      captureId: capture.captureId,
-      sections: [
-        { title: 'Later change first', body: 'Explain E before B.', html: fragment, changes: ['change-002'] },
-        { title: 'Earlier change second', body: 'Then explain B.', changes: ['change-001'] },
-      ],
-    }
-
-    const document = materializeExplainDocument(capture, explanations)
-
-    expect(document.sections[0]!.explain.html).toBe(fragment)
-    expect(document.sections[0]!.explain.body).toBe('Explain E before B.')
-    expect(document.sections[1]!.explain.html).toBeUndefined()
-    for (const section of document.sections) {
-      expect(createHunkDiffFilesFromPatch(section.diff)).toHaveLength(1)
-    }
   })
 })

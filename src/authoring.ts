@@ -96,6 +96,20 @@ export function stalePairingMessage(capture: ExplainCapture, explanations: Expla
   return `The explanations target capture ${explanations.captureId} but capture.json holds ${capture.captureId}. The captured working tree changed after the explanations were authored. Edit .explain/explanations.yaml to the new captureId and change IDs, or delete it and re-run \`diffwalk inspect\` for a fresh skeleton.`
 }
 
+export function duplicatedChangeIds(explanations: Explanations): string[] {
+  const seen = new Set<string>()
+  const repeated = new Set<string>()
+  for (const section of explanations.sections) {
+    for (const step of section.steps) {
+      for (const id of step.changes ?? []) {
+        if (seen.has(id)) repeated.add(id)
+        seen.add(id)
+      }
+    }
+  }
+  return [...repeated].sort()
+}
+
 export function materializeExplainDocument(
   capture: ExplainCapture,
   explanations: Explanations,
@@ -114,47 +128,46 @@ export function materializeExplainDocument(
     throw new Error('Capture contains duplicate change IDs')
   }
 
-  const assigned = new Set<string>()
-  const sections = explanations.sections.map((section) => {
-    const selected = section.changes.map((id) => {
-      const change = changesById.get(id)
-      if (!change) throw new Error(`Unknown change ID: ${id}`)
-      if (assigned.has(id)) throw new Error(`Change ID is assigned more than once: ${id}`)
-      assigned.add(id)
-      return change
-    })
+  const shown = new Set<string>()
+  const sections = explanations.sections.map((section) => ({
+    title: section.title,
+    steps: section.steps.map((step) => {
+      if (step.changes === undefined) return { text: step.text }
 
-    const changesByPath = new Map<string, ChangeBlock[]>()
-    for (const change of selected) {
-      const fileChanges = changesByPath.get(change.path) ?? []
-      fileChanges.push(change)
-      changesByPath.set(change.path, fileChanges)
-    }
+      const selected = step.changes.map((id) => {
+        const change = changesById.get(id)
+        if (!change) throw new Error(`Unknown change ID: ${id}`)
+        shown.add(id)
+        return change
+      })
 
-    const patches: StructuredPatch[] = []
-    for (const [path, fileChanges] of changesByPath) {
-      const file = filesByPath.get(path)
-      if (!file) throw new Error(`Change references missing file: ${path}`)
-      patches.push(createFilePatch(file, fileChanges))
-    }
+      const changesByPath = new Map<string, ChangeBlock[]>()
+      for (const change of selected) {
+        const fileChanges = changesByPath.get(change.path) ?? []
+        fileChanges.push(change)
+        changesByPath.set(change.path, fileChanges)
+      }
 
-    return {
-      explain: {
-        title: section.title,
-        body: section.body,
-        ...(section.html !== undefined ? { html: section.html } : {}),
-      },
-      diff: formatPatch(patches),
-    }
-  })
+      const patches: StructuredPatch[] = []
+      for (const [path, fileChanges] of changesByPath) {
+        const file = filesByPath.get(path)
+        if (!file) throw new Error(`Change references missing file: ${path}`)
+        patches.push(createFilePatch(file, fileChanges))
+      }
 
-  const unassigned = capture.changes.filter((change) => !assigned.has(change.id))
-  if (unassigned.length > 0) {
-    throw new Error(`Unassigned change IDs: ${unassigned.map((change) => change.id).join(', ')}`)
+      return { text: step.text, diff: formatPatch(patches) }
+    }),
+  }))
+
+  const unshown = capture.changes.filter((change) => !shown.has(change.id))
+  if (unshown.length > 0) {
+    throw new Error(`Unassigned change IDs: ${unshown.map((change) => change.id).join(', ')}`)
   }
 
   return explainDocumentSchema.parse({
     formatVersion: 1,
+    title: explanations.title,
+    summary: explanations.summary,
     source: capture.source,
     sections,
   })

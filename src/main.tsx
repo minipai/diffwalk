@@ -3,7 +3,7 @@ import { createCliRenderer, type KeyEvent, type ScrollBoxRenderable } from '@ope
 import { createRoot, useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { HunkDiffBody, type HunkDiffLayout, type HunkDiffFile } from 'hunkdiff/opentui'
 import { useEffect, useRef, useState } from 'react'
-import { explainSectionsFromDocument, type ExplainSection } from './document'
+import { explainSectionsFromDocument, type ExplainSection, type ExplainStep } from './document'
 import type { ExplainDocument } from './format'
 import {
   createFoldState,
@@ -12,6 +12,7 @@ import {
   filePath,
   moveCursor,
   rowId,
+  sectionFileCount,
   toggleRow,
   visibleTreeRows,
   type ReaderCursor,
@@ -109,17 +110,32 @@ export function ExplainApp({ sections, onQuit }: { sections: ExplainSection[]; o
             paddingRight: 1,
           }}
         >
-          {rows.map((row, index) =>
-            row.kind === 'explain' ? (
-              <ExplainNode
-                key={row.section.id}
-                id={rowId(row)}
-                section={row.section}
-                folded={row.folded}
-                selected={index === cursorRowIndex}
-                onToggle={() => toggleRowAt(row)}
-              />
-            ) : (
+          {rows.map((row, index) => {
+            if (row.kind === 'explain') {
+              return (
+                <ExplainNode
+                  key={row.section.id}
+                  id={rowId(row)}
+                  section={row.section}
+                  folded={row.folded}
+                  selected={index === cursorRowIndex}
+                  onToggle={() => toggleRowAt(row)}
+                />
+              )
+            }
+            if (row.kind === 'step') {
+              return (
+                <StepNode
+                  key={row.step.id}
+                  id={rowId(row)}
+                  step={row.step}
+                  folded={row.folded}
+                  selected={index === cursorRowIndex}
+                  onToggle={() => toggleRowAt(row)}
+                />
+              )
+            }
+            return (
               <FileNode
                 key={row.file.id}
                 id={rowId(row)}
@@ -130,8 +146,8 @@ export function ExplainApp({ sections, onQuit }: { sections: ExplainSection[]; o
                 width={Math.max(8, mainWidth - 6)}
                 onToggle={() => toggleRowAt(row)}
               />
-            ),
-          )}
+            )
+          })}
         </box>
       </scrollbox>
     </box>
@@ -151,7 +167,42 @@ function ExplainNode({
   selected: boolean
   onToggle: () => void
 }) {
-  const fileCount = section.files.length
+  const fileCount = sectionFileCount(section)
+  return (
+    <box
+      id={id}
+      style={{
+        width: '100%',
+        height: 1,
+        flexDirection: 'row',
+        backgroundColor: selected ? colors.focus : folded ? colors.panel : colors.panelActive,
+      }}
+      onMouseUp={onToggle}
+    >
+      <text fg={colors.accent}>{`${folded ? '▸' : '▾'} `}</text>
+      <text fg={selected ? colors.accent : colors.primary}>{section.title}</text>
+      <text fg={colors.primary}>{` · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`}</text>
+    </box>
+  )
+}
+
+function StepNode({
+  id,
+  step,
+  folded,
+  selected,
+  onToggle,
+}: {
+  id: string
+  step: ExplainStep
+  folded: boolean
+  selected: boolean
+  onToggle: () => void
+}) {
+  // The first line is the row itself, the way a file path is; the rest unfolds beneath it,
+  // so navigation stays one line per node.
+  const [head = '', ...rest] = step.text.split('\n')
+  const body = rest.join('\n').replace(/\s+$/, '')
   return (
     <box style={{ width: '100%', flexDirection: 'column' }}>
       <box
@@ -160,15 +211,14 @@ function ExplainNode({
           width: '100%',
           height: 1,
           flexDirection: 'row',
-          backgroundColor: selected ? colors.focus : folded ? colors.panel : colors.panelActive,
+          backgroundColor: selected ? colors.focus : colors.background,
         }}
         onMouseUp={onToggle}
       >
         <text fg={colors.accent}>{`${folded ? '▸' : '▾'} `}</text>
-        <text fg={selected ? colors.accent : colors.primary}>{section.title}</text>
-        <text fg={colors.primary}>{` · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`}</text>
+        <text fg={selected ? colors.accent : colors.primary}>{head}</text>
       </box>
-      {!folded && (
+      {!folded && body !== '' && (
         <box
           style={{
             width: '100%',
@@ -189,7 +239,7 @@ function ExplainNode({
               paddingRight: 1,
             }}
           >
-            <text fg={colors.primary}>{section.body || 'No explanation body.'}</text>
+            <text fg={colors.primary}>{body}</text>
           </box>
         </box>
       )}

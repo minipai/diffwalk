@@ -21,22 +21,33 @@ function hunkDiff(path: string, oldLine: string, newLine: string): string {
   ].join('\n')
 }
 
-function sectionDocument(...diffs: { title: string; body: string; diff: string }[]): string {
+function sectionDocument(
+  ...sections: { title: string; steps: { text?: string; diff?: string }[] }[]
+): string {
   return JSON.stringify({
     formatVersion: 1,
+    title: 'A change set',
+    summary: '',
     source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' },
-    sections: diffs.map(({ title, body, diff }) => ({ explain: { title, body }, diff })),
+    sections: sections.map(({ title, steps }) => ({
+      title,
+      steps: steps.map((step) => ({
+        text: step.text ?? '',
+        ...(step.diff ? { diff: step.diff } : {}),
+      })),
+    })),
   })
 }
 
+// These fixtures use steps without text, so the tree is explanation over file and the
+// navigation assertions stay about that shape. Step rows have their own describe below.
 function twoSectionFixture(): ExplainSection[] {
   return parseExplainSectionsJson(
     sectionDocument(
-      { title: 'First touch', body: 'Changes line one.', diff: hunkDiff('src/shared.ts', 'one', 'one!') },
+      { title: 'First touch', steps: [{ diff: hunkDiff('src/shared.ts', 'one', 'one!') }] },
       {
         title: 'Second touch',
-        body: 'Changes two files.',
-        diff: [hunkDiff('src/a.ts', 'a', 'b'), hunkDiff('src/b.ts', 'c', 'd')].join(''),
+        steps: [{ diff: [hunkDiff('src/a.ts', 'a', 'b'), hunkDiff('src/b.ts', 'c', 'd')].join('') }],
       },
     ),
   )
@@ -47,10 +58,21 @@ function manySectionFixture(count: number): ExplainSection[] {
     sectionDocument(
       ...Array.from({ length: count }, (_, index) => ({
         title: `Explanation ${index}`,
-        body: 'A body.',
-        diff: hunkDiff(`src/file-${index}.ts`, `${index}`, `${index}!`),
+        steps: [{ diff: hunkDiff(`src/file-${index}.ts`, `${index}`, `${index}!`) }],
       })),
     ),
+  )
+}
+
+function interleavedFixture(): ExplainSection[] {
+  return parseExplainSectionsJson(
+    sectionDocument({
+      title: 'Built in order',
+      steps: [
+        { text: 'Setup first.\nWith a second line.' },
+        { text: 'Then the change.', diff: hunkDiff('src/a.ts', 'a', 'b') },
+      ],
+    }),
   )
 }
 
@@ -161,7 +183,6 @@ describe('reader keyboard navigation', () => {
     expect(focusedLineTexts(setup)).toEqual(['▸ Second touch · 2 files'])
     expect(frameContains(setup, 'src/a.ts')).toBe(false)
     expect(frameContains(setup, 'src/b.ts')).toBe(false)
-    expect(frameContains(setup, 'Changes two files.')).toBe(false)
 
     await press(setup, 'RETURN')
     expect(focusedLineTexts(setup)).toEqual(['▾ Second touch · 2 files'])
@@ -278,6 +299,47 @@ describe('reader mouse folding', () => {
     expect(focusedLineTexts(setup)).toEqual(['▸ Second touch · 2 files'])
     expect(frameContains(setup, 'src/a.ts')).toBe(false)
     expect(frameContains(setup, 'src/b.ts')).toBe(false)
+    await teardown(setup)
+  })
+})
+
+describe('reader step rows', () => {
+  test('a step with text is its own row between the explanation and its diff', async () => {
+    const setup = await renderApp(interleavedFixture())
+
+    expect(focusedLineTexts(setup)).toEqual(['▾ Built in order · 1 file'])
+
+    await press(setup, 'j')
+    expect(focusedLineTexts(setup)).toEqual(['▾ Setup first.'])
+    expect(frameContains(setup, 'With a second line.')).toBe(true)
+
+    await press(setup, 'j')
+    expect(focusedLineTexts(setup)).toEqual(['▾ Then the change.'])
+
+    await press(setup, 'j')
+    expect(focusedLineTexts(setup)).toEqual(['▾ src/a.ts  +1 −1'])
+    await teardown(setup)
+  })
+
+  test('folding a step hides the rest of its text and its diff', async () => {
+    const setup = await renderApp(interleavedFixture())
+
+    await press(setup, 'j')
+    await press(setup, 'RETURN')
+    expect(focusedLineTexts(setup)).toEqual(['▸ Setup first.'])
+    expect(frameContains(setup, 'With a second line.')).toBe(false)
+    expect(frameContains(setup, 'Then the change.')).toBe(true)
+
+    await press(setup, 'j')
+    await press(setup, 'RETURN')
+    expect(focusedLineTexts(setup)).toEqual(['▸ Then the change.'])
+    expect(frameContains(setup, 'src/a.ts')).toBe(false)
+    await teardown(setup)
+  })
+
+  test('the explanation row counts files across all of its steps', async () => {
+    const setup = await renderApp(interleavedFixture())
+    expect(frameContains(setup, 'Built in order · 1 file')).toBe(true)
     await teardown(setup)
   })
 })

@@ -16,11 +16,18 @@ afterEach(() => {
 
 const document: ExplainDocument = {
   formatVersion: 1,
+  title: 'A change set',
+  summary: '',
   source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' },
   sections: [
     {
-      explain: { title: 'A section', body: 'Body.' },
-      diff: 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n',
+      title: 'A section',
+      steps: [
+        {
+          text: 'Text.',
+          diff: 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n',
+        },
+      ],
     },
   ],
 }

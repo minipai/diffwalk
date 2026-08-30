@@ -1,8 +1,10 @@
 import { Marked, type RendererObject, type Tokens } from 'marked'
 
 const renderer: RendererObject = {
+  // Authored text is trusted, so inline HTML passes through: that is how a diagram
+  // reaches the page. The report origin's Content Security Policy is what contains it.
   html({ text }: Tokens.HTML | Tokens.Tag): string {
-    return escapeHtml(text)
+    return text
   },
   link({ href, title, tokens }: Tokens.Link) {
     const label = this.parser.parseInline(tokens)
@@ -10,8 +12,7 @@ const renderer: RendererObject = {
     const titleAttribute = title ? ` title="${escapeHtml(title)}"` : ''
     return `<a href="${escapeHtml(href)}"${titleAttribute}>${label}</a>`
   },
-  image({ href, title, text, tokens }: Tokens.Image) {
-    if (!href.startsWith('data:image/')) return escapeHtml(text)
+  image({ href, title, tokens }: Tokens.Image) {
     const titleAttribute = title ? ` title="${escapeHtml(title)}"` : ''
     const alt = this.parser.parseInline(tokens)
     return `<img src="${escapeHtml(href)}" alt="${alt}"${titleAttribute}>`

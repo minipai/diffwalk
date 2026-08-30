@@ -43,48 +43,64 @@ const capture = {
   ],
 } as const
 
-describe('explanation schema html field', () => {
-  test('a version 1 document section accepts optional html', () => {
+describe('document schema steps', () => {
+  test('a version 1 document section accepts interleaved steps', () => {
     const document = explainDocumentSchema.parse({
       formatVersion: 1,
+      title: 'Add a card',
+      summary: 'Why the card exists.',
       source: proposalSource,
       sections: [
         {
-          explain: {
-            title: 'Add a card',
-            body: 'A body that stands alone.',
-            html: '<figure><svg viewBox="0 0 10 10"></svg></figure>',
-          },
-          diff: diff(),
+          title: 'Add a card',
+          steps: [
+            { text: 'Text that stands alone.' },
+            { text: 'And the change it describes.', diff: diff() },
+          ],
         },
       ],
     })
 
-    expect(document.sections[0]!.explain.html).toBe(
-      '<figure><svg viewBox="0 0 10 10"></svg></figure>',
-    )
-    expect(document.sections[0]!.explain.body).toBe('A body that stands alone.')
+    expect(document.title).toBe('Add a card')
+    expect(document.summary).toBe('Why the card exists.')
+    expect(document.sections[0]!.steps[0]!.diff).toBeUndefined()
+    expect(document.sections[0]!.steps[1]!.diff).toContain('diff --git')
   })
 
-  test('a version 1 document section parses without html', () => {
+  test('a summary defaults to empty and a title is required', () => {
     const document = explainDocumentSchema.parse({
       formatVersion: 1,
+      title: 'Plain',
       source: workingTreeSource,
-      sections: [{ explain: { title: 'Plain', body: 'No html.' }, diff: diff() }],
+      sections: [{ title: 'Plain', steps: [{ text: 'No summary.', diff: diff() }] }],
     })
 
-    expect(document.sections[0]!.explain.html).toBeUndefined()
+    expect(document.summary).toBe('')
     expect(document.formatVersion).toBe(1)
-  })
-
-  test('unknown explanation fields stay rejected', () => {
     expect(() =>
       explainDocumentSchema.parse({
         formatVersion: 1,
+        source: workingTreeSource,
+        sections: [{ title: 'Plain', steps: [{ text: 'x', diff: diff() }] }],
+      }),
+    ).toThrow()
+  })
+
+  test('unknown step fields and empty steps stay rejected', () => {
+    expect(() =>
+      explainDocumentSchema.parse({
+        formatVersion: 1,
+        title: 'Bad',
         source: proposalSource,
-        sections: [
-          { explain: { title: 'Bad', body: 'x', bodyHtml: '<b>x</b>' }, diff: diff() },
-        ],
+        sections: [{ title: 'Bad', steps: [{ text: 'x', html: '<b>x</b>' }] }],
+      }),
+    ).toThrow()
+    expect(() =>
+      explainDocumentSchema.parse({
+        formatVersion: 1,
+        title: 'Bad',
+        source: proposalSource,
+        sections: [{ title: 'Bad', steps: [{ text: '  ' }] }],
       }),
     ).toThrow()
   })
@@ -95,8 +111,9 @@ describe('document source variants', () => {
     for (const source of [commitDiffSource, workingTreeSource, proposalSource]) {
       const document = explainDocumentSchema.parse({
         formatVersion: 1,
+        title: 'T',
         source,
-        sections: [{ explain: { title: 'T', body: 'b' }, diff: diff() }],
+        sections: [{ title: 'T', steps: [{ text: 'b', diff: diff() }] }],
       })
       expect(document.source).toEqual(source)
     }
@@ -114,15 +131,17 @@ describe('document source variants', () => {
     expect(() =>
       explainDocumentSchema.parse({
         formatVersion: 1,
+        title: 'T',
         source: legacyGit,
-        sections: [{ explain: { title: 'T', body: 'b' }, diff: diff() }],
+        sections: [{ title: 'T', steps: [{ text: 'b', diff: diff() }] }],
       }),
     ).toThrow()
     expect(() =>
       explainDocumentSchema.parse({
         formatVersion: 1,
+        title: 'T',
         source: legacyProposed,
-        sections: [{ explain: { title: 'T', body: 'b' }, diff: diff() }],
+        sections: [{ title: 'T', steps: [{ text: 'b', diff: diff() }] }],
       }),
     ).toThrow()
   })
@@ -142,8 +161,9 @@ describe('document source variants', () => {
     for (const source of cases) {
       const input: unknown = {
         formatVersion: 1,
+        title: 'T',
         source,
-        sections: [{ explain: { title: 'T', body: 'b' }, diff: diff() }],
+        sections: [{ title: 'T', steps: [{ text: 'b', diff: diff() }] }],
       }
       expect(() => explainDocumentSchema.parse(input)).toThrow()
     }
@@ -195,62 +215,89 @@ describe('capture schema', () => {
 })
 
 describe('explanations schema', () => {
-  test('accepts ordered sections with change IDs', () => {
+  test('accepts ordered sections of steps', () => {
     const parsed = explanationsSchema.parse({
       captureId: 'b'.repeat(64),
+      title: 'A change set',
       sections: [
         {
           title: 'Keep the greeting concise',
-          body: 'The extra phrase is no longer needed.',
-          changes: ['change-001'],
+          steps: [
+            { text: 'The extra phrase is no longer needed.', changes: ['change-001'] },
+          ],
         },
         {
-          title: 'With a fragment',
-          html: '<figure><svg viewBox="0 0 1 1"></svg></figure>',
-          changes: ['change-001', 'change-002'],
+          title: 'With a diagram',
+          steps: [
+            { text: '<figure><svg viewBox="0 0 1 1"></svg></figure>' },
+            { changes: ['change-001', 'change-002'] },
+          ],
         },
       ],
     })
 
     expect(parsed.sections).toHaveLength(2)
-    expect(parsed.sections[0]!.body).toBe('The extra phrase is no longer needed.')
-    expect(parsed.sections[0]!.html).toBeUndefined()
-    expect(parsed.sections[1]!.html).toContain('<figure>')
+    expect(parsed.summary).toBe('')
+    expect(parsed.sections[0]!.steps[0]!.text).toBe('The extra phrase is no longer needed.')
+    expect(parsed.sections[1]!.steps[0]!.changes).toBeUndefined()
+    expect(parsed.sections[1]!.steps[1]!.text).toBe('')
   })
 
-  test('body defaults to empty and html is optional', () => {
+  test('text defaults to empty and changes are optional', () => {
     const parsed = explanationsSchema.parse({
       captureId: 'c'.repeat(64),
-      sections: [{ title: 'Terse', changes: ['change-001'] }],
+      title: 'Terse',
+      sections: [{ title: 'Terse', steps: [{ changes: ['change-001'] }] }],
     })
 
-    expect(parsed.sections[0]!.body).toBe('')
+    expect(parsed.sections[0]!.steps[0]!.text).toBe('')
   })
 
-  test('rejects missing captureId or sections without changes, allows empty sections', () => {
-    expect(() =>
-      explanationsSchema.parse({ sections: [{ title: 'x', changes: ['change-001'] }] }),
-    ).toThrow()
-    expect(explanationsSchema.parse({ captureId: 'x', sections: [] }).sections).toEqual([])
+  test('a step needs text, changes, or both', () => {
     expect(() =>
       explanationsSchema.parse({
         captureId: 'x',
-        sections: [{ title: 'x', body: 'no ids' }],
+        title: 'x',
+        sections: [{ title: 'x', steps: [{ text: '' }] }],
       }),
     ).toThrow()
   })
 
-  test('rejects unknown section fields and empty titles', () => {
+  test('rejects a missing captureId or title, allows empty sections', () => {
+    expect(() =>
+      explanationsSchema.parse({
+        title: 'x',
+        sections: [{ title: 'x', steps: [{ changes: ['change-001'] }] }],
+      }),
+    ).toThrow()
+    expect(() =>
+      explanationsSchema.parse({ captureId: 'x', sections: [] }),
+    ).toThrow()
+    expect(
+      explanationsSchema.parse({ captureId: 'x', title: 'x', sections: [] }).sections,
+    ).toEqual([])
+  })
+
+  test('rejects unknown section fields, unknown step fields, and empty titles', () => {
     expect(() =>
       explanationsSchema.parse({
         captureId: 'x',
-        sections: [{ title: 'x', changes: ['c'], explain: {} }],
+        title: 'x',
+        sections: [{ title: 'x', body: 'gone', steps: [{ changes: ['c'] }] }],
       }),
     ).toThrow()
     expect(() =>
       explanationsSchema.parse({
         captureId: 'x',
-        sections: [{ title: '', changes: ['c'] }],
+        title: 'x',
+        sections: [{ title: 'x', steps: [{ html: 'gone', changes: ['c'] }] }],
+      }),
+    ).toThrow()
+    expect(() =>
+      explanationsSchema.parse({
+        captureId: 'x',
+        title: 'x',
+        sections: [{ title: '', steps: [{ changes: ['c'] }] }],
       }),
     ).toThrow()
   })

@@ -15,14 +15,15 @@ export interface HostedAssets {
   clientSrc: string
 }
 
-interface ReportSectionData {
+interface ReportDiffMount {
+  section: number
+  step: number
   diff: string
-  fileCount: number
 }
 
 interface ReportData {
   source: unknown
-  sections: ReportSectionData[]
+  diffs: ReportDiffMount[]
 }
 
 interface ReportBody {
@@ -35,28 +36,36 @@ function renderReportBody(
   document: ExplainDocument,
   options: ReportOptions = {},
 ): ReportBody {
-  const title = options.title ?? 'Diffwalk change report'
+  const title = options.title ?? document.title
   const layout = options.layout ?? 'split'
   const sections = document.sections.map(renderSection)
   const files = sections.reduce((total, section) => total + section.fileCount, 0)
-  const reviewMap = renderReviewMap(
-    document.sections.map((section) => section.explain.title),
-    { sections: sections.length, files },
-  )
-  const markup = `<header class="report-header">
-  <h1>${escapeHtml(title)}</h1>
-  <dl class="source-metadata">
-    ${renderSourceMetadata(document.source)}
-  </dl>
-  <form class="layout-form" data-layout-form aria-label="Diff layout">
+  const layoutForm = `<form class="layout-form" data-layout-form aria-label="Diff layout">
     <label><input type="radio" name="layout" value="split" ${layout === 'split' ? 'checked' : ''}> Split</label>
     <label><input type="radio" name="layout" value="unified" ${layout === 'unified' ? 'checked' : ''}> Unified</label>
     <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
-  </form>
-</header>
-<div class="review-workspace">
+  </form>`
+  const reviewMap = renderReviewMap(
+    document.sections.map((section) => section.title),
+    { sections: sections.length, files },
+    layoutForm,
+  )
+  const summary =
+    document.summary.trim() === ''
+      ? ''
+      : `\n  <div class="cover-summary prose">${renderMarkdown(document.summary)}</div>`
+  // Title, provenance, and summary are one opening, so they share one card. The layout
+  // toggle lives in the sticky map instead: it is a reading control, wanted while
+  // scrolled into a diff, and the card scrolls away.
+  const markup = `<div class="review-workspace">
 ${reviewMap}
 <main>
+<section class="report-cover">
+  <h1>${escapeHtml(title)}</h1>
+  <dl class="source-metadata">
+    ${renderSourceMetadata(document.source)}
+  </dl>${summary}
+</section>
 ${sections.map((section) => section.markup).join('\n')}
 </main>
 </div>`
@@ -65,7 +74,7 @@ ${sections.map((section) => section.markup).join('\n')}
     markup,
     data: {
       source: document.source,
-      sections: sections.map((section) => ({ diff: section.diff, fileCount: section.fileCount })),
+      diffs: sections.flatMap((section) => section.diffs),
     },
   }
 }
@@ -114,45 +123,57 @@ ${client}
 
 function renderSection(section: ExplainDocument['sections'][number], index: number): {
   markup: string
-  diff: string
   fileCount: number
+  diffs: ReportDiffMount[]
 } {
-  let files: FileDiffMetadata[]
-  try {
-    files = parseSectionPatch(section.diff)
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    throw new Error(`Section "${section.explain.title}" has an unparseable diff: ${detail}`)
-  }
-  const filesMarkup = files
-    .map((file, fileIndex) => {
-      const stats = fileDiffStats(file)
-      return `<details class="file" open>
+  const diffs: ReportDiffMount[] = []
+  let fileCount = 0
+
+  const steps = section.steps.map((step, stepIndex) => {
+    const text = step.text.trim()
+    const textMarkup = text === '' ? '' : `<div class="step-text prose">${renderMarkdown(text)}</div>`
+    if (step.diff === undefined) {
+      return `<div class="step" data-step-index="${stepIndex}">${textMarkup}</div>`
+    }
+
+    let files: FileDiffMetadata[]
+    try {
+      files = parseSectionPatch(step.diff)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`Section "${section.title}" has an unparseable diff: ${detail}`)
+    }
+    fileCount += files.length
+    diffs.push({ section: index, step: stepIndex, diff: step.diff })
+
+    const filesMarkup = files
+      .map((file, fileIndex) => {
+        const stats = fileDiffStats(file)
+        return `<details class="file" open>
   <summary class="file-summary">${escapeHtml(fileDiffLabel(file))} <span class="file-stats">+${stats.additions} −${stats.deletions}</span></summary>
-  <div class="file-diff" id="section-${index}-file-${fileIndex}"></div>
+  <div class="file-diff" id="section-${index}-step-${stepIndex}-file-${fileIndex}"></div>
 </details>`
-    })
-    .join('\n')
-  const body = section.explain.body.trim()
-  const bodyMarkup =
-    body === ''
-      ? `<p class="section-body-empty">No explanation body.</p>`
-      : renderMarkdown(body)
-  const fragment = section.explain.html ? `<div class="section-fragment">${section.explain.html}</div>` : ''
+      })
+      .join('\n')
+
+    return `<div class="step" data-step-index="${stepIndex}">${textMarkup}
+  <div class="step-files">${filesMarkup}</div>
+</div>`
+  })
+
   const markup = `<section class="section" id="section-${index}" data-section-index="${index}">
   <details class="section-fold" open>
-    <summary class="section-title">${escapeHtml(section.explain.title)}</summary>
-    <div class="section-body">${bodyMarkup}</div>
-    ${fragment}
-    <div class="section-files">${filesMarkup}</div>
+    <summary class="section-title">${escapeHtml(section.title)}</summary>
+${steps.join('\n')}
   </details>
 </section>`
-  return { markup, diff: section.diff, fileCount: files.length }
+  return { markup, fileCount, diffs }
 }
 
 function renderReviewMap(
   titles: string[],
   counts: { sections: number; files: number },
+  layoutForm: string,
 ): string {
   const links = titles
     .map(
@@ -161,6 +182,7 @@ function renderReviewMap(
     )
     .join('\n')
   return `<nav class="review-map" aria-label="Review map">
+  ${layoutForm}
   <p class="review-map-label">Review map</p>
   <ol class="review-map-list">
 ${links}
@@ -239,22 +261,6 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   line-height: 1.5;
 }
-.report-header {
-  position: sticky;
-  z-index: 10;
-  top: 0;
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(360px, auto) auto;
-  align-items: center;
-  gap: 22px;
-  min-height: 72px;
-  padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, .92);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 1px 18px rgba(29, 58, 38, .05);
-}
-.report-header h1 { margin: 0; color: #122419; font-size: 17px; letter-spacing: -.01em; }
 .source-metadata {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -267,26 +273,26 @@ body {
 .source-metadata dd { margin: 0; min-width: 0; overflow: hidden; color: #4e5d53; text-overflow: ellipsis; white-space: nowrap; }
 .source-metadata code { color: #263a2d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .layout-form {
-  justify-self: end;
-  display: inline-flex;
+  display: flex;
+  margin: 0 10px 20px;
   border: 1px solid #bdcbbf;
   border-radius: 7px;
   overflow: hidden;
   background: #f3f7f3;
 }
-.layout-form label { padding: 5px 10px; color: #607066; font-size: 13px; cursor: pointer; }
+.layout-form label { flex: 1; padding: 5px 10px; color: #607066; font-size: 13px; text-align: center; cursor: pointer; }
 .layout-form input { display: none; }
 .layout-form label:has(input:checked) { color: #ffffff; background: var(--accent); font-weight: 600; }
 .review-workspace {
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
-  min-height: calc(100vh - 72px);
+  min-height: 100vh;
 }
 .review-map {
   position: sticky;
-  top: 72px;
+  top: 0;
   align-self: start;
-  height: calc(100vh - 72px);
+  height: 100vh;
   padding: 24px 14px;
   overflow: auto;
   border-right: 1px solid var(--border);
@@ -324,7 +330,7 @@ body {
   font: 11px/1 ui-monospace, monospace;
 }
 main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
-.section { max-width: 1480px; margin: 0 auto 22px; scroll-margin-top: 94px; }
+.section { max-width: 1480px; margin: 0 auto 22px; scroll-margin-top: 18px; }
 .section-fold {
   overflow: hidden;
   border: 1px solid var(--border);
@@ -348,34 +354,60 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 .section-fold > summary::before { content: "▾ "; color: var(--accent); }
 .section-fold:not([open]) > summary::before { content: "▸ "; }
 .section-fold[open] > summary { border-bottom-color: var(--border); }
-.section-body { max-width: 900px; padding: 18px 20px 8px; color: #3c4d41; font-size: 14px; }
-.section-body strong { color: #142c1d; }
-.section-body-empty { color: var(--muted); font-style: italic; }
-.section-fragment { max-width: 1000px; padding: 4px 20px 14px; }
-.section-fragment > :first-child { margin-top: 0; }
-.section-files { padding: 12px; display: grid; gap: 9px; }
-.section-body h1, .section-body h2, .section-body h3, .section-body h4 {
+.prose { color: #3c4d41; font-size: 14px; }
+.step-text { max-width: 900px; padding: 18px 20px 8px; }
+.prose strong { color: #142c1d; }
+.step-files { padding: 12px; display: grid; gap: 9px; }
+.step + .step { border-top: 1px solid #e3ebe5; }
+.report-cover {
+  max-width: 1480px;
+  margin: 0 auto 22px;
+  /* 10px plus the last paragraph's 8px margin balances the 24px above it. */
+  padding: 24px 24px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 14px 38px rgba(37, 72, 48, .07);
+}
+.report-cover h1 {
+  max-width: 900px;
+  margin: 0 0 12px;
+  color: #102218;
+  font-size: 27px;
+  line-height: 1.22;
+  letter-spacing: -.02em;
+}
+.report-cover .source-metadata { max-width: 640px; }
+.report-cover .source-metadata dd { white-space: normal; overflow: visible; }
+.cover-summary { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.cover-summary > :first-child { margin-top: 0; }
+/* The card is as wide as a section so a diagram has room, but prose is capped at the
+   same measure as a step's text: a 1400px line is not readable. */
+.cover-summary > p, .cover-summary > ul, .cover-summary > ol,
+.cover-summary > blockquote { max-width: 900px; }
+.prose svg { max-width: 100%; height: auto; }
+.prose h1, .prose h2, .prose h3, .prose h4 {
   margin: 16px 0 8px;
   line-height: 1.25;
 }
-.section-body p { margin: 0 0 8px; }
-.section-body ul, .section-body ol { margin: 0 0 8px; padding-left: 24px; }
-.section-body code {
+.prose p { margin: 0 0 8px; }
+.prose ul, .prose ol { margin: 0 0 8px; padding-left: 24px; }
+.prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
   background: var(--file-background);
   padding: 0.1em 0.3em;
   border-radius: 4px;
 }
-.section-body pre {
+.prose pre {
   background: var(--file-background);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 12px;
   overflow: auto;
 }
-.section-body pre code { background: none; padding: 0; }
-.section-body blockquote {
+.prose pre code { background: none; padding: 0; }
+.prose blockquote {
   margin: 0 0 8px;
   padding: 0 12px;
   border-left: 4px solid var(--border);
@@ -413,15 +445,27 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   font-size: 13px;
 }
 @media (max-width: 900px) {
-  .report-header { position: relative; grid-template-columns: 1fr auto; background: rgba(255, 255, 255, .96); }
-  .source-metadata { display: none; }
-  .review-workspace { display: block; }
-  .review-map { display: none; }
+  .review-workspace { display: block; min-height: 0; }
+  /* The map has no room to be a rail, but the toggle still has to be reachable while
+     scrolled into a diff, so what survives is a sticky strip holding just the toggle. */
+  .review-map {
+    top: 0;
+    z-index: 10;
+    height: auto;
+    padding: 8px 12px;
+    overflow: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    background: rgba(240, 245, 240, .94);
+    backdrop-filter: blur(12px);
+  }
+  .review-map-label, .review-map-list, .review-map-counts { display: none; }
+  .layout-form { max-width: 260px; margin: 0 0 0 auto; }
   main { padding: 14px 10px 50px; }
 }
 @media (max-width: 520px) {
-  .report-header { padding: 10px 12px; }
-  .report-header h1 { font-size: 14px; }
+  .report-cover { padding: 18px 16px 8px; }
+  .report-cover h1 { font-size: 21px; }
   .layout-form label { padding: 4px 7px; font-size: 11px; }
   .section-fold > summary { font-size: 14px; }
 }
@@ -429,8 +473,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .layout-form { display: none; }
   .review-map { display: none; }
   .review-workspace { display: block; }
-  .report-header { position: static; grid-template-columns: 1fr; gap: 4px 22px; background: #ffffff; box-shadow: none; backdrop-filter: none; }
-  .source-metadata { display: grid; }
+  .report-cover { box-shadow: none; break-inside: avoid; }
   .source-metadata dd { white-space: normal; overflow: visible; }
   main { padding: 16px; }
   body { background: #ffffff; }

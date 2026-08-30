@@ -13,14 +13,10 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })))
 })
 
-function section(patch: string, title: string, options: { body?: string; html?: string } = {}) {
+function section(patch: string, title: string, options: { text?: string } = {}) {
   return {
-    explain: {
-      title,
-      body: options.body ?? 'A complete explanation on its own.',
-      ...(options.html !== undefined ? { html: options.html } : {}),
-    },
-    diff: patch,
+    title,
+    steps: [{ text: options.text ?? 'A complete explanation on its own.', diff: patch }],
   }
 }
 
@@ -36,9 +32,14 @@ function simplePatch(oldLine = 'old', newLine = 'new'): string {
   ].join('\n')
 }
 
-function document(sections: ExplainDocument['sections']): ExplainDocument {
+function document(
+  sections: ExplainDocument['sections'],
+  options: { title?: string; summary?: string } = {},
+): ExplainDocument {
   return {
     formatVersion: 1,
+    title: options.title ?? 'A change set',
+    summary: options.summary ?? '',
     source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' },
     sections,
   }
@@ -47,16 +48,17 @@ function document(sections: ExplainDocument['sections']): ExplainDocument {
 const stubClient = '/* report client stub */'
 
 describe('renderMarkdown', () => {
-  test('raw html in the body is escaped, not executed', () => {
-    const html = renderMarkdown('Before <script>alert(1)</script> after <b>bold</b>.')
+  // Authored text is trusted, so a diagram can be written inline. Containment is the
+  // report origin's Content Security Policy, not escaping.
+  test('inline html in the text passes through so a diagram can be authored', () => {
+    const html = renderMarkdown('Before <svg viewBox="0 0 1 1"></svg> after <b>bold</b>.')
 
-    expect(html).not.toContain('<script>')
-    expect(html).toContain('&lt;script&gt;')
-    expect(html).toContain('&lt;b&gt;')
+    expect(html).toContain('<svg viewBox="0 0 1 1"></svg>')
+    expect(html).toContain('<b>bold</b>')
     expect(html).toContain('Before')
   })
 
-  test('markdown structure still renders around escaped html', () => {
+  test('markdown structure still renders around inline html', () => {
     const html = renderMarkdown('## Heading\n\n- one\n- two\n\n`inline <x>`')
 
     expect(html).toContain('<h2>Heading</h2>')
@@ -84,21 +86,21 @@ describe('renderMarkdown', () => {
     expect(html).toContain('href="#top&quot;onclick=&quot;')
   })
 
-  test('remote images are disabled while inline data images survive', () => {
+  // One rule covers both outputs: embed the image. A remote URL still renders here, but
+  // the hosted report's img-src blocks it, so the local file and the link would differ.
+  test('image sources are emitted as authored and escaped into the attribute', () => {
     const html = renderMarkdown(
-      '![remote](https://tracker.example/pixel.png) ![local](data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=)',
+      '![local](data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=) ![odd](#a"onerror="x)',
     )
 
-    expect(html).not.toMatch(/src="https?:\/\//)
-    expect(html).not.toContain('<img src="https://')
     expect(html).toContain('src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="')
     expect(html).toContain('alt="local"')
-    expect(html).toContain('>remote <img')
+    expect(html).not.toMatch(/" onerror=/)
   })
 })
 
 describe('renderReport shell', () => {
-  test('renders section bodies and file folds in document order', () => {
+  test('renders section steps and file folds in document order', () => {
     const html = renderReport(
       document([
         section(simplePatch('one', 'one!'), 'First section'),
@@ -113,39 +115,106 @@ describe('renderReport shell', () => {
     expect(second).toBeGreaterThan(first)
     expect(html).toContain('data-section-index="0"')
     expect(html).toContain('data-section-index="1"')
-    expect(html).toContain('section-0-file-0')
-    expect(html).toContain('section-1-file-0')
+    expect(html).toContain('section-0-step-0-file-0')
+    expect(html).toContain('section-1-step-0-file-0')
     expect(html).toContain('+1 −1')
   })
 
-  test('inserts the trusted html fragment after the markdown body', () => {
+  test('steps interleave text and diffs in the order they were authored', () => {
     const html = renderReport(
       document([
-        section(simplePatch(), 'With a card', {
-          body: 'Body text.',
-          html: '<figure><svg viewBox="0 0 10 10" role="img"><rect width="10" height="10"/></svg></figure>',
-        }),
+        {
+          title: 'Built in order',
+          steps: [
+            { text: 'Setup first.' },
+            { text: 'Then the change.', diff: simplePatch('one', 'one!') },
+            { text: 'Then the payoff.', diff: simplePatch('two', 'two!') },
+          ],
+        },
       ]),
       stubClient,
     )
 
-    const body = html.indexOf('>Body text.</p>')
-    const fragment = html.indexOf('<figure><svg viewBox="0 0 10 10"')
-    expect(body).toBeGreaterThan(-1)
-    expect(fragment).toBeGreaterThan(body)
-    expect(html).toContain('class="section-fragment"')
+    const setup = html.indexOf('Setup first.')
+    const firstDiff = html.indexOf('section-0-step-1-file-0')
+    const payoff = html.indexOf('Then the payoff.')
+    const secondDiff = html.indexOf('section-0-step-2-file-0')
+
+    expect(setup).toBeGreaterThan(-1)
+    expect(firstDiff).toBeGreaterThan(setup)
+    expect(payoff).toBeGreaterThan(firstDiff)
+    expect(secondDiff).toBeGreaterThan(payoff)
+    expect(html).toContain('data-step-index="0"')
   })
 
-  test('a section without html omits the fragment container', () => {
-    const html = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
+  test('a step without text renders its files and no empty prose block', () => {
+    const html = renderReport(
+      document([{ title: 'Diff only', steps: [{ text: '', diff: simplePatch() }] }]),
+      stubClient,
+    )
 
-    expect(html).not.toContain('class="section-fragment"')
+    expect(html).toContain('section-0-step-0-file-0')
+    expect(html).not.toContain('class="step-text prose"')
+  })
+
+  test('the document title becomes the heading and the page title', () => {
+    const html = renderReport(
+      document([section(simplePatch(), 'Plain')], { title: 'Share reports by link' }),
+      stubClient,
+    )
+
+    expect(html).toContain('<title>Share reports by link</title>')
+    expect(html).toContain('<h1>Share reports by link</h1>')
+  })
+
+  // Title, provenance, and summary are one opening, so they share one card, and the
+  // card is the first thing inside <main>: the review map is a sticky column of that
+  // grid, so anything stacked above the workspace pushes the map below the fold.
+  test('the cover carries the title, the provenance, and the optional summary', () => {
+    const withSummary = renderReport(
+      document([section(simplePatch(), 'Plain')], {
+        title: 'Share reports by link',
+        summary: 'The shape of it.\n\n<svg viewBox="0 0 10 10"></svg>',
+      }),
+      stubClient,
+    )
+    const main = withSummary.indexOf('<main>')
+    const cover = withSummary.indexOf('<section class="report-cover">')
+    const heading = withSummary.indexOf('<h1>Share reports by link</h1>')
+    const provenance = withSummary.indexOf('<dl class="source-metadata">')
+    const summary = withSummary.indexOf('<div class="cover-summary prose">')
+    const firstSection = withSummary.indexOf('id="section-0"')
+
+    expect(main).toBeGreaterThan(-1)
+    expect(cover).toBeGreaterThan(main)
+    expect(heading).toBeGreaterThan(cover)
+    expect(provenance).toBeGreaterThan(heading)
+    expect(summary).toBeGreaterThan(provenance)
+    expect(firstSection).toBeGreaterThan(summary)
+    expect(withSummary).toContain('<svg viewBox="0 0 10 10"></svg>')
+
+    const withoutSummary = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
+    expect(withoutSummary).toContain('<section class="report-cover">')
+    expect(withoutSummary).not.toContain('class="cover-summary')
+  })
+
+  test('there is no page header: the layout toggle opens the review map', () => {
+    const html = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
+    const map = html.indexOf('<nav class="review-map"')
+    const form = html.indexOf('<form class="layout-form"')
+    const label = html.indexOf('<p class="review-map-label">')
+
+    expect(html).not.toContain('class="report-header"')
+    expect(form).toBeGreaterThan(map)
+    expect(label).toBeGreaterThan(form)
   })
 
   test('commit-diff source metadata shows From and To endpoints', () => {
     const html = renderReport(
       {
         formatVersion: 1,
+        title: 'A change set',
+        summary: '',
         source: {
           kind: 'commit-diff',
           capturedAt: '2026-08-28T00:00:00.000Z',
@@ -166,6 +235,8 @@ describe('renderReport shell', () => {
     const html = renderReport(
       {
         formatVersion: 1,
+        title: 'A change set',
+        summary: '',
         source: {
           kind: 'working-tree',
           capturedAt: '2026-08-28T00:00:00.000Z',
@@ -185,6 +256,8 @@ describe('renderReport shell', () => {
     const html = renderReport(
       {
         formatVersion: 1,
+        title: 'A change set',
+        summary: '',
         source: { kind: 'proposal', capturedAt: '2026-08-28T00:00:00.000Z' },
         sections: [section(simplePatch(), 'Proposal')],
       },
@@ -199,6 +272,8 @@ describe('renderReport shell', () => {
     const html = renderReport(
       {
         formatVersion: 1,
+        title: 'A change set',
+        summary: '',
         source: {
           kind: 'working-tree',
           capturedAt: '2026-08-28T00:00:00.000Z',
@@ -267,14 +342,15 @@ describe('renderReport shell', () => {
     expect(html).toContain('>1 file<')
   })
 
-  test('responsive shell hides review map and metadata and compacts the header on narrow screens', () => {
+  // The rail has no room on a narrow screen, but the toggle is still needed while
+  // scrolled into a diff, so the map collapses to a sticky strip that keeps it.
+  test('the review map collapses to a strip that keeps the layout toggle on narrow screens', () => {
     const html = renderReport(document([section(simplePatch(), 'Responsive')]), stubClient)
 
     expect(html).toContain('@media (max-width: 900px)')
-    expect(html).toContain('.review-map { display: none; }')
-    expect(html).toContain('.source-metadata { display: none; }')
-    expect(html).toContain('.review-workspace { display: block; }')
-    expect(html).toContain('grid-template-columns: 1fr auto')
+    expect(html).toContain('.review-workspace { display: block; min-height: 0; }')
+    expect(html).toContain('.review-map-label, .review-map-list, .review-map-counts { display: none; }')
+    expect(html).not.toContain('.review-map { display: none; }\n  main { padding: 14px')
     expect(html).toContain('@media (max-width: 520px)')
   })
 
@@ -291,21 +367,15 @@ describe('renderReport shell', () => {
     expect(html).toContain('@media print')
     expect(html).toContain('.layout-form { display: none; }')
     expect(html).toContain('.review-map { display: none; }')
-    expect(html).toContain('.report-header { position: static;')
-    expect(html).toContain('.source-metadata { display: grid; }')
-    expect(html).toContain('grid-template-columns: 1fr; gap: 4px 22px;')
+    expect(html).toContain('.report-cover { box-shadow: none; break-inside: avoid; }')
     expect(html).toContain('.source-metadata dd { white-space: normal; overflow: visible; }')
   })
 })
 
 describe('embedded report data escaping', () => {
-  test('a body or diff containing script terminators never breaks the embedded data script', () => {
+  test('a diff containing script terminators never breaks the embedded data script', () => {
     const html = renderReport(
-      document([
-        section(simplePatch(), 'Tricky', {
-          body: '</script><script>alert(1)</script>',
-        }),
-      ]),
+      document([section(simplePatch('</script>', '<!--'), 'Tricky')]),
       stubClient,
     )
 
@@ -316,11 +386,11 @@ describe('embedded report data escaping', () => {
     const embedded = html.slice(dataStart, dataEnd)
 
     const parsed = JSON.parse(embedded.replace(/\\u003c/g, '<')) as {
-      sections: { diff: string; fileCount: number }[]
+      diffs: { section: number; step: number; diff: string }[]
     }
-    expect(parsed.sections).toHaveLength(1)
-    expect(parsed.sections[0]!.fileCount).toBe(1)
-    expect(parsed.sections[0]!.diff).toContain('old')
+    expect(parsed.diffs).toHaveLength(1)
+    expect(parsed.diffs[0]).toMatchObject({ section: 0, step: 0 })
+    expect(parsed.diffs[0]!.diff).toContain('</script>')
   })
 
   test('script terminators inside the bundled client are neutralised', () => {
@@ -333,12 +403,12 @@ describe('embedded report data escaping', () => {
   })
 })
 
-describe('trusted fragment boundary', () => {
-  test('the fragment is inserted verbatim as authored markup', () => {
+describe('trusted text boundary', () => {
+  test('authored markup inside step text is inserted verbatim', () => {
     const html = renderReport(
       document([
         section(simplePatch(), 'Authored', {
-          html: '<figure><svg viewBox="0 0 1 1"><text></text></svg></figure>',
+          text: '<figure><svg viewBox="0 0 1 1"><text></text></svg></figure>',
         }),
       ]),
       stubClient,
