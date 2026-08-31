@@ -1,0 +1,7 @@
+{
+  "name": "diffwalk-site-directions",
+  "compatibility_date": "2026-08-31",
+  "workers_dev": false,
+  "assets": { "directory": "./public" },
+  "routes": [{ "pattern": "diffwalk.dev", "custom_domain": true }]
+}

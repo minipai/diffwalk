@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Turn a code change into a calm, browsable walkthrough." />
+    <meta property="og:title" content="diffwalk — Review code in human order" />
+    <meta property="og:description" content="Make good work easy to follow." />
+    <meta property="og:image" content="https://diffwalk.dev/og.png" />
+    <meta property="og:url" content="https://diffwalk.dev" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="canonical" href="https://diffwalk.dev" />
+    <link rel="stylesheet" href="/styles.css" />
+    <title>diffwalk — Review code in human order</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="wordmark" href="#top">diffwalk</a>
+      <nav aria-label="Main navigation">
+        <a href="#install">Install</a>
+        <a href="#explain">Explain</a>
+        <a href="#review">Review</a>
+        <a class="nav-cta" href="https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ">Example review ↗</a>
+        <a class="icon-link npm" href="https://www.npmjs.com/package/diffwalk" aria-label="diffwalk on npm">
+          <svg viewBox="0 7.334 24 9.332" fill="currentColor" aria-hidden="true"><path d="M0 7.334v8h6.666v1.332H12v-1.332h12v-8H0zm6.666 6.664H5.334v-4H3.999v4H1.335V8.667h5.331v5.331zm4 0v1.336H8.001V8.667h5.334v5.332h-2.669zm12.001 0h-1.33v-4h-1.336v4h-1.335v-4h-1.33v4h-2.671V8.667h8.002v5.331zM10.665 10H12v2.667h-1.335V10z" /></svg>
+        </a>
+        <a class="icon-link github" href="https://github.com/minipai/diffwalk" aria-label="diffwalk on GitHub">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z" /></svg>
+        </a>
+      </nav>
+    </header>
+
+    <main class="site" id="top">
+      <section class="hero">
+        <h1>Make good work easy to follow.</h1>
+        <p>diffwalk turns a code change into an ordered walkthrough, designed for AI to write and humans to read.</p>
+        <div class="hero-actions">
+          <a href="https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ">Read an example review ↗</a>
+          <a class="ghost" href="#install">Install the CLI</a>
+        </div>
+      </section>
+
+      <section class="demo-stage" aria-label="diffwalk product demo">
+        <a class="report-demo" href="https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ">
+          <span class="report-chrome"><span class="window-dots"><i></i><i></i><i></i></span><span>retry-double-charge.diffwalk</span><b>Open review ↗</b></span>
+          <img src="/example-review.png" width="1280" height="820" alt="A diffwalk review with its review map and explanations beside diffs." />
+        </a>
+      </section>
+
+      <section class="guide">
+        <header class="guide-intro"><h2>Getting started</h2><p>Six steps from an npm install to one link a reviewer can follow.</p></header>
+        <ol class="guide-steps">
+          <li class="guide-step" id="install">
+            <h3>Install diffwalk</h3>
+            <p>diffwalk is published on npm and runs on Node.js 20 or newer. Install it globally, or run any command through <code>npx diffwalk</code> without installing anything.</p>
+            <div class="terminal"><header><span>TERMINAL</span><button data-copy="npm install --global diffwalk">Copy</button></header><code><i>$</i>npm install --global diffwalk</code></div>
+            <div class="step-meta"><b>Requires</b><span>Node.js 20+</span><span>Git</span><span>or <code>npx diffwalk</code></span></div>
+          </li>
+          <li class="guide-step" id="capture">
+            <h3>Capture the working tree</h3>
+            <p>Run diffwalk inside the Git repository you want to explain. It captures changes relative to <code>HEAD</code> into a timestamped walk under <code>.diffwalk/</code>.</p>
+            <div class="terminal"><header><span>TERMINAL</span><button data-copy="diffwalk inspect">Copy</button></header><code><i>$</i>diffwalk inspect</code><p>Captured 370 change blocks across 24 files to</p><p>.diffwalk/20260831T063842Z-a7c9e4f2/capture.json</p></div>
+            <div class="step-meta"><b>In the walk</b><span><code>capture.json</code> — machine-owned</span><span><code>explanations.yaml</code> — yours to edit</span></div>
+          </li>
+          <li class="guide-step" id="explain">
+            <h3>Author the reading order</h3>
+            <p>Edit only <code>explanations.yaml</code> in the current walk. Write Markdown, arrange sections, and attach each explanation to exact change IDs.</p>
+            <div class="terminal yaml"><header><span>.diffwalk/&lt;walkId&gt;/explanations.yaml</span><button data-copy="diffwalk check">Copy</button></header><pre><b>title:</b> Stop the double charge
+<b>sections:</b>
+ - <b>title:</b> Charge path asks first
+   <b>steps:</b>
+    - <b>text:</b> |
+        The lookup runs before the gateway.
+      <b>changes:</b> [change-009]</pre><footer><code>diffwalk check</code> → <code>diffwalk view</code></footer></div>
+            <div class="step-meta"><b>Then</b><span><code>diffwalk check</code> — every change explained</span><span>every patch still applies</span></div>
+          </li>
+          <li class="guide-step">
+            <h3>Preview it locally</h3>
+            <p><code>diffwalk view</code> renders the review in memory and opens it on a loopback-only port. No HTML file is written and nothing leaves the machine.</p>
+            <div class="terminal"><header><span>TERMINAL</span><button data-copy="diffwalk view">Copy</button></header><code><i>$</i>diffwalk view</code><p>Viewing 6 sections at http://127.0.0.1:53421</p></div>
+          </li>
+          <li class="guide-step">
+            <h3>Publish one link</h3>
+            <p><code>diffwalk publish</code> uploads the document — not the HTML — to the review service and prints an unlisted link.</p>
+            <div class="terminal"><header><span>TERMINAL</span><button data-copy="diffwalk publish">Copy</button></header><code><i>$</i>diffwalk publish</code><p>Published 6 explanation sections to</p><p>https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ</p></div>
+          </li>
+          <li class="guide-step" id="review">
+            <h3>Follow the explanation</h3>
+            <p>The review keeps explanations, diagrams, and exact diffs in one ordered tree. Reviewers can fold sections and switch diff layouts without losing their place.</p>
+            <a class="step-link" href="https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ"><span><b>Stop the retry from charging the card twice</b><small>6 sections · 6 files · 16 changes</small></span>↗</a>
+          </li>
+        </ol>
+      </section>
+      <footer><span>diffwalk</span><p>Review code in human order.</p></footer>
+    </main>
+    <script>
+      for (const button of document.querySelectorAll('[data-copy]')) {
+        button.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(button.dataset.copy);
+          button.textContent = 'Copied';
+          setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+        });
+      }
+    </script>
+  </body>
+</html>
