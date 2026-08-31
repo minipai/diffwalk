@@ -1,4 +1,5 @@
-import { lstat } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { lstat, readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { DraftFile } from './format'
 
@@ -99,7 +100,7 @@ async function workingTreeFile(path: string, root: string): Promise<string> {
   if (file.isSymbolicLink()) throw new Error(`Symbolic links are not supported: ${path}`)
   if (!file.isFile()) throw new Error(`Non-file Git paths are not supported: ${path}`)
 
-  return decodeText(await Bun.file(absolutePath).arrayBuffer(), path)
+  return decodeText(await readFile(absolutePath), path)
 }
 
 async function gitFile(commit: string, path: string, root: string): Promise<string> {
@@ -110,39 +111,50 @@ async function gitText(args: string[], cwd: string): Promise<string> {
   return decodeText(await gitBytes(args, cwd), `git ${args[0]}`)
 }
 
-async function gitBytes(args: string[], cwd: string): Promise<ArrayBuffer> {
-  const child = Bun.spawn(['git', ...args], {
+async function gitBytes(args: string[], cwd: string): Promise<Uint8Array> {
+  const child = spawn('git', args, {
     cwd,
-    stdout: 'pipe',
-    stderr: 'pipe',
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).arrayBuffer(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const stdout: Uint8Array[] = []
+  let stderr = ''
+  child.stdout.on('data', (chunk: Uint8Array) => stdout.push(chunk))
+  child.stderr.setEncoding('utf8')
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk
+  })
+  const exitCode = await new Promise<number>((accept, reject) => {
+    child.once('error', reject)
+    child.once('close', (code) => accept(code ?? 1))
+  })
   if (exitCode !== 0) {
     throw new Error(stderr.trim() || `git ${args[0]} exited with ${exitCode}`)
   }
-  return stdout
+  const length = stdout.reduce((total, chunk) => total + chunk.byteLength, 0)
+  const bytes = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of stdout) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
 }
 
-function decodeText(bytes: ArrayBuffer, label: string): string {
-  const view = new Uint8Array(bytes)
-  if (view.includes(0)) throw new Error(`Binary files are not supported: ${label}`)
+function decodeText(bytes: Uint8Array, label: string): string {
+  if (bytes.includes(0)) throw new Error(`Binary files are not supported: ${label}`)
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(view)
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
     throw new Error(`File is not valid UTF-8: ${label}`)
   }
 }
 
-function splitNulls(bytes: ArrayBuffer): string[] {
+function splitNulls(bytes: Uint8Array): string[] {
   const value = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   return value === '' ? [] : value.slice(0, value.endsWith('\0') ? -1 : undefined).split('\0')
 }
 
-function parseGitChanges(bytes: ArrayBuffer): GitChange[] {
+function parseGitChanges(bytes: Uint8Array): GitChange[] {
   const fields = splitNulls(bytes)
   const changes: GitChange[] = []
 

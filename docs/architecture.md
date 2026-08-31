@@ -1,7 +1,7 @@
 # Architecture
 
-Diffwalk is a standalone TUI for reading code changes as an ordered sequence of
-explanations and their exact corresponding diffs.
+Diffwalk turns code changes into browser reports that present explanations and their
+exact corresponding diffs in a deliberate order.
 
 ## Product decisions
 
@@ -32,36 +32,26 @@ explanations and their exact corresponding diffs.
   builds an argument, so `check` names the repeats and still succeeds; only an
   unexplained change fails. Completeness is the guarantee a reader relies on, not
   uniqueness.
-- `check`, `view`, `report`, and `export` read capture plus explanations, validate the
+- `check`, `view`, `export`, and `publish` read capture plus explanations, validate the
   pairing and assignments, and materialize exact patches in memory. No `document.json`
-  is required at runtime; `export` writes the portable ExplainDocument JSON (format
+  is required at runtime; `export json` writes the portable ExplainDocument (format
   version 1) only for integrations and archiving.
 - The agent should not hand-write unified patches for real working-tree changes.
-  Pierre identifies `ChangeContent` blocks from complete old/new files; selected
-  blocks are applied to the old content, then `diff` v9 creates a legal Git patch.
-  Blocks can be explained separately even when Pierre renders them inside the same
-  visual hunk.
+  `diff` v9 identifies separate line-change blocks from complete old/new files;
+  selected blocks are applied to the old content, then the same package creates a
+  legal Git patch. Blocks can be explained separately even when the browser renders
+  them inside the same visual hunk.
 - Step `text` and the document `summary` render as Markdown with inline HTML passed
   through, so a diagram can sit exactly where the argument needs it. Authored text is
   trusted; containment is the report origin's Content Security Policy, not escaping.
   Images must be inline `<svg>` or `data:` URIs: a remote URL renders in the local file
-  but is blocked on the hosted report. The TUI shows the text as written.
-- The reader shows every explanation in document order as one vertically
-  scrollable tree. `j`/`↓` and `k`/`↑` move a cursor across the visible
-  explanation, step, and file headers, `Enter`/`Space` folds or unfolds the
-  focused header, and the focused header is scrolled back into view when the
-  cursor moves. A step earns a row only when it carries text, so a step that is
-  nothing but changes does not render a blank line above its own diffs. Clicking
-  an explanation header folds its steps and file diffs; clicking a step folds the
-  rest of its text and its diffs; clicking a file header folds just that file's
-  diff. Fold state is remembered
-  independently per explanation and per file, keyed per section so the same
-  path in different explanations folds separately. When a fold hides the
-  focused node, the cursor moves to the nearest visible ancestor so it never
-  rests on a hidden child. `1`/`2` select split/stack layout and `q`/`Escape`
-  quits.
-
-- The HTML report is generated from the materialized document by `diffwalk report`.
+  but is blocked on the hosted report.
+- `diffwalk view` serves the report from an ephemeral loopback-only HTTP server and
+  opens the default browser without writing a file. `diffwalk export html` writes the
+  same report as one portable offline file. `diffwalk publish` uploads the same
+  materialized document for hosted rendering, so all three delivery paths share one
+  report shell and browser client.
+- The HTML report is generated from the materialized document by `diffwalk export html`.
   Diffwalk owns the shell: source metadata, section ordering, Markdown bodies,
   optional trusted `html` fragments, native section/file folds, unified/split
   selection, responsive and print styles. `@pierre/diffs` owns diff parsing,
@@ -100,11 +90,8 @@ explanations and their exact corresponding diffs.
 - `src/help.ts`: top-level and per-command help for purpose, quick start, file
   ownership, defaults, options, and next steps.
 - `src/cli.ts`: executable entry point for `inspect`, `changes`, `change`, `file`,
-  `check`, `view`, `report`, `export`, `publish`, `unpublish`, and `help`.
-- `src/document.ts`: converts an ExplainDocument's patches into Hunk files.
-- `src/reader.ts`: pure fold-state, visible-tree, and cursor logic over explanations,
-  steps, and files.
-- `src/main.tsx`: OpenTUI/React reader using Hunk's exported primitives.
+  `check`, `view`, `export`, `publish`, `unpublish`, and `help`.
+- `src/view.ts`: loopback-only report preview server and default-browser launch.
 - `src/report-patches.ts`: shared Pierre parse seam used by the generator, the browser
   client, and tests.
 - `src/report-markdown.ts`: Markdown rendering with inline HTML passed through.
@@ -116,15 +103,13 @@ explanations and their exact corresponding diffs.
 - `src/report-client.ts`: browser entry that mounts a `FileDiff` per file and switches
   unified/split through `setOptions`.
 - `test/*.test.ts`: focused tests for schemas, capture identity, strict YAML parsing,
-  materialization, Git capture, document input, reader folding, report schemas,
+  materialization, Git capture, local preview, report schemas,
   Markdown escaping, embedded-data escaping, Pierre parse failures, CLI argument
   parsing, help, and atomic writes.
 - `test/cli.test.ts`: end-to-end CLI tests in real temporary Git repositories for
   inspect file behavior (including preservation of authored explanations and stale
-  pairing), inspection commands, validation, report/export inputs, and rejection of
-  the removed `build`/draft workflow.
-- `test/reader-ui.test.tsx`: end-to-end reader tests through a rendered OpenTUI/React app
-  for keyboard navigation, folding, focus, scrolling, mouse folding, and quitting.
+  pairing), inspection commands, validation, HTML/JSON exports, and rejection of the
+  removed `build`, `report`, and draft workflows.
 - `worker/index.ts`: the Cloudflare Worker that stores, renders, and revokes reports and
   sets the report origin's Content Security Policy, security headers, and caching.
 - `worker/reports.ts`: report IDs, revocation tokens, token digests, constant-time secret

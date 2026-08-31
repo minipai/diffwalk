@@ -1,6 +1,6 @@
 ---
 name: diffwalk
-description: Use the Diffwalk CLI to capture Git working-tree changes, author ordered explanations in explanations.yaml, validate with check, and open the reader or HTML report. Trigger when the user asks to use Diffwalk or create/update its `.explain` capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
+description: Use the Diffwalk CLI to capture Git working-tree changes, author ordered explanations in explanations.yaml, validate with check, and preview, export, or publish the report. Trigger when the user asks to use Diffwalk or create/update its `.explain` capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
 ---
 
 # Diffwalk
@@ -48,9 +48,9 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
 5. Show every captured change at least once. Do not invent IDs or leave one unexplained.
    Showing a change in more than one step is allowed when re-showing a hunk builds the
    argument; `check` names the repeats and still succeeds.
-6. Run `diffwalk check` before viewing or reporting. Fix any stale `captureId`, malformed YAML, unknown ID, unexplained change, or materialization mismatch it reports.
-7. Run `diffwalk view` when the user asks to open or inspect the terminal reader. Exit with `q`.
-8. Run `diffwalk report` when the user asks for an HTML report. The report is one portable file with no CDN or external assets and opens as a local file with JavaScript enabled. Pass `--output <path>` when the user names a destination.
+6. Run `diffwalk check` before viewing or exporting. Fix any stale `captureId`, malformed YAML, unknown ID, unexplained change, or materialization mismatch it reports.
+7. Run `diffwalk view` when the user asks to preview the report locally. It opens the browser without writing an HTML file and runs until stopped with Ctrl+C.
+8. Run `diffwalk export html` when the user asks for a portable HTML report, or `diffwalk export json` for an ExplainDocument integration artifact. Pass `--output <path>` when the user names a destination.
 
 ## Invariants
 
@@ -71,8 +71,7 @@ diffwalk change <id> [--input .explain/capture.json]
 diffwalk file <path> (--before | --after) [--input .explain/capture.json]
 diffwalk check [--input .explain/capture.json] [--explanations .explain/explanations.yaml]
 diffwalk view [--input .explain/capture.json] [--explanations .explain/explanations.yaml]
-diffwalk report [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output .explain/report.html]
-diffwalk export [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output .explain/document.json]
+diffwalk export <html|json> [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output <path>]
 ```
 
 ## Trusted-text boundary
@@ -81,7 +80,7 @@ diffwalk export [--input .explain/capture.json] [--explanations .explain/explana
   authored markup lands exactly where it was written.
 - The report embeds every document diff and renders it with the `@pierre/diffs` runtime
   bundled into the file; there is no CDN or external asset, so the report works offline.
-- A section whose diff cannot be parsed stops `diffwalk report` with a clear message; it
+- A section whose diff cannot be parsed stops `diffwalk view` or `diffwalk export html` with a clear message; it
   is never silently dropped.
 - Build reports only from documents you or a trusted agent authored. Authored markup is
   inserted without sanitization and can run scripts, so never add untrusted or

@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { createHunkDiffFilesFromPatch } from 'hunkdiff/opentui'
 import {
   captureIdFor,
   createExplainCapture,
@@ -7,6 +6,7 @@ import {
   materializeExplainDocument,
 } from '../src/authoring'
 import type { CaptureSource, ExplainCapture } from '../src/format'
+import { parseSectionPatch } from '../src/report-patches'
 
 const source: CaptureSource = {
   kind: 'working-tree',
@@ -159,7 +159,7 @@ describe('explain materialization', () => {
     expect(document.sections[1]!.steps[0]!.diff).toContain('+B')
     expect(document.sections[1]!.steps[0]!.diff).not.toContain('+E')
     for (const section of document.sections) {
-      expect(createHunkDiffFilesFromPatch(section.steps[0]!.diff!)).toHaveLength(1)
+      expect(parseSectionPatch(section.steps[0]!.diff!)).toHaveLength(1)
     }
   })
 

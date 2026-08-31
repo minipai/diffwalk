@@ -5,7 +5,6 @@ export const commandNames = [
   'file',
   'check',
   'view',
-  'report',
   'export',
   'publish',
   'unpublish',
@@ -32,8 +31,8 @@ Quick start:
   diffwalk inspect                    capture changes into .explain/capture.json
   edit .explain/explanations.yaml     author ordered sections (the only file you edit)
   diffwalk check                      validate capture + explanations
-  diffwalk view                       open the terminal reader
-  diffwalk report                     write a self-contained HTML report
+  diffwalk view                       preview the report in a local browser
+  diffwalk export html                write a self-contained HTML report
   diffwalk publish                    publish a hosted report and print its link
 
 Commands:
@@ -42,9 +41,8 @@ Commands:
   change     read one captured change block by ID
   file       read one captured file side (--before or --after)
   check      validate capture + explanations and report counts
-  view       open the terminal reader
-  report     write a self-contained HTML report
-  export     write the portable ExplainDocument JSON for integrations
+  view       preview the report in a local browser without writing a file
+  export     write an HTML report or portable ExplainDocument JSON
   publish    publish the report to the hosted service and print its unlisted link
   unpublish  remove a published report with its revocation token
   help       show help for a command
@@ -60,7 +58,7 @@ Defaults:
   report          ${defaults.report}
 
 Next steps:
-  After authoring, run \`diffwalk check\`, then \`diffwalk view\` or \`diffwalk report\`.
+  After authoring, run \`diffwalk check\`, then \`diffwalk view\` or \`diffwalk export html\`.
   Share a link instead of a file with \`diffwalk publish\`.
   Run \`diffwalk help <command>\` for command-specific options.
   Use \`diffwalk changes --json\` and \`diffwalk change <id>\` to inspect what was captured.
@@ -180,16 +178,16 @@ Options:
   -h, --help             show this help
 
 Next steps:
-  When check passes, read with \`diffwalk view\`, export with \`diffwalk export\`, or
-  render with \`diffwalk report\`. A stale captureId means the working tree changed:
+  When check passes, read with \`diffwalk view\`, export with \`diffwalk export html\`,
+  or publish with \`diffwalk publish\`. A stale captureId means the working tree changed:
   update ${defaults.explanations} or re-run \`diffwalk inspect\` after deleting it.
 `
     case 'view':
-      return `diffwalk view — open the terminal reader
+      return `diffwalk view — preview the report in a local browser
 
 Validates ${defaults.capture} and ${defaults.explanations}, materializes the exact
-patches in memory, and opens the interactive reader. The reader folds explanations and
-file diffs and switches split/stack layout; exit with q or Escape.
+patches in memory, starts a temporary loopback-only server, and opens the report in the
+default browser. No HTML file is written. Press Ctrl+C to stop the local server.
 
 Usage:
   diffwalk view [--input .explain/capture.json] [--explanations .explain/explanations.yaml]
@@ -200,42 +198,23 @@ Options:
   -h, --help             show this help
 
 Next steps:
-  Validate first with \`diffwalk check\`, then render a shareable copy with \`diffwalk report\`.
-`
-    case 'report':
-      return `diffwalk report — write a self-contained HTML report
-
-Validates ${defaults.capture} and ${defaults.explanations}, materializes the exact
-patches in memory, and writes one portable HTML file that embeds the document, the
-Markdown renderer, and the diff runtime. The report opens offline in any browser.
-
-Usage:
-  diffwalk report [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output .explain/report.html]
-
-Options:
-  --input <path>         capture path (default ${defaults.capture})
-  --explanations <path>  explanations path (default ${defaults.explanations})
-  --output <path>        report output path (default ${defaults.report})
-  -h, --help             show this help
-
-Next steps:
-  Validate first with \`diffwalk check\`. Archive a portable document with \`diffwalk export\`.
+  Save the same report with \`diffwalk export html\`, or share a link with \`diffwalk publish\`.
 `
     case 'export':
-      return `diffwalk export — write the portable ExplainDocument JSON
+      return `diffwalk export — write an HTML report or ExplainDocument JSON
 
 Validates ${defaults.capture} and ${defaults.explanations}, materializes the exact
-patches, and writes the version 1 ExplainDocument JSON that integrations and archives
-expect. This is a snapshot for external consumers; view and report read capture plus
-explanations directly.
+patches, then writes the requested artifact. HTML is one portable offline report with
+its styles and diff runtime embedded. JSON is the version 1 ExplainDocument snapshot
+for integrations and archives.
 
 Usage:
-  diffwalk export [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output .explain/document.json]
+  diffwalk export <html|json> [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output <path>]
 
 Options:
   --input <path>         capture path (default ${defaults.capture})
   --explanations <path>  explanations path (default ${defaults.explanations})
-  --output <path>        document output path (default ${defaults.document})
+  --output <path>        output path (HTML default ${defaults.report}; JSON default ${defaults.document})
   -h, --help             show this help
 
 Next steps:
@@ -263,7 +242,7 @@ Options:
 
 Next steps:
   Validate first with \`diffwalk check\`. Keep the printed revocation token: it is the
-  only way to run \`diffwalk unpublish\` later. For an offline copy use \`diffwalk report\`.
+  only way to run \`diffwalk unpublish\` later. For an offline copy use \`diffwalk export html\`.
 `
     case 'unpublish':
       return `diffwalk unpublish — remove a published report

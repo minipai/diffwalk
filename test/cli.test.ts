@@ -10,7 +10,7 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })))
 })
 
-const cliPath = join(import.meta.dir, '..', 'src', 'cli.ts')
+const cliPath = join(import.meta.dir, '..', 'dist', 'diffwalk.js')
 
 interface CliResult {
   exitCode: number
@@ -23,7 +23,7 @@ async function runCli(
   cwd: string,
   environment: Record<string, string> = {},
 ): Promise<CliResult> {
-  const child = Bun.spawn(['bun', cliPath, ...args], {
+  const child = Bun.spawn(['node', cliPath, ...args], {
     cwd,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -103,7 +103,7 @@ describe('help', () => {
 
   test('help <command> describes options, defaults, and next steps', async () => {
     const repo = await fixtureRepo()
-    for (const command of ['inspect', 'changes', 'change', 'file', 'check', 'view', 'report', 'export', 'publish']) {
+    for (const command of ['inspect', 'changes', 'change', 'file', 'check', 'view', 'export', 'publish']) {
       const result = await runCli(['help', command], repo)
       expect(result.exitCode).toBe(0)
       expect(result.stdout).toContain(`diffwalk ${command} —`)
@@ -176,7 +176,8 @@ describe('usage errors', () => {
       ['change'],
       ['file', 'a.ts'],
       ['file', 'a.ts', '--before', '--after'],
-      ['report', 'document.json'],
+      ['export'],
+      ['export', 'pdf'],
       ['changes', 'stray-positional'],
     ]
     for (const args of cases) {
@@ -539,14 +540,14 @@ describe('check', () => {
   })
 })
 
-describe('report', () => {
+describe('HTML export', () => {
   test('writes a self-contained HTML report from capture plus explanations', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
     const output = join(repo, 'out', 'report.html')
 
-    const result = await runCli(['report', '--output', output], repo)
+    const result = await runCli(['export', 'html', '--output', output], repo)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Wrote a')
@@ -562,7 +563,7 @@ describe('report', () => {
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
 
-    const result = await runCli(['report'], repo)
+    const result = await runCli(['export', 'html'], repo)
 
     expect(result.exitCode).toBe(0)
     const files = await readdir(explainDir(repo))
@@ -570,14 +571,14 @@ describe('report', () => {
   })
 })
 
-describe('export', () => {
+describe('JSON export', () => {
   test('writes a version 1 ExplainDocument from capture plus explanations', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
     const output = join(repo, 'out', 'document.json')
 
-    const result = await runCli(['export', '--output', output], repo)
+    const result = await runCli(['export', 'json', '--output', output], repo)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Wrote')
@@ -603,7 +604,7 @@ describe('export', () => {
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
 
-    const result = await runCli(['export'], repo)
+    const result = await runCli(['export', 'json'], repo)
 
     expect(result.exitCode).toBe(0)
     const files = await readdir(explainDir(repo))
@@ -774,6 +775,15 @@ describe('removed workflow', () => {
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain('Unknown command: build')
+  })
+
+  test('the report command is replaced by export html', async () => {
+    const repo = await fixtureRepo()
+    const result = await runCli(['report'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('Unknown command: report')
+    expect(result.stderr).toContain('diffwalk export html')
   })
 
   test('the old combined draft is not accepted as input', async () => {

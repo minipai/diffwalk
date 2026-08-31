@@ -1,9 +1,10 @@
 # Diffwalk
 
-Diffwalk is a standalone terminal UI for reading code changes as an ordered sequence of
-explanations and their exact corresponding diffs.
+Diffwalk turns code changes into browser reports that present explanations and their
+exact corresponding diffs in a deliberate order.
 
-Diffwalk requires Bun 1.3 or newer. Development commands below also require pnpm.
+The CLI requires Node.js 20 or newer. Development commands below also require Bun 1.3
+or newer and pnpm.
 
 ## Development
 
@@ -67,7 +68,7 @@ read or share:
 ```bash
 diffwalk check
 diffwalk view
-diffwalk report
+diffwalk export html
 diffwalk publish
 ```
 
@@ -77,8 +78,8 @@ The default workflow stays terse; every command also accepts explicit overrides:
 diffwalk inspect --base main --output .explain/capture.json
 diffwalk check --input .explain/capture.json --explanations .explain/explanations.yaml
 diffwalk view --input .explain/capture.json --explanations .explain/explanations.yaml
-diffwalk report --output report.html
-diffwalk export --output .explain/document.json
+diffwalk export html --output report.html
+diffwalk export json --output .explain/document.json
 diffwalk publish --service https://reports.example
 ```
 
@@ -118,17 +119,16 @@ The explanations file is parsed as strict safe YAML 1.2: custom tags, duplicate 
 and anchors or aliases are rejected, and YAML 1.1-style coercions (`yes`, `on`) stay
 plain strings.
 
-## The reader
+## Local preview
 
-The reader shows every explanation in document order as one vertically scrollable tree
-with exact patches materialized in memory from capture plus explanations. A step with
-text is its own row between the explanation and the diffs it introduces. The terminal
-shows the text as written and never interprets HTML.
+`diffwalk view` materializes the report, starts a temporary loopback-only server, and
+opens it in the default browser. It writes no HTML file. The server remains available
+until you press Ctrl+C.
 
 ## HTML reports
 
 ```bash
-diffwalk report
+diffwalk export html
 ```
 
 writes `.explain/report.html` by default. The report is one portable file: it embeds
@@ -150,7 +150,7 @@ different through a link.
 diffwalk publish
 ```
 
-materializes the same document `report` renders, uploads it to the report service, and
+materializes the same document `export html` renders, uploads it to the report service, and
 prints an unlisted link. The service stores only that JSON and renders it with its own
 shared renderer, so no HTML file is uploaded and every report reuses one cached copy of
 the renderer instead of carrying its own.
@@ -172,7 +172,7 @@ the report stays published.
 Reports are immutable. Publishing a revision creates a separate report at a separate
 link, and the earlier link keeps serving the earlier report until it is revoked.
 
-The trusted-text boundary from `diffwalk report` still applies: authored markup is served
+The trusted-text boundary from `diffwalk export html` still applies: authored markup is served
 verbatim, so publish only what you or a trusted agent authored. The report origin is kept
 powerless on purpose — no cookies, no inline scripts, no outbound connections — but that
 contains bad markup rather than sanitizing it.
@@ -192,30 +192,16 @@ pnpm deploy
 owns the zone-level settings wrangler does not manage, and re-running it is a no-op. Point
 the CLI at another deployment with `--service` or `DIFFWALK_SERVICE_URL`.
 
-## Export
+## JSON export
 
-`diffwalk export` materializes capture plus explanations and writes the portable
-ExplainDocument JSON (format version 1) for integrations or archiving. View and report
-do not require it; they validate and materialize directly from the authoring files.
+`diffwalk export json` materializes capture plus explanations and writes the portable
+ExplainDocument JSON (format version 1) for integrations or archiving. View, HTML export,
+and publish do not require it; they validate and materialize directly from the authoring files.
 
 ## Captured data sensitivity
 
 `capture.json` contains full file contents from your working tree and base commit.
 Treat it as potentially sensitive and do not publish or send it without authorization.
-
-## Reader controls
-
-- `j` / `↓`: move focus to the next visible header
-- `k` / `↑`: move focus to the previous visible header
-- `Enter` / `Space`: fold or unfold the focused header
-- Click an explanation header to focus, fold, or unfold its steps and file diffs
-- Click a step to focus, fold, or unfold the rest of its text and its diffs
-- Click a file header to focus, fold, or unfold just that file's diff
-- `1`: split diff layout
-- `2`: stacked diff layout
-- `q` or `Escape`: quit
-
-Scroll with the mouse or trackpad as well.
 
 ## Agent skill
 

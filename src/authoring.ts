@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
-import { formatPatch, structuredPatch, type StructuredPatch } from 'diff'
-import { parseDiffFromFile } from 'hunkdiff/opentui'
+import { diffLines, formatPatch, structuredPatch, type StructuredPatch } from 'diff'
 import {
   captureSchema,
   explainDocumentSchema,
@@ -17,39 +16,11 @@ export function createExplainCapture(files: DraftFile[], source: CaptureSource):
   const changes: ChangeBlock[] = []
 
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
-    const metadata = parseDiffFromFile(
-      file.oldContent === '' && file.status === 'added'
-        ? null
-        : { name: file.oldPath ?? file.path, contents: file.oldContent },
-      file.newContent === '' && file.status === 'deleted'
-        ? null
-        : { name: file.path, contents: file.newContent },
-      { context: 3 },
-      true,
-    )
-    const fileChanges: ChangeBlock[] = []
-
-    for (const hunk of metadata.hunks) {
-      for (const content of hunk.hunkContent) {
-        if (content.type !== 'change') continue
-        const oldIndex = Math.max(0, content.deletionLineIndex)
-        const newIndex = Math.max(0, content.additionLineIndex)
-        fileChanges.push({
-          id: changeId(nextId++),
-          path: file.path,
-          oldStart: oldIndex + 1,
-          oldCount: content.deletions,
-          newStart: newIndex + 1,
-          newCount: content.additions,
-          before: metadata.deletionLines
-            .slice(oldIndex, oldIndex + content.deletions)
-            .join(''),
-          after: metadata.additionLines
-            .slice(newIndex, newIndex + content.additions)
-            .join(''),
-        })
-      }
-    }
+    const fileChanges = changeBlocks(file).map((change) => ({
+      id: changeId(nextId++),
+      path: file.path,
+      ...change,
+    }))
 
     if (fileChanges.length === 0 && file.status !== 'modified') {
       fileChanges.push({
@@ -73,6 +44,50 @@ export function createExplainCapture(files: DraftFile[], source: CaptureSource):
     files,
     changes,
   })
+}
+
+function changeBlocks(file: DraftFile): Omit<ChangeBlock, 'id' | 'path'>[] {
+  const parts = diffLines(file.oldContent, file.newContent)
+  const changes: Omit<ChangeBlock, 'id' | 'path'>[] = []
+  let oldIndex = 0
+  let newIndex = 0
+
+  for (let index = 0; index < parts.length;) {
+    const part = parts[index]!
+    if (!part.added && !part.removed) {
+      oldIndex += part.count ?? 0
+      newIndex += part.count ?? 0
+      index++
+      continue
+    }
+
+    const oldStart = oldIndex + 1
+    const newStart = newIndex + 1
+    let before = ''
+    let after = ''
+    let oldCount = 0
+    let newCount = 0
+
+    while (index < parts.length) {
+      const changed = parts[index]!
+      if (!changed.added && !changed.removed) break
+      const count = changed.count ?? 0
+      if (changed.removed) {
+        before += changed.value
+        oldCount += count
+        oldIndex += count
+      } else {
+        after += changed.value
+        newCount += count
+        newIndex += count
+      }
+      index++
+    }
+
+    changes.push({ oldStart, oldCount, newStart, newCount, before, after })
+  }
+
+  return changes
 }
 
 export function captureIdFor(files: DraftFile[]): string {
@@ -119,7 +134,7 @@ export function materializeExplainDocument(
   }
 
   if (capture.changes.length === 0 && explanations.sections.length === 0) {
-    throw new Error('No captured changes or authored sections to materialize; nothing to view, report, or export.')
+    throw new Error('No captured changes or authored sections to materialize; nothing to view, export, or publish.')
   }
 
   const filesByPath = new Map(capture.files.map((file) => [file.path, file]))

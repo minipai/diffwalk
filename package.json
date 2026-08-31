@@ -1,7 +1,7 @@
 {
   "name": "diffwalk",
   "version": "0.1.0",
-  "description": "Read code changes as an ordered sequence of explanations and exact diffs",
+  "description": "Review code changes as an ordered sequence of explanations and exact diffs",
   "type": "module",
   "bin": {
     "diffwalk": "dist/diffwalk.js"
@@ -11,7 +11,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "bun build ./src/cli.ts --target=bun --packages=external --outfile=dist/diffwalk.js && bun build ./src/report-client.ts --target=browser --format=iife --minify --outfile=dist/report-client.js",
+    "build": "bun build ./src/cli.ts --target=node --packages=external --outfile=dist/diffwalk.js && bun build ./src/report-client.ts --target=browser --format=iife --minify --outfile=dist/report-client.js",
     "build:worker": "bun run ./worker/build-assets.ts",
     "deploy": "pnpm build:worker && wrangler deploy",
     "diffwalk": "bun run ./src/cli.ts",
@@ -22,11 +22,8 @@
     "prepack": "pnpm build"
   },
   "dependencies": {
-    "@opentui/core": "0.5.8",
-    "@opentui/react": "0.5.8",
     "@pierre/diffs": "1.3.5",
     "diff": "9.0.0",
-    "hunkdiff": "0.20.0",
     "marked": "18.0.11",
     "react": "19.2.8",
     "yaml": "^2.9.0",
@@ -41,7 +38,7 @@
     "wrangler": "^4.127.1"
   },
   "engines": {
-    "bun": ">=1.3.0"
+    "node": ">=20.0.0"
   },
   "packageManager": "pnpm@11.20.0"
 }

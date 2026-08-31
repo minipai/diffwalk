@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -16,6 +16,7 @@ import { captureGitChanges } from './git'
 import { commandHelp, isCommandName, topLevelHelp, type CommandName } from './help'
 import { publishDocument, reportService, unpublishDocument } from './publish'
 import { loadReportClient, renderReport, writeReport } from './report'
+import { openBrowser, startReportPreview } from './view'
 
 const defaults = {
   capture: '.explain/capture.json',
@@ -47,11 +48,6 @@ const flagSpecs: Record<CommandName, FlagSpec[]> = {
   view: [
     { name: 'input', takesValue: true },
     { name: 'explanations', takesValue: true },
-  ],
-  report: [
-    { name: 'input', takesValue: true },
-    { name: 'explanations', takesValue: true },
-    { name: 'output', takesValue: true },
   ],
   export: [
     { name: 'input', takesValue: true },
@@ -125,9 +121,6 @@ async function main() {
       break
     case 'view':
       await viewCommand(parsed)
-      break
-    case 'report':
-      await reportCommand(parsed)
       break
     case 'export':
       await exportCommand(parsed)
@@ -241,31 +234,41 @@ async function checkCommand(parsed: ParsedArgs) {
   if (repeated.length > 0) {
     console.log(`${repeated.length} changes are shown more than once: ${repeated.join(', ')}`)
   }
-  console.log('Next: `diffwalk view`, `diffwalk export`, or `diffwalk report`.')
+  console.log('Next: `diffwalk view`, `diffwalk export html`, or `diffwalk publish`.')
 }
 
 async function viewCommand(parsed: ParsedArgs) {
   requirePositionalCount(parsed, 0)
   const document = await materialize(parsed)
-  const { viewDocument } = await import('./main')
-  await viewDocument(document)
-}
-
-async function reportCommand(parsed: ParsedArgs) {
-  requirePositionalCount(parsed, 0)
-  const document = await materialize(parsed)
-  const output = option(parsed, 'output') ?? defaults.report
   const clientBundle = await loadReportClient()
   const html = renderReport(document, clientBundle)
-  await writeReport(output, html)
-  console.log(
-    `Wrote a ${html.length} byte report for ${document.sections.length} sections to ${output}`,
-  )
+  const preview = await startReportPreview(html)
+  console.log(`Viewing ${document.sections.length} sections at ${preview.url}`)
+  console.log('Press Ctrl+C to stop the local report.')
+  try {
+    await openBrowser(preview.url)
+  } catch (error) {
+    console.log(`Could not open a browser automatically: ${(error as Error).message}`)
+    console.log(`Open ${preview.url} yourself.`)
+  }
 }
 
 async function exportCommand(parsed: ParsedArgs) {
-  requirePositionalCount(parsed, 0)
+  const [format] = requirePositionalCount(parsed, 1)
+  if (format !== 'html' && format !== 'json') {
+    throw new UsageError(`Unknown export format: ${format}`)
+  }
   const document = await materialize(parsed)
+  if (format === 'html') {
+    const output = option(parsed, 'output') ?? defaults.report
+    const clientBundle = await loadReportClient()
+    const html = renderReport(document, clientBundle)
+    await writeReport(output, html)
+    console.log(
+      `Wrote a ${html.length} byte report for ${document.sections.length} sections to ${output}`,
+    )
+    return
+  }
   const output = option(parsed, 'output') ?? defaults.document
   await writeJson(output, document)
   console.log(`Wrote ${document.sections.length} explanation sections to ${output}`)
