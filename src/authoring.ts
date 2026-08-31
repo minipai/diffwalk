@@ -108,7 +108,7 @@ export function captureIdFor(files: DraftFile[]): string {
 }
 
 export function stalePairingMessage(capture: ExplainCapture, explanations: Explanations): string {
-  return `The explanations target capture ${explanations.captureId} but capture.json holds ${capture.captureId}. The captured working tree changed after the explanations were authored. Edit .explain/explanations.yaml to the new captureId and change IDs, or delete it and re-run \`diffwalk inspect\` for a fresh skeleton.`
+  return `The explanations target capture ${explanations.captureId} but capture.json holds ${capture.captureId}. The files come from different walks or the captured contents changed after the explanations were authored. Use capture.json and explanations.yaml from the same .diffwalk walk, or run \`diffwalk inspect\` for a fresh current pair.`
 }
 
 export function duplicatedChangeIds(explanations: Explanations): string[] {

@@ -70,7 +70,7 @@ export async function captureGitChanges(
 
   const knownPaths = new Set(files.map((file) => file.path))
   const untracked = splitNulls(
-    await gitBytes(['ls-files', '--others', '--exclude-standard', '--exclude=.explain/', '-z'], root),
+    await gitBytes(['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z'], root),
   )
   for (const path of untracked) {
     if (knownPaths.has(path)) continue

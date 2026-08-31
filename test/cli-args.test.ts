@@ -9,9 +9,9 @@ const reportSpecs = [
 
 describe('parseArgs', () => {
   test('collects value flags and positionals', () => {
-    const parsed = parseArgs(['--input', '.explain/capture.json', 'some', 'args'], reportSpecs)
+    const parsed = parseArgs(['--input', '.diffwalk/walk/capture.json', 'some', 'args'], reportSpecs)
 
-    expect(parsed.flags.input).toBe('.explain/capture.json')
+    expect(parsed.flags.input).toBe('.diffwalk/walk/capture.json')
     expect(parsed.positionals).toEqual(['some', 'args'])
     expect(parsed.help).toBe(false)
   })

@@ -5,7 +5,7 @@ exact corresponding diffs in a deliberate order.
 
 ## Product decisions
 
-- Authoring is split into two files. `capture.json` is machine-owned capture data:
+- Authoring is split into two files inside `.diffwalk/<walkId>/`. `capture.json` is machine-owned capture data:
   a `captureId`, a `working-tree` `source` with a `from` commit endpoint and an ISO
   `capturedAt`, full old/new file snapshots, and derived `change-*` blocks. It never
   contains authored sections. `explanations.yaml` is the only author-edited file: it
@@ -16,10 +16,13 @@ exact corresponding diffs in a deliberate order.
   SHA-256 over a canonical serialization of the captured file snapshots (status, path,
   old path, old content, new content), so identical captures pair consistently while
   changed content produces a different identity.
-- `inspect` never overwrites an existing authored `explanations.yaml`. On first use it
-  writes a small skeleton; on re-runs it preserves the authored file and refreshes
-  `capture.json`. When the captured contents change, the preserved explanations target
-  a stale `captureId` and `check` reports the mismatch with a next step.
+- A walk ID combines the capture time in ISO 8601 basic UTC format with the first eight
+  captureId characters, for example `20260831T063842Z-a7c9e4f2`. The full captureId
+  remains the content identity; the shorter walk ID is only the human-facing directory
+  name. `.diffwalk/current` stores the selected walk ID.
+- `inspect` never overwrites an existing authored `explanations.yaml`. Unchanged contents
+  reuse the current walk. Changed contents create a new timestamped walk, update current,
+  and leave the earlier capture plus explanations pair intact.
 - `explanations.yaml` is parsed as strict safe YAML 1.2 (the `yaml` package, core
   schema). Custom tags, duplicate keys, anchors, and aliases are rejected; YAML 1.1
   coercions (`yes`, `on`) stay plain strings; the result is validated by a strict Zod
@@ -89,6 +92,7 @@ exact corresponding diffs in a deliberate order.
 - `src/cli-args.ts`: shared flag/positional parsing and usage errors.
 - `src/help.ts`: top-level and per-command help for purpose, quick start, file
   ownership, defaults, options, and next steps.
+- `src/walk.ts`: timestamped walk IDs, per-walk paths, and the current-walk pointer.
 - `src/cli.ts`: executable entry point for `inspect`, `changes`, `change`, `file`,
   `check`, `view`, `export`, `publish`, `unpublish`, and `help`.
 - `src/view.ts`: loopback-only report preview server and default-browser launch.

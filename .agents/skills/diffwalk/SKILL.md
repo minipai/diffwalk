@@ -1,6 +1,6 @@
 ---
 name: diffwalk
-description: Use the Diffwalk CLI to capture Git working-tree changes, author ordered explanations in explanations.yaml, validate with check, and preview, export, or publish the report. Trigger when the user asks to use Diffwalk or create/update its `.explain` capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
+description: Use the Diffwalk CLI to capture Git working-tree changes, author ordered explanations in the current `.diffwalk` walk, validate with check, and preview, export, or publish the report. Trigger when the user asks to use Diffwalk or create/update its capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
 ---
 
 # Diffwalk
@@ -15,7 +15,10 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
    - `diffwalk changes` for a concise summary, or `diffwalk changes --json` for structured IDs, paths, coordinates, before, and after.
    - `diffwalk change <id>` to read one captured change block.
    - `diffwalk file <path> --before` / `diffwalk file <path> --after` to read one captured file side.
-4. Edit the generated `.explain/explanations.yaml`. Treat its `captureId` as captured data: write `title`, an optional `summary`, and `sections`:
+4. Edit the generated explanations path printed by `inspect`. Diffwalk stores each
+   authoring pair under `.diffwalk/<walkId>/` and records the selected walk in
+   `.diffwalk/current`. Treat `captureId` as captured data: write `title`, an optional
+   `summary`, and `sections`:
 
    ```yaml
    title: What this whole change set does
@@ -58,20 +61,22 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
 - Never edit or hand-parse `capture.json`. It is machine-owned; read it only through `changes`, `change`, and `file`.
 - Treat each change ID as independently assignable even when multiple IDs appear inside one rendered hunk.
 - Keep explanations ordered for comprehension rather than source-file order when that improves the walkthrough.
-- Do not edit captured file contents or change coordinates to force a check. Re-run `diffwalk inspect` when the working tree has changed; it never overwrites an authored `explanations.yaml`.
+- Do not edit captured file contents or change coordinates to force a check. Re-run
+  `diffwalk inspect` when the working tree has changed; it creates a new current walk
+  and never overwrites an authored `explanations.yaml`.
 - Stop and report errors for binary files, symbolic links, unsupported file types, or file-mode changes. Do not bypass these boundaries.
 - The capture contains full file contents. Treat it as potentially sensitive and do not publish or send it without the user's authorization.
 
 ## Commands
 
 ```bash
-diffwalk inspect [--base HEAD] [--output .explain/capture.json] [--explanations .explain/explanations.yaml]
-diffwalk changes [--json] [--input .explain/capture.json]
-diffwalk change <id> [--input .explain/capture.json]
-diffwalk file <path> (--before | --after) [--input .explain/capture.json]
-diffwalk check [--input .explain/capture.json] [--explanations .explain/explanations.yaml]
-diffwalk view [--input .explain/capture.json] [--explanations .explain/explanations.yaml]
-diffwalk export <html|json> [--input .explain/capture.json] [--explanations .explain/explanations.yaml] [--output <path>]
+diffwalk inspect [--base HEAD] [--output <capture-path>] [--explanations <yaml-path>]
+diffwalk changes [--json] [--input <capture-path>]
+diffwalk change <id> [--input <capture-path>]
+diffwalk file <path> (--before | --after) [--input <capture-path>]
+diffwalk check [--input <capture-path>] [--explanations <yaml-path>]
+diffwalk view [--input <capture-path>] [--explanations <yaml-path>]
+diffwalk export <html|json> [--input <capture-path>] [--explanations <yaml-path>] [--output <path>]
 ```
 
 ## Trusted-text boundary

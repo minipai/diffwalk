@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createExplainCapture, duplicatedChangeIds, materializeExplainDocument } from './authoring'
 import { parseArgs, requirePositionalCount, UsageError, type ParsedArgs, type FlagSpec } from './cli-args'
 import { parseExplanations } from './explanations'
@@ -17,12 +17,14 @@ import { commandHelp, isCommandName, topLevelHelp, type CommandName } from './he
 import { publishDocument, reportService, unpublishDocument } from './publish'
 import { loadReportClient, renderReport, writeReport } from './report'
 import { openBrowser, startReportPreview } from './view'
+import { currentWalk, currentWalkIfPresent, setCurrentWalk, walkId, walkPaths } from './walk'
 
-const defaults = {
-  capture: '.explain/capture.json',
-  explanations: '.explain/explanations.yaml',
-  document: '.explain/document.json',
-  report: '.explain/report.html',
+interface AuthoringFiles {
+  directory: string
+  capture: string
+  explanations: string
+  html: string
+  json: string
 }
 
 const flagSpecs: Record<CommandName, FlagSpec[]> = {
@@ -137,41 +139,72 @@ async function main() {
 async function inspectCommand(parsed: ParsedArgs) {
   requirePositionalCount(parsed, 0)
   const base = option(parsed, 'base') ?? 'HEAD'
-  const capturePath = option(parsed, 'output') ?? defaults.capture
-  const explanationsPath = option(parsed, 'explanations') ?? defaults.explanations
-
+  const capturedAt = new Date().toISOString()
   const git = await captureGitChanges(base)
   const capture = createExplainCapture(git.files, {
     kind: 'working-tree',
     from: { revision: base, commit: git.baseCommit },
-    capturedAt: new Date().toISOString(),
+    capturedAt,
   })
-  await writeJson(capturePath, capture)
+  const outputOverride = option(parsed, 'output')
+  const explanationsOverride = option(parsed, 'explanations')
 
-  if (existsSync(explanationsPath)) {
-    console.log(`Kept existing ${explanationsPath} (inspect never overwrites it)`)
-  } else {
-    await writeText(explanationsPath, explanationsSkeleton(capture.captureId))
-    console.log(`Wrote a ${explanationsPath} skeleton to author`)
+  if (outputOverride !== undefined || explanationsOverride !== undefined) {
+    const paths = authoringFiles(outputOverride, explanationsOverride)
+    await writeCapture(paths, capture)
+    console.log(
+      `Captured ${capture.changes.length} change blocks across ${capture.files.length} files to ${paths.capture}`,
+    )
+    console.log(
+      `Next: edit ${paths.explanations}, then run \`diffwalk check --input ${paths.capture} --explanations ${paths.explanations}\`.`,
+    )
+    return
   }
 
+  const previous = await currentWalkIfPresent()
+  if (previous !== null) {
+    const previousCapture = await readCapture(previous.capture)
+    if (previousCapture.captureId === capture.captureId) {
+      if (existsSync(previous.explanations)) {
+        console.log(`Kept existing ${previous.explanations} (inspect never overwrites it)`)
+      } else {
+        await writeText(previous.explanations, explanationsSkeleton(capture.captureId))
+        console.log(`Wrote a ${previous.explanations} skeleton to author`)
+      }
+      console.log(`Working tree is unchanged; kept current walk ${previous.id}`)
+      console.log(`Next: edit ${previous.explanations}, then run \`diffwalk check\`.`)
+      return
+    }
+  }
+
+  const id = walkId(capturedAt, capture.captureId)
+  const paths = walkPaths(id)
+  if (existsSync(paths.capture)) {
+    const existing = await readCapture(paths.capture)
+    if (existing.captureId !== capture.captureId) {
+      throw new Error(`Walk ID collision at ${paths.directory}`)
+    }
+  } else {
+    await writeJson(paths.capture, capture)
+  }
+
+  if (existsSync(paths.explanations)) {
+    console.log(`Kept existing ${paths.explanations} (inspect never overwrites it)`)
+  } else {
+    await writeText(paths.explanations, explanationsSkeleton(capture.captureId))
+    console.log(`Wrote a ${paths.explanations} skeleton to author`)
+  }
+  await setCurrentWalk(id)
   console.log(
-    `Captured ${capture.changes.length} change blocks across ${capture.files.length} files to ${capturePath}`,
+    `Captured ${capture.changes.length} change blocks across ${capture.files.length} files to ${paths.capture}`,
   )
-  const checkSuffix = [
-    capturePath !== defaults.capture ? `--input ${capturePath}` : '',
-    explanationsPath !== defaults.explanations ? `--explanations ${explanationsPath}` : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-  console.log(
-    `Next: edit ${explanationsPath}, then run \`diffwalk check${checkSuffix ? ` ${checkSuffix}` : ''}\`.`,
-  )
+  console.log(`Current walk: ${id}`)
+  console.log(`Next: edit ${paths.explanations}, then run \`diffwalk check\`.`)
 }
 
 async function changesCommand(parsed: ParsedArgs) {
   requirePositionalCount(parsed, 0)
-  const capture = await readCapture(option(parsed, 'input') ?? defaults.capture)
+  const capture = await readCapture(await captureInput(parsed))
   if (parsed.flags.json === true) {
     console.log(
       JSON.stringify(
@@ -191,7 +224,7 @@ async function changesCommand(parsed: ParsedArgs) {
 
 async function changeCommand(parsed: ParsedArgs) {
   const [id] = requirePositionalCount(parsed, 1)
-  const capture = await readCapture(option(parsed, 'input') ?? defaults.capture)
+  const capture = await readCapture(await captureInput(parsed))
   const change = capture.changes.find((candidate) => candidate.id === id)
   if (!change) throw new Error(`Unknown change ID: ${id}`)
   console.log(`${change.id}  ${change.path}  ${coordinates(change)}`)
@@ -210,7 +243,7 @@ async function fileCommand(parsed: ParsedArgs) {
   if (before === after) {
     throw new UsageError('Choose exactly one side with --before or --after')
   }
-  const capture = await readCapture(option(parsed, 'input') ?? defaults.capture)
+  const capture = await readCapture(await captureInput(parsed))
   const file = capture.files.find((candidate) => candidate.path === path)
   if (!file) throw new Error(`Unknown file path: ${path}`)
   process.stdout.write(before ? file.oldContent : file.newContent)
@@ -218,10 +251,9 @@ async function fileCommand(parsed: ParsedArgs) {
 
 async function checkCommand(parsed: ParsedArgs) {
   requirePositionalCount(parsed, 0)
-  const capture = await readCapture(option(parsed, 'input') ?? defaults.capture)
-  const explanations = await readExplanations(
-    option(parsed, 'explanations') ?? defaults.explanations,
-  )
+  const paths = await authoringInput(parsed)
+  const capture = await readCapture(paths.capture)
+  const explanations = await readExplanations(paths.explanations)
   const document = materializeExplainDocument(capture, explanations)
   const fileCount = new Set(capture.files.map((file) => file.path)).size
   const steps = document.sections.reduce((total, section) => total + section.steps.length, 0)
@@ -239,7 +271,7 @@ async function checkCommand(parsed: ParsedArgs) {
 
 async function viewCommand(parsed: ParsedArgs) {
   requirePositionalCount(parsed, 0)
-  const document = await materialize(parsed)
+  const { document } = await materialize(parsed)
   const clientBundle = await loadReportClient()
   const html = renderReport(document, clientBundle)
   const preview = await startReportPreview(html)
@@ -258,9 +290,9 @@ async function exportCommand(parsed: ParsedArgs) {
   if (format !== 'html' && format !== 'json') {
     throw new UsageError(`Unknown export format: ${format}`)
   }
-  const document = await materialize(parsed)
+  const { document, paths } = await materialize(parsed)
   if (format === 'html') {
-    const output = option(parsed, 'output') ?? defaults.report
+    const output = option(parsed, 'output') ?? paths.html
     const clientBundle = await loadReportClient()
     const html = renderReport(document, clientBundle)
     await writeReport(output, html)
@@ -269,14 +301,14 @@ async function exportCommand(parsed: ParsedArgs) {
     )
     return
   }
-  const output = option(parsed, 'output') ?? defaults.document
+  const output = option(parsed, 'output') ?? paths.json
   await writeJson(output, document)
   console.log(`Wrote ${document.sections.length} explanation sections to ${output}`)
 }
 
 async function publishCommand(parsed: ParsedArgs) {
   requirePositionalCount(parsed, 0)
-  const document = await materialize(parsed)
+  const { document } = await materialize(parsed)
   const service = reportService(option(parsed, 'service'))
   const published = await publishDocument(document, service)
   console.log(
@@ -299,12 +331,48 @@ async function unpublishCommand(parsed: ParsedArgs) {
   console.log(`Removed report ${id} from ${service}`)
 }
 
-async function materialize(parsed: ParsedArgs): Promise<ExplainDocument> {
-  const capture = await readCapture(option(parsed, 'input') ?? defaults.capture)
-  const explanations = await readExplanations(
-    option(parsed, 'explanations') ?? defaults.explanations,
-  )
-  return materializeExplainDocument(capture, explanations)
+async function materialize(
+  parsed: ParsedArgs,
+): Promise<{ document: ExplainDocument; paths: AuthoringFiles }> {
+  const paths = await authoringInput(parsed)
+  const capture = await readCapture(paths.capture)
+  const explanations = await readExplanations(paths.explanations)
+  return { document: materializeExplainDocument(capture, explanations), paths }
+}
+
+async function captureInput(parsed: ParsedArgs): Promise<string> {
+  return option(parsed, 'input') ?? (await currentWalk()).capture
+}
+
+async function authoringInput(parsed: ParsedArgs): Promise<AuthoringFiles> {
+  const capture = option(parsed, 'input')
+  const explanations = option(parsed, 'explanations')
+  if (capture === undefined && explanations === undefined) return currentWalk()
+  return authoringFiles(capture, explanations)
+}
+
+function authoringFiles(
+  capture: string | undefined,
+  explanations: string | undefined,
+): AuthoringFiles {
+  const directory = dirname(capture ?? explanations!)
+  return {
+    directory,
+    capture: capture ?? join(directory, 'capture.json'),
+    explanations: explanations ?? join(directory, 'explanations.yaml'),
+    html: join(directory, 'diffwalk.html'),
+    json: join(directory, 'diffwalk.json'),
+  }
+}
+
+async function writeCapture(paths: AuthoringFiles, capture: ExplainCapture): Promise<void> {
+  await writeJson(paths.capture, capture)
+  if (existsSync(paths.explanations)) {
+    console.log(`Kept existing ${paths.explanations} (inspect never overwrites it)`)
+  } else {
+    await writeText(paths.explanations, explanationsSkeleton(capture.captureId))
+    console.log(`Wrote a ${paths.explanations} skeleton to author`)
+  }
 }
 
 async function readCapture(path: string): Promise<ExplainCapture> {

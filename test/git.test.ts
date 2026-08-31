@@ -26,8 +26,8 @@ describe('captureGitChanges', () => {
     await rename(join(directory, 'old-name.ts'), join(directory, 'new-name.ts'))
     await git(['add', '-A'], directory)
     await writeFile(join(directory, 'untracked.ts'), 'untracked\n')
-    await mkdir(join(directory, '.explain'))
-    await writeFile(join(directory, '.explain', 'capture.json'), '{}\n')
+    await mkdir(join(directory, '.diffwalk'))
+    await writeFile(join(directory, '.diffwalk', 'current'), 'local-only\n')
 
     const capture = await captureGitChanges('HEAD', directory)
 

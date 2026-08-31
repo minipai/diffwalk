@@ -37,22 +37,30 @@ async function runCli(
   return { exitCode, stdout, stderr }
 }
 
-function explainDir(repo: string) {
-  return join(repo, '.explain')
+function diffwalkDir(repo: string) {
+  return join(repo, '.diffwalk')
+}
+
+async function readCurrentWalkId(repo: string) {
+  return (await readFile(join(diffwalkDir(repo), 'current'), 'utf8')).trim()
+}
+
+async function currentWalkDir(repo: string) {
+  return join(diffwalkDir(repo), await readCurrentWalkId(repo))
 }
 
 async function readCapture(repo: string) {
   return captureSchema.parse(
-    JSON.parse(await readFile(join(explainDir(repo), 'capture.json'), 'utf8')),
+    JSON.parse(await readFile(join(await currentWalkDir(repo), 'capture.json'), 'utf8')),
   )
 }
 
 async function readExplanationsYaml(repo: string) {
-  return readFile(join(explainDir(repo), 'explanations.yaml'), 'utf8')
+  return readFile(join(await currentWalkDir(repo), 'explanations.yaml'), 'utf8')
 }
 
 async function writeExplanations(repo: string, yaml: string) {
-  await writeFile(join(explainDir(repo), 'explanations.yaml'), yaml)
+  await writeFile(join(await currentWalkDir(repo), 'explanations.yaml'), yaml)
 }
 
 function everyChangeYaml(captureId: string, changes: { id: string }[]): string {
@@ -109,7 +117,6 @@ describe('help', () => {
       expect(result.stdout).toContain(`diffwalk ${command} —`)
       expect(result.stdout).toContain('Options:')
       expect(result.stdout).toContain('Next steps:')
-      expect(result.stdout).toContain('.explain/capture.json')
     }
   })
 
@@ -203,11 +210,14 @@ describe('inspect', () => {
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Captured')
     expect(result.stdout).toContain('change blocks across')
-    expect(result.stdout).toContain('.explain/capture.json')
-    expect(result.stdout).toContain('Wrote a .explain/explanations.yaml skeleton')
-    expect(result.stdout).toContain('Next: edit .explain/explanations.yaml')
+    expect(result.stdout).toMatch(/\.diffwalk\/\d{8}T\d{6}Z-[0-9a-f]{8}\/capture\.json/)
+    expect(result.stdout).toMatch(/Wrote a \.diffwalk\/.+\/explanations\.yaml skeleton/)
+    expect(result.stdout).toMatch(/Next: edit \.diffwalk\/.+\/explanations\.yaml/)
 
     const capture = await readCapture(repo)
+    const walkId = await readCurrentWalkId(repo)
+    expect(walkId).toMatch(/^\d{8}T\d{6}Z-[0-9a-f]{8}$/)
+    expect(walkId.endsWith(capture.captureId.slice(0, 8))).toBe(true)
     expect(capture.captureId).toMatch(/^[0-9a-f]{64}$/)
     expect(capture.files.map((file) => file.path)).toEqual(['greeting.ts', 'untracked.ts'])
     expect(capture.changes.length).toBeGreaterThan(0)
@@ -227,26 +237,33 @@ describe('inspect', () => {
     const result = await runCli(['inspect'], repo)
 
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('Kept existing .explain/explanations.yaml')
+    expect(result.stdout).toContain('Kept existing .diffwalk/')
+    expect(result.stdout).toContain('Working tree is unchanged; kept current walk')
     expect(await readExplanationsYaml(repo)).toBe(
       '# my authored file\ncaptureId: stale\ntitle: Mine\nsections: []\n',
     )
   })
 
-  test('refreshes capture.json on content change while preserving explanations', async () => {
+  test('creates a new current walk on content change and preserves the earlier authoring pair', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     const first = await readCapture(repo)
+    const firstWalk = await readCurrentWalkId(repo)
     await authorEveryChange(repo)
+    const firstExplanations = await readExplanationsYaml(repo)
 
     await writeFile(join(repo, 'greeting.ts'), 'Hello\nGalaxy\n')
     const result = await runCli(['inspect'], repo)
 
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('Kept existing .explain/explanations.yaml')
     const second = await readCapture(repo)
+    const secondWalk = await readCurrentWalkId(repo)
     expect(second.captureId).not.toBe(first.captureId)
-    expect(await readExplanationsYaml(repo)).toContain(`captureId: ${first.captureId}`)
+    expect(secondWalk).not.toBe(firstWalk)
+    expect(await readFile(join(diffwalkDir(repo), firstWalk, 'explanations.yaml'), 'utf8')).toBe(
+      firstExplanations,
+    )
+    expect(await readExplanationsYaml(repo)).toContain(`captureId: ${second.captureId}`)
   })
 
   test('prints a directly usable check command for custom paths', async () => {
@@ -264,11 +281,11 @@ describe('inspect', () => {
       `Next: edit ${explanationsPath}, then run \`diffwalk check --input ${capturePath} --explanations ${explanationsPath}\`.`,
     )
     expect(inspect.stdout).not.toContain('run `diffwalk check`.')
-    expect(inspect.stdout).not.toContain('.explain/capture.json')
+    expect(inspect.stdout).not.toContain('.diffwalk/')
 
     const bare = await runCli(['check'], repo)
     expect(bare.exitCode).not.toBe(0)
-    expect(bare.stderr).toContain('No capture at .explain/capture.json')
+    expect(bare.stderr).toContain('No current Diffwalk capture')
 
     const capture = JSON.parse(await readFile(join(repo, capturePath), 'utf8')) as {
       captureId: string
@@ -276,7 +293,7 @@ describe('inspect', () => {
     }
     await writeFile(
       join(repo, explanationsPath),
-everyChangeYaml(capture.captureId, capture.changes),
+      everyChangeYaml(capture.captureId, capture.changes),
     )
 
     const check = await runCli(
@@ -287,14 +304,14 @@ everyChangeYaml(capture.captureId, capture.changes),
     expect(check.stdout).toContain('OK:')
   })
 
-  test('prints only the flags that differ from defaults in the check next step', async () => {
+  test('pairs a custom capture path with explanations in the same directory', async () => {
     const repo = await fixtureRepo()
 
     const inspect = await runCli(['inspect', '--output', 'out/capture.json'], repo)
 
     expect(inspect.exitCode).toBe(0)
     expect(inspect.stdout).toContain(
-      'Next: edit .explain/explanations.yaml, then run `diffwalk check --input out/capture.json`.',
+      'Next: edit out/explanations.yaml, then run `diffwalk check --input out/capture.json --explanations out/explanations.yaml`.',
     )
   })
 })
@@ -433,9 +450,11 @@ describe('check', () => {
   test('reports a stale captureId with a useful next step', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
-    await authorEveryChange(repo)
-    await writeFile(join(repo, 'greeting.ts'), 'Hello\nGalaxy\n')
-    await runCli(['inspect'], repo)
+    const capture = await readCapture(repo)
+    await writeExplanations(
+      repo,
+      everyChangeYaml('f'.repeat(64), capture.changes),
+    )
 
     const result = await runCli(['check'], repo)
 
@@ -469,7 +488,8 @@ describe('check', () => {
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain('title: Invalid input: expected string')
-    expect(result.stderr).toContain('.explain/explanations.yaml')
+    expect(result.stderr).toContain('.diffwalk/')
+    expect(result.stderr).toContain('explanations.yaml')
   })
 
   test('a clean working tree reports a clear message instead of a cryptic schema error', async () => {
@@ -528,7 +548,7 @@ describe('check', () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
-    const capturePath = join(explainDir(repo), 'capture.json')
+    const capturePath = join(await currentWalkDir(repo), 'capture.json')
     const capture = JSON.parse(await readFile(capturePath, 'utf8')) as { changes: { before: string }[] }
     capture.changes[0]!.before = 'tampered\n'
     await writeFile(capturePath, `${JSON.stringify(capture, null, 2)}\n`)
@@ -558,7 +578,7 @@ describe('HTML export', () => {
     expect(html).not.toMatch(/<script[^>]+src=/)
   })
 
-  test('defaults to .explain/report.html', async () => {
+  test('defaults to diffwalk.html in the current walk', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
@@ -566,8 +586,8 @@ describe('HTML export', () => {
     const result = await runCli(['export', 'html'], repo)
 
     expect(result.exitCode).toBe(0)
-    const files = await readdir(explainDir(repo))
-    expect(files).toContain('report.html')
+    const files = await readdir(await currentWalkDir(repo))
+    expect(files).toContain('diffwalk.html')
   })
 })
 
@@ -599,7 +619,7 @@ describe('JSON export', () => {
     }
   })
 
-  test('defaults to .explain/document.json', async () => {
+  test('defaults to diffwalk.json in the current walk', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
@@ -607,8 +627,8 @@ describe('JSON export', () => {
     const result = await runCli(['export', 'json'], repo)
 
     expect(result.exitCode).toBe(0)
-    const files = await readdir(explainDir(repo))
-    expect(files).toContain('document.json')
+    const files = await readdir(await currentWalkDir(repo))
+    expect(files).toContain('diffwalk.json')
   })
 })
 
@@ -789,14 +809,15 @@ describe('removed workflow', () => {
   test('the old combined draft is not accepted as input', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
-    const capturePath = join(explainDir(repo), 'capture.json')
+    const walkDirectory = await currentWalkDir(repo)
+    const capturePath = join(walkDirectory, 'capture.json')
     const capture = JSON.parse(await readFile(capturePath, 'utf8')) as Record<string, unknown>
     await writeFile(
-      join(explainDir(repo), 'draft.json'),
+      join(walkDirectory, 'draft.json'),
       `${JSON.stringify({ draftVersion: 1, ...capture, sections: [] }, null, 2)}\n`,
     )
 
-    const result = await runCli(['changes', '--input', join(explainDir(repo), 'draft.json')], repo)
+    const result = await runCli(['changes', '--input', join(walkDirectory, 'draft.json')], repo)
 
     expect(result.exitCode).not.toBe(0)
   })

@@ -39,12 +39,23 @@ diffwalk inspect
 ```
 
 This captures staged, unstaged, renamed, deleted, and untracked UTF-8 files relative to
-`HEAD` and writes two authoring files:
+`HEAD` and creates a current walk such as
+`.diffwalk/20260831T063842Z-a7c9e4f2/`. The name combines the capture time in ISO 8601
+basic format with the first eight characters of the content-derived `captureId`.
+The walk contains two authoring files:
 
-- `.explain/capture.json` — machine-owned capture data (source, full file snapshots,
+- `capture.json` — machine-owned capture data (source, full file snapshots,
   change blocks, and a `captureId`). Never edit it by hand.
-- `.explain/explanations.yaml` — a small authoring skeleton on first use. This is the
+- `explanations.yaml` — a small authoring skeleton on first use. This is the
   only file you edit.
+
+`.diffwalk/current` selects the default walk for later commands. An unchanged re-inspect
+reuses it; changed contents create a new walk without deleting the earlier pair. Ignore
+the entire local workspace when it should not enter version control:
+
+```gitignore
+.diffwalk/
+```
 
 Name the change set, then order the `sections` array. Each section is a title over an
 ordered list of `steps`, and a step carries `text`, `changes`, or both, so prose and
@@ -89,11 +100,11 @@ diffwalk publish
 The default workflow stays terse; every command also accepts explicit overrides:
 
 ```bash
-diffwalk inspect --base main --output .explain/capture.json
-diffwalk check --input .explain/capture.json --explanations .explain/explanations.yaml
-diffwalk view --input .explain/capture.json --explanations .explain/explanations.yaml
+diffwalk inspect --base main
+diffwalk check --input path/to/capture.json --explanations path/to/explanations.yaml
+diffwalk view --input path/to/capture.json --explanations path/to/explanations.yaml
 diffwalk export html --output report.html
-diffwalk export json --output .explain/document.json
+diffwalk export json --output document.json
 diffwalk publish --service https://reports.example
 ```
 
@@ -118,9 +129,9 @@ IDs and `file` rejects unknown paths or an invalid `--before`/`--after` selectio
 `capture.json` holds a `captureId` that identifies the captured code contents, not the
 capture timestamp: identical captures pair consistently, and changed contents produce a
 different identity. `explanations.yaml` names the `captureId` it was authored against.
-`diffwalk inspect` never overwrites an authored `explanations.yaml`: if the working tree
-changed, it refreshes `capture.json` and `diffwalk check` reports the stale `captureId`
-with a next step instead of silently breaking your authoring file.
+`diffwalk inspect` never overwrites an authored `explanations.yaml`: unchanged contents
+reuse the current walk, while changed contents create a new timestamped walk and leave
+the earlier authoring pair intact.
 
 ## Validation
 
@@ -145,7 +156,7 @@ until you press Ctrl+C.
 diffwalk export html
 ```
 
-writes `.explain/report.html` by default. The report is one portable file: it embeds
+writes `diffwalk.html` inside the current walk by default. The report is one portable file: it embeds
 the document data, the Markdown-rendered explanations, the `@pierre/diffs` runtime that
 parses and renders each exact diff, and all styles. It works offline as a local file
 with JavaScript enabled and requests no CDN or external assets.
@@ -208,9 +219,10 @@ the CLI at another deployment with `--service` or `DIFFWALK_SERVICE_URL`.
 
 ## JSON export
 
-`diffwalk export json` materializes capture plus explanations and writes the portable
-ExplainDocument JSON (format version 1) for integrations or archiving. View, HTML export,
-and publish do not require it; they validate and materialize directly from the authoring files.
+`diffwalk export json` materializes capture plus explanations and writes `diffwalk.json`
+inside the current walk by default. It is the portable ExplainDocument JSON (format
+version 1) for integrations or archiving. View, HTML export, and publish do not require
+it; they validate and materialize directly from the authoring files.
 
 ## Captured data sensitivity
 
