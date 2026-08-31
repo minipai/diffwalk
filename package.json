@@ -2,13 +2,22 @@
   "name": "diffwalk",
   "version": "0.1.0",
   "description": "Review code changes as an ordered sequence of explanations and exact diffs",
+  "license": "MIT",
+  "homepage": "https://diffwalk.dev",
+  "keywords": [
+    "code-review",
+    "diff",
+    "git",
+    "cli"
+  ],
   "type": "module",
   "bin": {
     "diffwalk": "dist/diffwalk.js"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "bun build ./src/cli.ts --target=node --packages=external --outfile=dist/diffwalk.js && bun build ./src/report-client.ts --target=browser --format=iife --minify --outfile=dist/report-client.js",
@@ -39,6 +48,9 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "packageManager": "pnpm@11.20.0"
 }

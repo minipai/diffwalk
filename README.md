@@ -6,6 +6,20 @@ exact corresponding diffs in a deliberate order.
 The CLI requires Node.js 20 or newer. Development commands below also require Bun 1.3
 or newer and pnpm.
 
+## Installation
+
+Install Diffwalk globally from npm:
+
+```bash
+npm install --global diffwalk
+```
+
+Or run it without a global installation:
+
+```bash
+npx diffwalk inspect
+```
+
 ## Development
 
 Install the dependencies, build the executable, and run the test suite:
