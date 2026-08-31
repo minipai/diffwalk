@@ -4,6 +4,13 @@
   "description": "Review code changes as an ordered sequence of explanations and exact diffs",
   "license": "MIT",
   "homepage": "https://diffwalk.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minipai/diffwalk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/minipai/diffwalk/issues"
+  },
   "keywords": [
     "code-review",
     "diff",
