@@ -1,6 +1,6 @@
 # Diffwalk
 
-Diffwalk turns code changes into browser reports that present explanations and their
+Diffwalk turns code changes into browser reviews that present explanations and their
 exact corresponding diffs in a deliberate order.
 
 The CLI requires Node.js 20 or newer. Development commands below also require Bun 1.3
@@ -83,7 +83,7 @@ sections:
           - change-002
 ```
 
-`title` is required: it becomes the report heading and the browser tab, which is how two
+`title` is required: it becomes the review heading and the browser tab, which is how two
 shared links tell themselves apart. `summary` is optional.
 
 Every change must be shown at least once. Showing one in more than one step is allowed
@@ -103,9 +103,9 @@ The default workflow stays terse; every command also accepts explicit overrides:
 diffwalk inspect --base main
 diffwalk check --input path/to/capture.json --explanations path/to/explanations.yaml
 diffwalk view --input path/to/capture.json --explanations path/to/explanations.yaml
-diffwalk export html --output report.html
+diffwalk export html --output review.html
 diffwalk export json --output document.json
-diffwalk publish --service https://reports.example
+diffwalk publish --service https://review.example
 ```
 
 ## Inspecting what was captured
@@ -146,59 +146,59 @@ plain strings.
 
 ## Local preview
 
-`diffwalk view` materializes the report, starts a temporary loopback-only server, and
+`diffwalk view` materializes the review, starts a temporary loopback-only server, and
 opens it in the default browser. It writes no HTML file. The server remains available
 until you press Ctrl+C.
 
-## HTML reports
+## HTML reviews
 
 ```bash
 diffwalk export html
 ```
 
-writes `diffwalk.html` inside the current walk by default. The report is one portable file: it embeds
+writes `diffwalk.html` inside the current walk by default. The review is one portable file: it embeds
 the document data, the Markdown-rendered explanations, the `@pierre/diffs` runtime that
 parses and renders each exact diff, and all styles. It works offline as a local file
 with JavaScript enabled and requests no CDN or external assets.
 
 `text` and `summary` are rendered as Markdown, and inline HTML passes through, so a
 diagram can sit exactly where the argument needs it. That makes authored text trusted
-input: build reports only from documents you or a trusted agent authored.
+input: build reviews only from documents you or a trusted agent authored.
 
 Embed every image as an inline `<svg>` or a `data:` URI. A remote image URL renders in
-the local file but is blocked on the hosted report, so the same document would look
+the local file but is blocked on the hosted review, so the same document would look
 different through a link.
 
-## Hosted reports
+## Hosted reviews
 
 ```bash
 diffwalk publish
 ```
 
-materializes the same document `export html` renders, uploads it to the report service, and
+materializes the same document `export html` renders, uploads it to the review service, and
 prints an unlisted link. The service stores only that JSON and renders it with its own
-shared renderer, so no HTML file is uploaded and every report reuses one cached copy of
+shared renderer, so no HTML file is uploaded and every review reuses one cached copy of
 the renderer instead of carrying its own.
 
 Publishing is anonymous and unlisted, not private. The link cannot be guessed, but
-anyone holding it can read the report without signing in. Treat the link as the secret,
+anyone holding it can read the review without signing in. Treat the link as the secret,
 and do not publish a document you would not hand to everyone who might receive it.
 
 Publishing prints a revocation token once. Keep it: it is the only way to take that
-report down.
+review down.
 
 ```bash
-diffwalk unpublish <report-id> --token <revocation-token>
+diffwalk unpublish <review-id> --token <revocation-token>
 ```
 
-A revocation token removes exactly one report and cannot touch another. Losing it means
-the report stays published.
+A revocation token removes exactly one review and cannot touch another. Losing it means
+the review stays published.
 
-Reports are immutable. Publishing a revision creates a separate report at a separate
-link, and the earlier link keeps serving the earlier report until it is revoked.
+Reviews are immutable. Publishing a revision creates a separate review at a separate
+link, and the earlier link keeps serving the earlier review until it is revoked.
 
 The trusted-text boundary from `diffwalk export html` still applies: authored markup is served
-verbatim, so publish only what you or a trusted agent authored. The report origin is kept
+verbatim, so publish only what you or a trusted agent authored. The review origin is kept
 powerless on purpose — no cookies, no inline scripts, no outbound connections — but that
 contains bad markup rather than sanitizing it.
 

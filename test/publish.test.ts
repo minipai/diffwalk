@@ -75,7 +75,7 @@ describe('reportService', () => {
       'https://reports.example.test',
     )
     expect(() => reportService('http://reports.example.test')).toThrow('over HTTPS')
-    expect(() => reportService('not a url')).toThrow('Not a valid report service URL')
+    expect(() => reportService('not a url')).toThrow('Not a valid review service URL')
   })
 
   test('a local service may be reached without TLS for development', () => {
@@ -108,7 +108,7 @@ describe('publishDocument', () => {
     stubFetch(() => json(413, { error: 'A report document may not exceed 1048576 bytes' }))
 
     await expect(publishDocument(document, 'https://s.test')).rejects.toThrow(
-      'Could not publish the report: 413 A report document may not exceed 1048576 bytes',
+      'Could not publish the review: 413 A report document may not exceed 1048576 bytes',
     )
   })
 
@@ -161,7 +161,7 @@ describe('unpublishDocument', () => {
     stubFetch(() => json(403, { error: 'That credential does not revoke this report' }))
 
     await expect(unpublishDocument('abc', 'https://s.test', 'wrong')).rejects.toThrow(
-      'Could not remove the report: 403 That credential does not revoke this report',
+      'Could not remove the review: 403 That credential does not revoke this report',
     )
   })
 })

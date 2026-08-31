@@ -746,7 +746,7 @@ describe('unpublish', () => {
       )
 
       expect(result.exitCode).toBe(0)
-      expect(result.stdout).toContain(`Removed report ${reportId}`)
+      expect(result.stdout).toContain(`Removed review ${reportId}`)
       expect(service.revoked).toEqual([{ id: reportId, token: revocationToken }])
     } finally {
       service.stop()
@@ -764,7 +764,7 @@ describe('unpublish', () => {
       )
 
       expect(result.exitCode).not.toBe(0)
-      expect(result.stderr).toContain('Could not remove the report')
+      expect(result.stderr).toContain('Could not remove the review')
       expect(result.stderr).toContain('403')
       expect(service.revoked).toHaveLength(0)
     } finally {

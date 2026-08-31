@@ -276,7 +276,7 @@ async function viewCommand(parsed: ParsedArgs) {
   const html = renderReport(document, clientBundle)
   const preview = await startReportPreview(html)
   console.log(`Viewing ${document.sections.length} sections at ${preview.url}`)
-  console.log('Press Ctrl+C to stop the local report.')
+  console.log('Press Ctrl+C to stop the local review.')
   try {
     await openBrowser(preview.url)
   } catch (error) {
@@ -297,7 +297,7 @@ async function exportCommand(parsed: ParsedArgs) {
     const html = renderReport(document, clientBundle)
     await writeReport(output, html)
     console.log(
-      `Wrote a ${html.length} byte report for ${document.sections.length} sections to ${output}`,
+      `Wrote a ${html.length} byte review for ${document.sections.length} sections to ${output}`,
     )
     return
   }
@@ -316,7 +316,7 @@ async function publishCommand(parsed: ParsedArgs) {
   )
   console.log(`Revocation token: ${published.revocationToken}`)
   console.log(
-    `Store that token now; it is shown once. Remove the report with \`diffwalk unpublish ${published.id} --token ${published.revocationToken}\`.`,
+    `Store that token now; it is shown once. Remove the review with \`diffwalk unpublish ${published.id} --token ${published.revocationToken}\`.`,
   )
 }
 
@@ -324,11 +324,11 @@ async function unpublishCommand(parsed: ParsedArgs) {
   const [id] = requirePositionalCount(parsed, 1)
   const token = option(parsed, 'token')
   if (token === undefined) {
-    throw new UsageError('Pass the report\'s revocation token with --token')
+    throw new UsageError('Pass the review\'s revocation token with --token')
   }
   const service = reportService(option(parsed, 'service'))
   await unpublishDocument(id!, service, token)
-  console.log(`Removed report ${id} from ${service}`)
+  console.log(`Removed review ${id} from ${service}`)
 }
 
 async function materialize(
@@ -431,7 +431,7 @@ function explanationsSkeleton(captureId: string): string {
   return `captureId: ${captureId}
 title: Name this change set
 summary: |
-  Optional. Markdown, and inline HTML is allowed, so an <svg> diagram can open the report.
+  Optional. Markdown, and inline HTML is allowed, so an <svg> diagram can open the review.
 sections: []
 `
 }

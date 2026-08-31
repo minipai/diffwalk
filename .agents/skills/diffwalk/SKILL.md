@@ -1,6 +1,6 @@
 ---
 name: diffwalk
-description: Use the Diffwalk CLI to capture Git working-tree changes, author ordered explanations in the current `.diffwalk` walk, validate with check, and preview, export, or publish the report. Trigger when the user asks to use Diffwalk or create/update its capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
+description: Use the Diffwalk CLI to capture Git working-tree changes, author ordered explanations in the current `.diffwalk` walk, validate with check, and preview, export, or publish the review. Trigger when the user asks to use Diffwalk or create/update its capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
 ---
 
 # Diffwalk
@@ -37,7 +37,7 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
              - change-002
    ```
 
-   `title` is required: it becomes the report heading and the browser tab, which is how
+   `title` is required: it becomes the review heading and the browser tab, which is how
    two shared links tell themselves apart.
 
    A step carries `text`, `changes`, or both, so prose and diffs interleave in the order
@@ -46,14 +46,14 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
 
    `text` is Markdown and inline HTML passes through, so a diagram can sit exactly where
    the argument needs it. Embed every image as an inline `<svg>` or a `data:` URI: a
-   remote image URL renders in the local file but is blocked on the hosted report.
+   remote image URL renders in the local file but is blocked on the hosted review.
 
 5. Show every captured change at least once. Do not invent IDs or leave one unexplained.
    Showing a change in more than one step is allowed when re-showing a hunk builds the
    argument; `check` names the repeats and still succeeds.
 6. Run `diffwalk check` before viewing or exporting. Fix any stale `captureId`, malformed YAML, unknown ID, unexplained change, or materialization mismatch it reports.
-7. Run `diffwalk view` when the user asks to preview the report locally. It opens the browser without writing an HTML file and runs until stopped with Ctrl+C.
-8. Run `diffwalk export html` when the user asks for a portable HTML report, or `diffwalk export json` for an ExplainDocument integration artifact. Pass `--output <path>` when the user names a destination.
+7. Run `diffwalk view` when the user asks to preview the review locally. It opens the browser without writing an HTML file and runs until stopped with Ctrl+C.
+8. Run `diffwalk export html` when the user asks for a portable HTML review, or `diffwalk export json` for an ExplainDocument integration artifact. Pass `--output <path>` when the user names a destination.
 
 ## Invariants
 
@@ -81,12 +81,12 @@ diffwalk export <html|json> [--input <capture-path>] [--explanations <yaml-path>
 
 ## Trusted-text boundary
 
-- `text` and `summary` render as Markdown in reports, and inline HTML passes through, so
+- `text` and `summary` render as Markdown in reviews, and inline HTML passes through, so
   authored markup lands exactly where it was written.
-- The report embeds every document diff and renders it with the `@pierre/diffs` runtime
-  bundled into the file; there is no CDN or external asset, so the report works offline.
+- The review embeds every document diff and renders it with the `@pierre/diffs` runtime
+  bundled into the file; there is no CDN or external asset, so the review works offline.
 - A section whose diff cannot be parsed stops `diffwalk view` or `diffwalk export html` with a clear message; it
   is never silently dropped.
-- Build reports only from documents you or a trusted agent authored. Authored markup is
+- Build reviews only from documents you or a trusted agent authored. Authored markup is
   inserted without sanitization and can run scripts, so never add untrusted or
-  third-party content to a report.
+  third-party content to a review.

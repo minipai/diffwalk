@@ -14,10 +14,10 @@ export function reportService(explicit: string | undefined): string {
   try {
     url = new URL(value)
   } catch {
-    throw new Error(`Not a valid report service URL: ${value}`)
+    throw new Error(`Not a valid review service URL: ${value}`)
   }
   if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
-    throw new Error(`The report service must be reached over HTTPS: ${value}`)
+    throw new Error(`The review service must be reached over HTTPS: ${value}`)
   }
   return url.origin
 }
@@ -32,12 +32,12 @@ export async function publishDocument(
     body: JSON.stringify(document),
   })
   if (!response.ok) {
-    throw new Error(`Could not publish the report: ${await failureDetail(response)}`)
+    throw new Error(`Could not publish the review: ${await failureDetail(response)}`)
   }
 
   const value = (await response.json()) as { id?: unknown; revocationToken?: unknown }
   if (typeof value.id !== 'string' || typeof value.revocationToken !== 'string') {
-    throw new Error('The report service returned a response this version does not understand')
+    throw new Error('The review service returned a response this version does not understand')
   }
   return {
     id: value.id,
@@ -56,7 +56,7 @@ export async function unpublishDocument(
     headers: { authorization: `Bearer ${revocationToken}` },
   })
   if (!response.ok) {
-    throw new Error(`Could not remove the report: ${await failureDetail(response)}`)
+    throw new Error(`Could not remove the review: ${await failureDetail(response)}`)
   }
 }
 

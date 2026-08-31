@@ -1,6 +1,6 @@
 # Architecture
 
-Diffwalk turns code changes into browser reports that present explanations and their
+Diffwalk turns code changes into browser reviews that present explanations and their
 exact corresponding diffs in a deliberate order.
 
 ## Product decisions
@@ -46,37 +46,37 @@ exact corresponding diffs in a deliberate order.
   them inside the same visual hunk.
 - Step `text` and the document `summary` render as Markdown with inline HTML passed
   through, so a diagram can sit exactly where the argument needs it. Authored text is
-  trusted; containment is the report origin's Content Security Policy, not escaping.
+  trusted; containment is the review origin's Content Security Policy, not escaping.
   Images must be inline `<svg>` or `data:` URIs: a remote URL renders in the local file
-  but is blocked on the hosted report.
-- `diffwalk view` serves the report from an ephemeral loopback-only HTTP server and
+  but is blocked on the hosted review.
+- `diffwalk view` serves the review from an ephemeral loopback-only HTTP server and
   opens the default browser without writing a file. `diffwalk export html` writes the
-  same report as one portable offline file. `diffwalk publish` uploads the same
+  same review as one portable offline file. `diffwalk publish` uploads the same
   materialized document for hosted rendering, so all three delivery paths share one
   report shell and browser client.
-- The HTML report is generated from the materialized document by `diffwalk export html`.
+- The HTML review is generated from the materialized document by `diffwalk export html`.
   Diffwalk owns the shell: source metadata, section ordering, Markdown bodies,
   optional trusted `html` fragments, native section/file folds, unified/split
   selection, responsive and print styles. `@pierre/diffs` owns diff parsing,
   the diff Shadow DOM, styles, syntax highlighting, and layout changes through
   `setOptions({ diffStyle })`; the client parses each section patch once and
   mounts one `FileDiff` per file, so both layouts read the same parsed
-  metadata. The report is written atomically (temp file plus rename). The
+  metadata. The review is written atomically (temp file plus rename). The
   client runtime is bundled once at build time into `dist/report-client.js`
-  and inlined into the report, so the file has no CDN or external assets.
+  and inlined into the review, so the file has no CDN or external assets.
 
 - Embedded report data is a `text/json` script with every `<` escaped as
   `\u003c`, and the inlined client has `</script` and `<!--` neutralised, so
   document content or authored fragments can never terminate the embedded
   scripts.
 
-- `diffwalk publish` uploads the materialized version 1 ExplainDocument to the report
+- `diffwalk publish` uploads the materialized version 1 ExplainDocument to the review
   service, which stores JSON only and renders `/r/:id` through the same shell the local
   report uses. The hosted page links the shared stylesheet and client instead of
-  inlining them, so the renderer is deployed once and cached across every report.
+  inlining them, so the renderer is deployed once and cached across every review.
   Publication is unlisted rather than private: the link is the only credential a reader
-  needs. Each report mints a revocation token returned once and kept only as a SHA-256
-  digest, so a lost token means the report stays published. The publish response carries
+  needs. Each review mints a revocation token returned once and kept only as a SHA-256
+  digest, so a lost token means the review stays published. The publish response carries
   no URL; the CLI builds the link from the service origin it dialed, because deriving it
   in the Worker would trust the request's `Host` header.
 
@@ -102,7 +102,7 @@ exact corresponding diffs in a deliberate order.
 - `src/report.ts`: atomic report writes and client-bundle loading.
 - `src/report-shell.ts`: the one report shell, embedded-data escaping, and shell styles,
   rendered with inlined assets for the offline file or linked assets for the hosted page.
-- `src/publish.ts`: report service origin checks, publish credential lookup, and the
+- `src/publish.ts`: review service origin checks, publish credential lookup, and the
   publish and unpublish requests.
 - `src/report-client.ts`: browser entry that mounts a `FileDiff` per file and switches
   unified/split through `setOptions`.
@@ -115,7 +115,7 @@ exact corresponding diffs in a deliberate order.
   pairing), inspection commands, validation, HTML/JSON exports, and rejection of the
   removed `build`, `report`, and draft workflows.
 - `worker/index.ts`: the Cloudflare Worker that stores, renders, and revokes reports and
-  sets the report origin's Content Security Policy, security headers, and caching.
+  sets the review origin's Content Security Policy, security headers, and caching.
 - `worker/reports.ts`: report IDs, revocation tokens, token digests, constant-time secret
   comparison, and the bounded document size.
 - `worker/build-assets.ts`: writes the shared stylesheet and client bundle into the Static

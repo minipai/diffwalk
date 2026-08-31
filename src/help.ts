@@ -28,9 +28,9 @@ Quick start:
   diffwalk inspect                    create a timestamped walk under .diffwalk/
   edit the current explanations.yaml  author ordered sections (the only file you edit)
   diffwalk check                      validate capture + explanations
-  diffwalk view                       preview the report in a local browser
-  diffwalk export html                write a self-contained HTML report
-  diffwalk publish                    publish a hosted report and print its link
+  diffwalk view                       preview the review in a local browser
+  diffwalk export html                write a self-contained HTML review
+  diffwalk publish                    publish a hosted review and print its link
 
 Commands:
   inspect    capture Git changes into a timestamped walk and make it current
@@ -38,10 +38,10 @@ Commands:
   change     read one captured change block by ID
   file       read one captured file side (--before or --after)
   check      validate capture + explanations and report counts
-  view       preview the report in a local browser without writing a file
-  export     write an HTML report or portable ExplainDocument JSON
-  publish    publish the report to the hosted service and print its unlisted link
-  unpublish  remove a published report with its revocation token
+  view       preview the review in a local browser without writing a file
+  export     write an HTML review or portable ExplainDocument JSON
+  publish    publish the review to the hosted service and print its unlisted link
+  unpublish  remove a published review with its revocation token
   help       show help for a command
 
 File ownership:
@@ -89,7 +89,7 @@ File ownership:
 
 Authoring shape:
   captureId: <from capture.json>
-  title: <names the whole change set; becomes the report heading>
+  title: <names the whole change set; becomes the review heading>
   summary: |
     Optional opening. Markdown, and inline HTML is allowed.
   sections:
@@ -101,7 +101,7 @@ Authoring shape:
 
   A step needs text, changes, or both, so prose and diffs interleave in the order you
   write them. Embed images as data: URIs or inline <svg>: an external image URL is
-  blocked on the hosted report even though it loads in the local HTML file.
+  blocked on the hosted review even though it loads in the local HTML file.
 
 Next steps:
   Edit the printed explanations path, then run \`diffwalk check\`. Inspect current
@@ -182,10 +182,10 @@ Next steps:
   to different walks or changed after authoring; use a matching pair.
 `
     case 'view':
-      return `diffwalk view — preview the report in a local browser
+      return `diffwalk view — preview the review in a local browser
 
 Validates the current walk, materializes the exact patches in memory, starts a temporary
-loopback-only server, and opens the report in the default browser. No HTML file is
+loopback-only server, and opens the review in the default browser. No HTML file is
 written. Press Ctrl+C to stop the local server.
 
 Usage:
@@ -197,13 +197,13 @@ Options:
   -h, --help             show this help
 
 Next steps:
-  Save the same report with \`diffwalk export html\`, or share a link with \`diffwalk publish\`.
+  Save the same review with \`diffwalk export html\`, or share a link with \`diffwalk publish\`.
 `
     case 'export':
-      return `diffwalk export — write an HTML report or ExplainDocument JSON
+      return `diffwalk export — write an HTML review or ExplainDocument JSON
 
 Validates the current walk, materializes the exact patches, then writes the requested
-artifact. HTML is one portable offline report with its styles and diff runtime embedded.
+artifact. HTML is one portable offline review with its styles and diff runtime embedded.
 JSON is the version 1 ExplainDocument snapshot for integrations and archives.
 
 Usage:
@@ -220,14 +220,14 @@ Next steps:
   Validate first with \`diffwalk check\`. The exported document remains format version 1.
 `
     case 'publish':
-      return `diffwalk publish — publish a hosted report and print its link
+      return `diffwalk publish — publish a hosted review and print its link
 
 Validates the current walk, materializes the exact patches, and uploads the version 1
-ExplainDocument to the report service. The service stores the document and renders it
+ExplainDocument to the review service. The service stores the document and renders it
 with its own shared renderer, so no HTML file is uploaded or stored. Publication is
 unlisted: anyone holding the link can read it.
 
-Reports are immutable. Publishing again creates a separate report and a separate link.
+Reviews are immutable. Publishing again creates a separate review and a separate link.
 No account or publish credential is required.
 
 Usage:
@@ -236,7 +236,7 @@ Usage:
 Options:
   --input <path>         explicit capture path (default current walk)
   --explanations <path>  explicit explanations path (default current walk)
-  --service <url>        report service origin (default $DIFFWALK_SERVICE_URL, else the hosted service)
+  --service <url>        review service origin (default $DIFFWALK_SERVICE_URL, else the hosted service)
   -h, --help             show this help
 
 Next steps:
@@ -244,21 +244,21 @@ Next steps:
   only way to run \`diffwalk unpublish\` later. For an offline copy use \`diffwalk export html\`.
 `
     case 'unpublish':
-      return `diffwalk unpublish — remove a published report
+      return `diffwalk unpublish — remove a published review
 
-Deletes one published report from the report service. The revocation token printed when
-the report was published is required, and it revokes only that report.
+Deletes one published review from the review service. The revocation token printed when
+the review was published is required, and it revokes only that review.
 
 Usage:
-  diffwalk unpublish <report-id> --token <revocation-token> [--service https://review.diffwalk.dev]
+  diffwalk unpublish <review-id> --token <revocation-token> [--service https://review.diffwalk.dev]
 
 Options:
   --token <token>        the revocation token printed at publish time (required)
-  --service <url>        report service origin (default $DIFFWALK_SERVICE_URL, else the hosted service)
+  --service <url>        review service origin (default $DIFFWALK_SERVICE_URL, else the hosted service)
   -h, --help             show this help
 
 Next steps:
-  A removed report's link stops working. Publish a revision with \`diffwalk publish\`.
+  A removed review's link stops working. Publish a revision with \`diffwalk publish\`.
 `
     case 'help':
       return `diffwalk help — show help
