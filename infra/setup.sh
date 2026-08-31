@@ -9,7 +9,7 @@
 #
 # Required:
 #   CLOUDFLARE_API_TOKEN   token with Zone WAF Write on the report zone
-#   CLOUDFLARE_ZONE_ID     the zone holding reports.diffwalk.dev
+#   CLOUDFLARE_ZONE_ID     the zone holding review.diffwalk.dev
 # Optional:
 #   R2_BUCKET              bucket name (default diffwalk-reports)
 
@@ -68,7 +68,7 @@ cloudflare_api PUT "/zones/${CLOUDFLARE_ZONE_ID}/rulesets/phases/http_ratelimit/
   "rules": [
     {
       "action": "block",
-      "expression": "http.host eq \"reports.diffwalk.dev\" and starts_with(http.request.uri.path, \"/api/reports\") and (http.request.method eq \"POST\" or http.request.method eq \"DELETE\")",
+      "expression": "http.host eq \"review.diffwalk.dev\" and starts_with(http.request.uri.path, \"/api/reports\") and (http.request.method eq \"POST\" or http.request.method eq \"DELETE\")",
       "description": "Throttle report publish and revoke",
       "ratelimit": {
         "characteristics": ["ip.src", "cf.colo.id"],

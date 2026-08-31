@@ -231,7 +231,7 @@ Reports are immutable. Publishing again creates a separate report and a separate
 No account or publish credential is required.
 
 Usage:
-  diffwalk publish [--input <capture-path>] [--explanations <yaml-path>] [--service https://reports.diffwalk.dev]
+  diffwalk publish [--input <capture-path>] [--explanations <yaml-path>] [--service https://review.diffwalk.dev]
 
 Options:
   --input <path>         explicit capture path (default current walk)
@@ -250,7 +250,7 @@ Deletes one published report from the report service. The revocation token print
 the report was published is required, and it revokes only that report.
 
 Usage:
-  diffwalk unpublish <report-id> --token <revocation-token> [--service https://reports.diffwalk.dev]
+  diffwalk unpublish <report-id> --token <revocation-token> [--service https://review.diffwalk.dev]
 
 Options:
   --token <token>        the revocation token printed at publish time (required)

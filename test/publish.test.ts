@@ -63,7 +63,7 @@ function json(status: number, value: unknown): Response {
 describe('reportService', () => {
   test('falls back to the hosted service, then the environment, then the flag', () => {
     delete process.env['DIFFWALK_SERVICE_URL']
-    expect(reportService(undefined)).toBe('https://reports.diffwalk.dev')
+    expect(reportService(undefined)).toBe('https://review.diffwalk.dev')
 
     process.env['DIFFWALK_SERVICE_URL'] = 'https://reports.example.test'
     expect(reportService(undefined)).toBe('https://reports.example.test')

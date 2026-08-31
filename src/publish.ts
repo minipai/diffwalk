@@ -6,7 +6,7 @@ export interface PublishedReport {
   revocationToken: string
 }
 
-const defaultService = 'https://reports.diffwalk.dev'
+const defaultService = 'https://review.diffwalk.dev'
 
 export function reportService(explicit: string | undefined): string {
   const value = explicit ?? process.env['DIFFWALK_SERVICE_URL'] ?? defaultService

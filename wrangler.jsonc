@@ -16,7 +16,7 @@
   ],
   "routes": [
     {
-      "pattern": "reports.diffwalk.dev",
+      "pattern": "review.diffwalk.dev",
       "custom_domain": true
     }
   ],
