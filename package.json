@@ -1,6 +1,6 @@
 {
   "name": "diffwalk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Review code changes as an ordered sequence of explanations and exact diffs",
   "license": "MIT",
   "homepage": "https://diffwalk.dev",
