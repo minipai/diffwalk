@@ -3,14 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Turn a code change into a calm, browsable walkthrough." />
+    <meta name="description" content="Turn AI-generated code changes into an ordered walkthrough, with every explanation attached to its exact diff." />
     <meta property="og:title" content="diffwalk — Review code in human order" />
-    <meta property="og:description" content="Make good work easy to follow." />
+    <meta property="og:description" content="Turn AI-generated code changes into an ordered walkthrough, with every explanation attached to its exact diff." />
     <meta property="og:image" content="https://diffwalk.dev/og.png" />
     <meta property="og:url" content="https://diffwalk.dev" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="canonical" href="https://diffwalk.dev" />
+    <link rel="describedby" href="/llms.txt" />
     <link rel="stylesheet" href="/styles.css" />
     <title>diffwalk — Review code in human order</title>
   </head>
@@ -34,7 +35,7 @@
     <main class="site" id="top">
       <section class="hero">
         <h1>Make good work easy to follow.</h1>
-        <p>diffwalk turns a code change into an ordered walkthrough, designed for AI to write and humans to read.</p>
+        <p>Turn AI-generated code changes into an ordered walkthrough, with every explanation attached to its exact diff.</p>
         <div class="hero-actions">
           <a href="https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ">Read an example review ↗</a>
           <a class="ghost" href="#install">Install the CLI</a>
@@ -49,24 +50,27 @@
       </section>
 
       <section class="guide">
-        <header class="guide-intro"><h2>Getting started</h2><p>Six steps from an npm install to one link a reviewer can follow.</p></header>
+        <section class="install" id="install">
+          <h2>Install diffwalk</h2>
+          <p>Install diffwalk globally, or run any command through <code>npx diffwalk</code> without installing anything.</p>
+          <div class="terminal"><header><span>TERMINAL</span><button aria-label="Copy npm install command" data-copy="npm install --global diffwalk">Copy</button></header><code><i>$</i>npm install --global diffwalk</code></div>
+          <div class="step-meta"><b>Requires</b><span>Node.js</span><span>Git</span><span>or <code>npx diffwalk</code></span></div>
+        </section>
+        <header class="guide-intro">
+          <h2>“Use diffwalk to explain this change.”</h2>
+          <p>Give your coding agent this instruction. It captures and explains the change; you choose when to view or publish the review.</p>
+        </header>
         <ol class="guide-steps">
-          <li class="guide-step" id="install">
-            <h3>Install diffwalk</h3>
-            <p>diffwalk is published on npm and runs on Node.js 20 or newer. Install it globally, or run any command through <code>npx diffwalk</code> without installing anything.</p>
-            <div class="terminal"><header><span>TERMINAL</span><button data-copy="npm install --global diffwalk">Copy</button></header><code><i>$</i>npm install --global diffwalk</code></div>
-            <div class="step-meta"><b>Requires</b><span>Node.js 20+</span><span>Git</span><span>or <code>npx diffwalk</code></span></div>
-          </li>
           <li class="guide-step" id="capture">
-            <h3>Capture the working tree</h3>
-            <p>Run diffwalk inside the Git repository you want to explain. It captures changes relative to <code>HEAD</code> into a timestamped walk under <code>.diffwalk/</code>.</p>
-            <div class="terminal"><header><span>TERMINAL</span><button data-copy="diffwalk inspect">Copy</button></header><code><i>$</i>diffwalk inspect</code><p>Captured 370 change blocks across 24 files to</p><p>.diffwalk/20260831T063842Z-a7c9e4f2/capture.json</p></div>
+            <h3>The agent captures the working tree</h3>
+            <p>The agent runs diffwalk inside the Git repository you want to explain. It captures the working tree against <code>HEAD</code> by default, or another revision you choose, into a timestamped walk under <code>.diffwalk/</code>.</p>
+            <div class="terminal"><header><span>TERMINAL</span><button aria-label="Copy diffwalk inspect command" data-copy="diffwalk inspect">Copy</button></header><code><i>$</i>diffwalk inspect</code><p>Captured 370 change blocks across 24 files to</p><p>.diffwalk/20260831T063842Z-a7c9e4f2/capture.json</p></div>
             <div class="step-meta"><b>In the walk</b><span><code>capture.json</code> — machine-owned</span><span><code>explanations.yaml</code> — yours to edit</span></div>
           </li>
           <li class="guide-step" id="explain">
-            <h3>Author the reading order</h3>
-            <p>Edit only <code>explanations.yaml</code> in the current walk. Write Markdown, arrange sections, and attach each explanation to exact change IDs.</p>
-            <div class="terminal yaml"><header><span>.diffwalk/&lt;walkId&gt;/explanations.yaml</span><button data-copy="diffwalk check">Copy</button></header><pre><b>title:</b> Stop the double charge
+            <h3>The agent authors the reading order</h3>
+            <p>The agent edits only <code>explanations.yaml</code> in the current walk. It writes Markdown, arranges sections, and attaches each explanation to exact change IDs.</p>
+            <div class="terminal yaml"><header><span>.diffwalk/&lt;walkId&gt;/explanations.yaml</span><button aria-label="Copy diffwalk check command" data-copy="diffwalk check">Copy</button></header><pre><b>title:</b> Stop the double charge
 <b>sections:</b>
  - <b>title:</b> Charge path asks first
    <b>steps:</b>
@@ -76,19 +80,18 @@
             <div class="step-meta"><b>Then</b><span><code>diffwalk check</code> — every change explained</span><span>every patch still applies</span></div>
           </li>
           <li class="guide-step">
-            <h3>Preview it locally</h3>
+            <h3>View it locally</h3>
             <p><code>diffwalk view</code> renders the review in memory and opens it on a loopback-only port. No HTML file is written and nothing leaves the machine.</p>
-            <div class="terminal"><header><span>TERMINAL</span><button data-copy="diffwalk view">Copy</button></header><code><i>$</i>diffwalk view</code><p>Viewing 6 sections at http://127.0.0.1:53421</p></div>
+            <div class="terminal"><header><span>TERMINAL</span><button aria-label="Copy diffwalk view command" data-copy="diffwalk view">Copy</button></header><code><i>$</i>diffwalk view</code><p>Viewing 6 sections at http://127.0.0.1:53421</p></div>
           </li>
           <li class="guide-step">
-            <h3>Publish one link</h3>
-            <p><code>diffwalk publish</code> uploads the document — not the HTML — to the review service and prints an unlisted link.</p>
-            <div class="terminal"><header><span>TERMINAL</span><button data-copy="diffwalk publish">Copy</button></header><code><i>$</i>diffwalk publish</code><p>Published 6 explanation sections to</p><p>https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ</p></div>
+            <h3>Publish a link (optional)</h3>
+            <p>When you want to share the review, <code>diffwalk publish</code> uploads it and prints a share link.</p>
+            <div class="terminal"><header><span>TERMINAL</span><button aria-label="Copy diffwalk publish command" data-copy="diffwalk publish">Copy</button></header><code><i>$</i>diffwalk publish</code><p>Published 6 explanation sections to</p><p>https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ</p></div>
           </li>
           <li class="guide-step" id="review">
             <h3>Follow the explanation</h3>
             <p>The review keeps explanations, diagrams, and exact diffs in one ordered tree. Reviewers can fold sections and switch diff layouts without losing their place.</p>
-            <a class="step-link" href="https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ"><span><b>Stop the retry from charging the card twice</b><small>6 sections · 6 files · 16 changes</small></span>↗</a>
           </li>
         </ol>
       </section>

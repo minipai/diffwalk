@@ -1,0 +1,30 @@
+# diffwalk
+
+> Turn AI-generated code changes into an ordered walkthrough, with every explanation attached to its exact diff.
+
+diffwalk is an open-source CLI for coding agents to capture a Git working tree, author a deliberate reading order, and produce a browser-based code review for humans.
+
+## Use diffwalk
+
+Install the CLI:
+
+```sh
+npm install --global diffwalk
+```
+
+Then tell your coding agent:
+
+> Use diffwalk to explain this change.
+
+The agent runs `diffwalk inspect`, writes the walkthrough in `explanations.yaml`, and validates it with `diffwalk check`. You choose whether to open it locally with `diffwalk view` or publish a share link with `diffwalk publish`.
+
+## Documentation
+
+- [README](https://github.com/minipai/diffwalk#readme): installation, authoring format, commands, exports, publishing, and trust boundaries
+- [Agent skill](https://raw.githubusercontent.com/minipai/diffwalk/main/.agents/skills/diffwalk/SKILL.md): instructions for agents using diffwalk
+- [npm package](https://www.npmjs.com/package/diffwalk): published CLI
+- [Source code](https://github.com/minipai/diffwalk): repository and issue tracker
+
+## Example
+
+- [Example review](https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ): a guided review of a multi-file code change
