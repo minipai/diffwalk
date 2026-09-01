@@ -223,6 +223,7 @@ describe('reading a report', () => {
     expect(html).toContain('<dt>To</dt><dd>Working tree</dd>')
 
     expect(html).toContain('<link rel="stylesheet" href="/report.css">')
+    expect(html).toContain('<link rel="icon" href="data:image/svg+xml,')
     expect(html).toContain('<script src="/report-client.js" defer></script>')
     expect(html).not.toContain('<style>')
   })
@@ -338,6 +339,14 @@ describe('revoking a report', () => {
 })
 
 describe('everything else', () => {
+  test('serves the shared report favicon', async () => {
+    const response = await worker.fetch(new Request('https://reports.example/favicon.svg'), env)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('image/svg+xml')
+    expect(await response.text()).toContain('fill="#436354"')
+  })
+
   test('unknown API paths answer as JSON and other paths fall through to static assets', async () => {
     const api = await worker.fetch(new Request('https://reports.example/api/nope'), env)
     expect(api.status).toBe(404)

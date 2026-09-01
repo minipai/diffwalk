@@ -1,4 +1,5 @@
 import type { ExplainDocument } from './format'
+import { faviconDataUrl } from './favicon'
 import { renderMarkdown } from './report-markdown'
 import { fileDiffLabel, fileDiffStats, parseSectionPatch } from './report-patches'
 import type { FileDiffMetadata } from '@pierre/diffs'
@@ -109,6 +110,7 @@ function renderShell(body: ReportBody, styles: string, client: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="${faviconDataUrl}" type="image/svg+xml">
 <title>${escapeHtml(body.title)}</title>
 ${styles}
 </head>

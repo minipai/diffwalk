@@ -118,6 +118,7 @@ describe('renderReport shell', () => {
     expect(html).toContain('section-0-step-0-file-0')
     expect(html).toContain('section-1-step-0-file-0')
     expect(html).toContain('+1 −1')
+    expect(html).toContain('<link rel="icon" href="data:image/svg+xml,')
   })
 
   test('steps interleave text and diffs in the order they were authored', () => {
@@ -509,7 +510,9 @@ describe('bundled report client', () => {
 
     expect(html.length).toBeGreaterThan(bundle.length)
     expect(html).not.toMatch(/<script[^>]+src=/)
-    expect(html).not.toMatch(/<link[^>]+href=/)
+    expect([...html.matchAll(/<link[^>]+href="([^"]+)"/g)].map((match) => match[1])).toEqual([
+      expect.stringContaining('data:image/svg+xml,'),
+    ])
     expect(html).not.toMatch(/<img[^>]+src=/)
     expect(html).not.toMatch(/(?:src|href)="https?:\/\//)
     expect(html.match(/<\/script>/g)).toHaveLength(2)

@@ -1,4 +1,5 @@
 import { explainDocumentSchema } from '../src/format'
+import { faviconSvg } from '../src/favicon'
 import { renderHostedReport } from '../src/report-shell'
 import {
   bearerToken,
@@ -38,6 +39,17 @@ const reportCacheControl = 'public, max-age=60'
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = new URL(request.url).pathname
+
+    if (path === '/favicon.svg') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return methodNotAllowed('GET, HEAD')
+      return new Response(request.method === 'HEAD' ? null : faviconSvg, {
+        headers: {
+          'content-type': 'image/svg+xml',
+          'cache-control': 'public, max-age=86400',
+          'x-content-type-options': 'nosniff',
+        },
+      })
+    }
 
     if (path === '/api/reports') {
       if (request.method !== 'POST') return methodNotAllowed('POST')
@@ -230,6 +242,7 @@ function errorPage(status: number, title: string, detail: string): Response {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>${title}</title>
 <link rel="stylesheet" href="${hostedAssets.stylesHref}">
 </head>
