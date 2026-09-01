@@ -12,7 +12,7 @@ import {
   type ExplainDocument,
   type Explanations,
 } from './format'
-import { captureGitChanges } from './git'
+import { captureGitChanges, captureGitRevisionChanges, commitForRevision } from './git'
 import { commandHelp, isCommandName, topLevelHelp, type CommandName } from './help'
 import { publishDocument, reportService, unpublishDocument } from './publish'
 import { loadReportClient, renderReport, writeReport } from './report'
@@ -30,6 +30,8 @@ interface AuthoringFiles {
 const flagSpecs: Record<CommandName, FlagSpec[]> = {
   inspect: [
     { name: 'base', takesValue: true },
+    { name: 'from', takesValue: true },
+    { name: 'to', takesValue: true },
     { name: 'output', takesValue: true },
     { name: 'explanations', takesValue: true },
   ],
@@ -137,15 +139,57 @@ async function main() {
 }
 
 async function inspectCommand(parsed: ParsedArgs) {
-  requirePositionalCount(parsed, 0)
-  const base = option(parsed, 'base') ?? 'HEAD'
   const capturedAt = new Date().toISOString()
-  const git = await captureGitChanges(base)
+  const positional = parsed.positionals
+  const base = option(parsed, 'base')
+  const from = option(parsed, 'from')
+  const to = option(parsed, 'to')
+  if (from !== undefined || to !== undefined) {
+    if (from === undefined || to === undefined) {
+      throw new UsageError('Pass both --from and --to for a committed revision range')
+    }
+    if (base !== undefined || positional.length > 0) {
+      throw new UsageError('Do not combine --from/--to with --base or a positional revision')
+    }
+    const git = await captureGitRevisionChanges(from, to)
+    const capture = createExplainCapture(git.files, {
+      kind: 'commit-diff',
+      from: { revision: from, commit: git.fromCommit },
+      to: { revision: to, commit: git.toCommit },
+      capturedAt,
+    })
+    await finishInspect(parsed, capture, capturedAt)
+    return
+  }
+  if (positional.length > 1) throw new UsageError('Expected no arguments or exactly 1 commit revision')
+  if (positional.length === 1 && base !== undefined) {
+    throw new UsageError('Do not combine a positional commit revision with --base')
+  }
+  if (positional.length === 1) {
+    const revision = positional[0]!
+    const commit = await commitForRevision(revision)
+    const parent = await firstParent(commit)
+    const git = await captureGitRevisionChanges(`${revision}^1`, revision)
+    const capture = createExplainCapture(git.files, {
+      kind: 'commit-diff',
+      from: { revision: `${revision}^1`, commit: parent },
+      to: { revision, commit },
+      capturedAt,
+    })
+    await finishInspect(parsed, capture, capturedAt)
+    return
+  }
+  const resolvedBase = base ?? 'HEAD'
+  const git = await captureGitChanges(resolvedBase)
   const capture = createExplainCapture(git.files, {
     kind: 'working-tree',
-    from: { revision: base, commit: git.baseCommit },
+    from: { revision: resolvedBase, commit: git.baseCommit },
     capturedAt,
   })
+  await finishInspect(parsed, capture, capturedAt)
+}
+
+async function finishInspect(parsed: ParsedArgs, capture: ExplainCapture, capturedAt: string) {
   const outputOverride = option(parsed, 'output')
   const explanationsOverride = option(parsed, 'explanations')
 
@@ -164,14 +208,17 @@ async function inspectCommand(parsed: ParsedArgs) {
   const previous = await currentWalkIfPresent()
   if (previous !== null) {
     const previousCapture = await readCapture(previous.capture)
-    if (previousCapture.captureId === capture.captureId) {
+    if (previousCapture.captureId === capture.captureId &&
+      sourceIdentity(previousCapture.source) === sourceIdentity(capture.source)) {
       if (existsSync(previous.explanations)) {
         console.log(`Kept existing ${previous.explanations} (inspect never overwrites it)`)
       } else {
         await writeText(previous.explanations, explanationsSkeleton(capture.captureId))
         console.log(`Wrote a ${previous.explanations} skeleton to author`)
       }
-      console.log(`Working tree is unchanged; kept current walk ${previous.id}`)
+      console.log(
+        `${capture.source.kind === 'working-tree' ? 'Working tree' : 'Capture'} is unchanged; kept current walk ${previous.id}`,
+      )
       console.log(`Next: edit ${previous.explanations}, then run \`diffwalk check\`.`)
       return
     }
@@ -181,7 +228,7 @@ async function inspectCommand(parsed: ParsedArgs) {
   const paths = walkPaths(id)
   if (existsSync(paths.capture)) {
     const existing = await readCapture(paths.capture)
-    if (existing.captureId !== capture.captureId) {
+    if (existing.captureId !== capture.captureId || sourceIdentity(existing.source) !== sourceIdentity(capture.source)) {
       throw new Error(`Walk ID collision at ${paths.directory}`)
     }
   } else {
@@ -200,6 +247,18 @@ async function inspectCommand(parsed: ParsedArgs) {
   )
   console.log(`Current walk: ${id}`)
   console.log(`Next: edit ${paths.explanations}, then run \`diffwalk check\`.`)
+}
+
+function sourceIdentity(source: ExplainCapture['source']): string {
+  return JSON.stringify({ kind: source.kind, from: source.from, ...(source.kind === 'commit-diff' ? { to: source.to } : {}) })
+}
+
+async function firstParent(commit: string): Promise<string> {
+  try {
+    return await commitForRevision(`${commit}^1`)
+  } catch {
+    throw new Error(`Revision ${commit} is a root commit and has no first parent; use inspect --from <revision> --to <revision> instead.`)
+  }
 }
 
 async function changesCommand(parsed: ParsedArgs) {

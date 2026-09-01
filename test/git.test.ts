@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmod, mkdir, mkdtemp, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { captureGitChanges } from '../src/git'
+import { captureGitChanges, captureGitRevisionChanges } from '../src/git'
 
 const directories: string[] = []
 
@@ -91,6 +91,30 @@ describe('captureGitChanges', () => {
       'Symbolic links are not supported: link.ts',
     )
   })
+
+  test('captures committed revisions without reading the working tree', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'tracked.ts'), 'one\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'one'], directory)
+    const first = (await gitText(['rev-parse', 'HEAD'], directory)).trim()
+    await writeFile(join(directory, 'tracked.ts'), 'two\n')
+    await writeFile(join(directory, 'untracked.ts'), 'ignore\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'two'], directory)
+    const second = (await gitText(['rev-parse', 'HEAD'], directory)).trim()
+    await writeFile(join(directory, 'tracked.ts'), 'working tree\n')
+    await writeFile(join(directory, 'current-only.ts'), 'ignore\n')
+
+    const capture = await captureGitRevisionChanges(first, second, directory)
+
+    expect(capture.files).toEqual([
+      { path: 'tracked.ts', status: 'modified', oldContent: 'one\n', newContent: 'two\n' },
+      { path: 'untracked.ts', status: 'added', oldContent: '', newContent: 'ignore\n' },
+    ])
+  })
 })
 
 async function initializeRepository(directory: string) {
@@ -103,4 +127,15 @@ async function git(args: string[], cwd: string) {
   const child = Bun.spawn(['git', ...args], { cwd, stdout: 'ignore', stderr: 'pipe' })
   const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
   if (exitCode !== 0) throw new Error(stderr)
+}
+
+async function gitText(args: string[], cwd: string) {
+  const child = Bun.spawn(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) throw new Error(stderr)
+  return stdout
 }

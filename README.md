@@ -57,6 +57,20 @@ the entire local workspace when it should not enter version control:
 .diffwalk/
 ```
 
+To explain committed changes without checking out either revision, pass one commit or an
+explicit range:
+
+```bash
+diffwalk inspect <commit>                 # commit relative to its first parent
+diffwalk inspect --from main --to feature # any two committed revisions
+```
+
+These forms read only committed Git objects, record both the revision labels and resolved
+commit hashes in the capture source, and ignore staged, unstaged, and untracked files.
+Single-commit inspection uses first-parent semantics. A root commit cannot be inspected in
+single-commit form because it has no first parent; use a range whose starting revision is a
+committed parent when one exists.
+
 Name the change set, then order the `sections` array. Each section is a title over an
 ordered list of `steps`, and a step carries `text`, `changes`, or both, so prose and
 diffs interleave in the order you write them:
@@ -101,6 +115,8 @@ The default workflow stays terse; every command also accepts explicit overrides:
 
 ```bash
 diffwalk inspect --base main
+diffwalk inspect abc1234
+diffwalk inspect --from main --to feature
 diffwalk check --input path/to/capture.json --explanations path/to/explanations.yaml
 diffwalk view --input path/to/capture.json --explanations path/to/explanations.yaml
 diffwalk export html --output review.html

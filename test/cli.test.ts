@@ -95,6 +95,19 @@ async function fixtureRepo(): Promise<string> {
   return repo
 }
 
+async function committedFixtureRepo(): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+  directories.push(repo)
+  await initializeRepository(repo)
+  await writeFile(join(repo, 'committed.ts'), 'old\n')
+  await git(['add', '.'], repo)
+  await git(['commit', '-q', '-m', 'base'], repo)
+  await writeFile(join(repo, 'committed.ts'), 'new\n')
+  await git(['add', '.'], repo)
+  await git(['commit', '-q', '-m', 'change'], repo)
+  return repo
+}
+
 describe('help', () => {
   test('bare diffwalk, --help, and -h exit 0 and describe the workflow', async () => {
     const repo = await fixtureRepo()
@@ -313,6 +326,57 @@ describe('inspect', () => {
     expect(inspect.stdout).toContain(
       'Next: edit out/explanations.yaml, then run `diffwalk check --input out/capture.json --explanations out/explanations.yaml`.',
     )
+  })
+
+  test('captures a commit relative to its first parent', async () => {
+    const repo = await committedFixtureRepo()
+    const result = await runCli(['inspect', 'HEAD'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.source.kind).toBe('commit-diff')
+    if (capture.source.kind !== 'commit-diff') throw new Error('expected commit source')
+    expect(capture.source.from.revision).toBe('HEAD^1')
+    expect(capture.source.to.revision).toBe('HEAD')
+    expect(capture.source.from.commit).toMatch(/^[0-9a-f]{40}$/)
+    expect(capture.source.to.commit).toMatch(/^[0-9a-f]{40}$/)
+    expect(capture.files).toEqual([
+      { path: 'committed.ts', status: 'modified', oldContent: 'old\n', newContent: 'new\n' },
+    ])
+  })
+
+  test('captures an explicit committed range and rejects incomplete or conflicting forms', async () => {
+    const repo = await committedFixtureRepo()
+    const valid = await runCli(['inspect', '--from', 'HEAD^1', '--to', 'HEAD'], repo)
+    expect(valid.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.source.kind).toBe('commit-diff')
+
+    for (const args of [
+      ['inspect', '--from', 'HEAD'],
+      ['inspect', '--to', 'HEAD'],
+      ['inspect', 'HEAD', '--base', 'HEAD^1'],
+      ['inspect', '--from', 'HEAD^1', '--to', 'HEAD', 'extra'],
+    ]) {
+      const result = await runCli(args, repo)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('diffwalk inspect')
+    }
+  })
+
+  test('rejects a root commit in positional form', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'root.ts'), 'root\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'root'], repo)
+
+    const result = await runCli(['inspect', 'HEAD'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('root commit')
+    expect(result.stderr).toContain('--from')
   })
 })
 

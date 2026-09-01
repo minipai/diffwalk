@@ -30,13 +30,23 @@ export const commitEndpointSchema = z
   })
   .strict()
 
-export const captureSourceSchema = z
-  .object({
-    kind: z.literal('working-tree'),
-    capturedAt: z.string().datetime(),
-    from: commitEndpointSchema,
-  })
-  .strict()
+export const captureSourceSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('working-tree'),
+      capturedAt: z.string().datetime(),
+      from: commitEndpointSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('commit-diff'),
+      capturedAt: z.string().datetime(),
+      from: commitEndpointSchema,
+      to: commitEndpointSchema,
+    })
+    .strict(),
+])
 
 export const documentSourceSchema = z.discriminatedUnion('kind', [
   z

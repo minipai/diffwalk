@@ -9,6 +9,13 @@ export interface GitCapture {
   files: DraftFile[]
 }
 
+export interface GitRevisionCapture extends GitCapture {
+  fromRevision: string
+  toRevision: string
+  fromCommit: string
+  toCommit: string
+}
+
 interface GitChange {
   kind: string
   path: string
@@ -87,6 +94,46 @@ export async function captureGitChanges(
     baseCommit,
     files: files.sort((left, right) => left.path.localeCompare(right.path)),
   }
+}
+
+export async function captureGitRevisionChanges(
+  from: string,
+  to: string,
+  cwd = process.cwd(),
+): Promise<GitRevisionCapture> {
+  const root = (await gitText(['rev-parse', '--show-toplevel'], cwd)).trim()
+  const fromCommit = await commitForRevision(from, root)
+  const toCommit = await commitForRevision(to, root)
+  const changes = parseGitChanges(
+    await gitBytes(['diff', '--no-ext-diff', '--raw', '-z', '--find-renames', fromCommit, toCommit, '--'], root),
+  )
+  const files: DraftFile[] = []
+
+  for (const change of changes) {
+    const oldContent = change.kind === 'A' ? '' : await gitFile(fromCommit, change.oldPath ?? change.path, root)
+    const newContent = change.kind === 'D' ? '' : await gitFile(toCommit, change.path, root)
+    files.push({
+      path: change.path,
+      ...(change.oldPath === undefined ? {} : { oldPath: change.oldPath }),
+      status: change.kind === 'R' ? 'renamed' : change.kind === 'M' ? 'modified' : change.kind === 'A' ? 'added' : 'deleted',
+      oldContent,
+      newContent,
+    })
+  }
+
+  return {
+    root,
+    baseCommit: fromCommit,
+    files: files.sort((left, right) => left.path.localeCompare(right.path)),
+    fromRevision: from,
+    toRevision: to,
+    fromCommit,
+    toCommit,
+  }
+}
+
+export async function commitForRevision(revision: string, root = process.cwd()): Promise<string> {
+  return (await gitText(['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`], root)).trim()
 }
 
 async function workingTreeFile(path: string, root: string): Promise<string> {

@@ -22,7 +22,7 @@ export function isCommandName(name: string): name is CommandName {
 }
 
 export function topLevelHelp(): string {
-  return `Diffwalk reads Git working-tree changes as an ordered sequence of explanations and their exact diffs.
+  return `Diffwalk reads Git changes as an ordered sequence of explanations and their exact diffs.
 
 Quick start:
   diffwalk inspect                    create a timestamped walk under .diffwalk/
@@ -33,7 +33,7 @@ Quick start:
   diffwalk publish                    publish a hosted review and print its link
 
 Commands:
-  inspect    capture Git changes into a timestamped walk and make it current
+  inspect    capture working-tree changes or committed revisions into a timestamped walk
   changes    list captured change blocks (--json for structured output)
   change     read one captured change block by ID
   file       read one captured file side (--before or --after)
@@ -65,7 +65,7 @@ Next steps:
 export function commandHelp(name: CommandName): string {
   switch (name) {
     case 'inspect':
-      return `diffwalk inspect — capture Git working-tree changes
+      return `diffwalk inspect — capture working-tree changes or committed revisions
 
 Captures staged, unstaged, renamed, deleted, and untracked UTF-8 files relative to
 --base and creates ${walkDirectory}/ with machine-owned capture.json and an
@@ -76,10 +76,13 @@ reuses that walk and never overwrites its explanations; changed contents create 
 walk while the earlier one remains available.
 
 Usage:
-  diffwalk inspect [--base HEAD] [--output <capture-path>] [--explanations <yaml-path>]
+  diffwalk inspect [<commit> | --from <revision> --to <revision>] [options]
+  diffwalk inspect [--base HEAD] [options]
 
 Options:
   --base <revision>        Git base to diff against (default HEAD)
+  --from <revision>        committed revision range start (requires --to)
+  --to <revision>          committed revision range end (requires --from)
   --output <path>          write capture to an explicit path instead of creating a walk
   --explanations <path>    write or preserve authoring YAML at an explicit path
   -h, --help               show this help
@@ -106,6 +109,12 @@ Authoring shape:
 Next steps:
   Edit the printed explanations path, then run \`diffwalk check\`. Inspect current
   capture IDs with \`diffwalk changes\`.
+
+Committed changes:
+  diffwalk inspect <commit> captures that commit against its first parent.
+  diffwalk inspect --from <revision> --to <revision> compares two committed revisions
+  directly from Git objects and ignores the working tree. Root commits cannot use the
+  single-commit form because they have no first parent.
 `
     case 'changes':
       return `diffwalk changes — list captured change blocks

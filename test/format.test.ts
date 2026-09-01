@@ -212,6 +212,14 @@ describe('capture schema', () => {
     expect(() => captureSchema.parse({ ...capture, files: undefined })).toThrow()
     expect(() => captureSchema.parse({ ...capture, changes: undefined })).toThrow()
   })
+
+  test('accepts committed capture sources', () => {
+    const parsed = captureSchema.parse({
+      ...capture,
+      source: commitDiffSource,
+    })
+    expect(parsed.source).toEqual(commitDiffSource)
+  })
 })
 
 describe('explanations schema', () => {
