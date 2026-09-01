@@ -364,6 +364,33 @@ describe('inspect', () => {
     }
   })
 
+  test('captures a merge commit relative to its first parent', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'base.ts'), 'base\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'base'], repo)
+
+    await git(['checkout', '-q', '-b', 'side'], repo)
+    await writeFile(join(repo, 'second-parent.ts'), 'second parent\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'second parent'], repo)
+
+    await git(['checkout', '-q', '-b', 'first-parent', 'HEAD^'], repo)
+    await writeFile(join(repo, 'first-parent.ts'), 'first parent\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'first parent'], repo)
+    await git(['merge', '--no-ff', '-q', 'side', '-m', 'merge'], repo)
+
+    const result = await runCli(['inspect', 'HEAD'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files.map((file) => file.path)).toEqual(['second-parent.ts'])
+    expect(capture.files).not.toContainEqual(expect.objectContaining({ path: 'first-parent.ts' }))
+  })
+
   test('rejects a root commit in positional form', async () => {
     const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
     directories.push(repo)
