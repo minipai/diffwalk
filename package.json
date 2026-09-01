@@ -1,7 +1,7 @@
 {
   "name": "diffwalk",
-  "version": "0.1.1",
-  "description": "Review code changes as an ordered sequence of explanations and exact diffs",
+  "version": "0.1.2",
+  "description": "Turn AI-generated Git changes into ordered browser walkthroughs with explanations attached to exact diffs",
   "license": "MIT",
   "homepage": "https://diffwalk.dev",
   "repository": {
@@ -12,7 +12,11 @@
     "url": "https://github.com/minipai/diffwalk/issues"
   },
   "keywords": [
+    "ai-code-review",
+    "coding-agents",
     "code-review",
+    "code-walkthrough",
+    "developer-tools",
     "diff",
     "git",
     "cli"
