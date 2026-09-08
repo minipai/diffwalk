@@ -44,6 +44,10 @@ Commands:
   unpublish  remove a published review with its revocation token
   help       show help for a command
 
+Options:
+  -h, --help     show this help
+  -v, --version  show the installed version
+
 File ownership:
   ${capturePath}       machine-owned; never edit by hand
   ${explanationsPath}  author-edited; the only file you should change

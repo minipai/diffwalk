@@ -18,6 +18,7 @@ import { publishDocument, reportService, unpublishDocument } from './publish'
 import { loadReportClient, renderReport, writeReport } from './report'
 import { openBrowser, startReportPreview } from './view'
 import { currentWalk, currentWalkIfPresent, setCurrentWalk, walkId, walkPaths } from './walk'
+import packageJson from '../package.json'
 
 interface AuthoringFiles {
   directory: string
@@ -77,6 +78,11 @@ async function main() {
 
   if (command === undefined || command === '--help' || command === '-h') {
     console.log(topLevelHelp())
+    return
+  }
+
+  if (command === '--version' || command === '-v') {
+    console.log(packageJson.version)
     return
   }
 

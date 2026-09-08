@@ -122,6 +122,18 @@ describe('help', () => {
     }
   })
 
+  test('--version and -v print the package version', async () => {
+    const repo = await fixtureRepo()
+    const packageJson = JSON.parse(
+      await readFile(join(import.meta.dir, '..', 'package.json'), 'utf8'),
+    ) as { version: string }
+
+    for (const args of [['--version'], ['-v']]) {
+      const result = await runCli(args, repo)
+      expect(result).toEqual({ exitCode: 0, stdout: `${packageJson.version}\n`, stderr: '' })
+    }
+  })
+
   test('help <command> describes options, defaults, and next steps', async () => {
     const repo = await fixtureRepo()
     for (const command of ['inspect', 'changes', 'change', 'file', 'check', 'view', 'export', 'publish']) {
