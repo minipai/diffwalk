@@ -135,6 +135,7 @@ nav .icon-link.github svg {
   margin: 0 auto clamp(60px,6vw,88px);
 }
 .report-demo {
+  position: relative;
   display: block;
   overflow: hidden;
   border: 1px solid #dcdbd6;
@@ -156,6 +157,28 @@ nav .icon-link.github svg {
   justify-self: end;
   color: var(--accent);
 }
+.demo-actions {
+  display: flex;
+  justify-self: end;
+  align-items: center;
+  gap: 16px;
+  white-space: nowrap;
+}
+.demo-replay {
+  margin: 0;
+}
+.demo-replay button {
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: #8a8a84;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.demo-replay button:hover {
+  color: var(--accent);
+}
 .window-dots {
   display: flex;
   gap: 7px;
@@ -165,6 +188,451 @@ nav .icon-link.github svg {
   height: 9px;
   border-radius: 50%;
   background: #dcdbd6;
+}
+.demo-description {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.demo-animation {
+  position: relative;
+  display: none;
+  height: min(680px,75svh);
+  overflow: hidden;
+  perspective: 900px;
+  perspective-origin: 50% 20%;
+  background: #f0f1f3;
+  color: #17221a;
+  font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size: 13px;
+}
+.demo-animation.is-initializing,
+.demo-animation.is-ready {
+  display: block;
+}
+.demo-animation.is-initializing {
+  position: absolute;
+  width: 100%;
+  visibility: hidden;
+}
+.demo-animation span {
+  box-sizing: border-box;
+}
+.demo-phase {
+  position: relative;
+  width: 186px;
+  height: 28px;
+  color: #617168;
+  font: 600 10px "SFMono-Regular",Consolas,monospace;
+  letter-spacing: .08em;
+  line-height: 26px;
+  text-align: center;
+}
+.demo-phase span {
+  position: absolute;
+  inset: 0;
+  transition: opacity .3s ease;
+}
+.demo-phase .phase-working,
+.demo-phase .phase-walk {
+  color: #17653f;
+  opacity: 0;
+}
+.review-map > b {
+  margin-bottom: 6px;
+  color: #75837a;
+  font: 600 .82em "SFMono-Regular",Consolas,monospace;
+  letter-spacing: .15em;
+  white-space: nowrap;
+}
+.map-item {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 7px;
+  min-width: 150px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  line-height: 1.35;
+}
+.map-item.active {
+  color: #176b45;
+}
+.map-item i {
+  color: #176d45;
+  font: 700 .9em "SFMono-Regular",Consolas,monospace;
+  font-style: normal;
+}
+.map-meta {
+  display: flex;
+  gap: 8px;
+  margin: 22px 10px 0;
+  color: #7c8981;
+  font-family: "SFMono-Regular",Consolas,monospace;
+  white-space: nowrap;
+}
+.map-meta > span {
+  padding: 5px 7px;
+  border: 1px solid #cbd7cd;
+  border-radius: 5px;
+  background: #ffffffa6;
+  font-size: 11px;
+}
+.demo-layout-label {
+  margin: 0 10px 14px;
+  padding: 5px 10px;
+  border: 1px solid #bdcbbf;
+  border-radius: 7px;
+  color: #607066;
+  background: #f3f7f3;
+  text-align: center;
+}
+.raw-heading,
+.walk-heading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 2px 8px;
+  color: #657069;
+  transition: opacity .25s ease;
+}
+.raw-heading b {
+  padding-bottom: 8px;
+  margin-bottom: -9px;
+  border-bottom: 2px solid #d18c43;
+  color: #252d28;
+}
+.raw-heading i,
+.raw-heading em {
+  margin-left: auto;
+  color: #187044;
+  font-style: normal;
+}
+.raw-heading em {
+  margin-left: -10px;
+  color: #a34848;
+}
+.walk-heading {
+  gap: 12px;
+  padding: 0 14px;
+  color: #344139;
+  opacity: 0;
+}
+.walk-heading i {
+  color: #258459;
+  font-style: normal;
+}
+.demo-file {
+  display: block;
+  overflow: hidden;
+  border: 1px solid #cdd8d1;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 8px 20px #3045380c;
+}
+.file-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 13px;
+  border-bottom: 1px solid #d7dfda;
+  background: #f4f7f4;
+}
+.file-head code {
+  color: #34453b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.file-head code::before {
+  content: "▾ ";
+  color: #66776c;
+}
+.file-head > span {
+  flex-shrink: 0;
+  margin-left: 10px;
+  font-size: 10px;
+  color: #738078;
+}
+.code-row {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  min-height: 25px;
+  line-height: 25px;
+  white-space: nowrap;
+}
+.code-row i {
+  padding-right: 9px;
+  color: #9aa39d;
+  font: 12px/25px ui-monospace,SFMono-Regular,Menlo,monospace;
+  text-align: right;
+  user-select: none;
+}
+.code-row code {
+  overflow: hidden;
+  padding-left: 11px;
+  border-left: 1px solid #edf0ee;
+  text-overflow: clip;
+  font: 12px/25px ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.code-row.added {
+  background: #e4f3e9;
+  color: #17653f;
+}
+.code-row.removed {
+  background: #f9e8e8;
+  color: #954040;
+}
+.report-demo .demo-fallback {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.report-demo:has(.is-ready) .demo-fallback {
+  display: none;
+}
+/* The assembly runs in fixed raw, final, and moving-object coordinate layers. */
+.demo-animation {
+  perspective: 850px;
+  perspective-origin: 50% 45%;
+}
+.raw-scene,
+.walk-scene,
+.assembly-layer {
+  position: absolute;
+  inset: 24px 4.5% 5%;
+}
+.raw-scene {
+  opacity: 1;
+  transition: opacity .35s ease;
+}
+.demo-animation.is-assembling .raw-scene {
+  opacity: 0;
+}
+.raw-scene .raw-heading {
+  position: static;
+  height: 40px;
+  border-bottom: 1px solid #cbd3ce;
+  opacity: 1;
+}
+.raw-slots {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  gap: 14px;
+  padding-top: 14px;
+}
+.code-slot {
+  display: block;
+  min-width: 0;
+}
+[data-start-slot],
+[data-end-slot] {
+  height: 190px;
+}
+.walk-scene {
+  inset: 0;
+  display: grid;
+  grid-template-columns: 238px minmax(0,1fr);
+  grid-template-rows: minmax(0,1fr);
+  transform-style: preserve-3d;
+}
+.walk-base {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #fff;
+  opacity: 0;
+}
+.demo-animation.is-assembling .walk-base {
+  animation: scene-base-in .55s .45s cubic-bezier(.16,1,.3,1) both;
+}
+.walk-scene .review-map,
+.walk-scene .walk-content {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  transform-style: preserve-3d;
+}
+.walk-scene .review-map {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  overflow: hidden;
+  padding: 24px 14px;
+  border-right: 1px solid #d5ddd7;
+  background: #f0f5f0;
+  opacity: 0;
+}
+.demo-animation.is-assembling .walk-scene .review-map {
+  animation: scene-rail-in .5s .5s cubic-bezier(.16,1,.3,1) both;
+}
+.walk-scene .review-map > b,
+.walk-scene .map-item,
+.walk-scene .map-meta,
+.walk-scene .walk-heading,
+.walk-scene .explanation {
+  opacity: 0;
+}
+.demo-animation.is-assembling .walk-scene .review-map > b,
+.demo-animation.is-assembling .walk-scene .walk-heading,
+.demo-animation.is-assembling [data-piece] {
+  animation: piece-from-above .45s cubic-bezier(.22,.7,.3,1) both;
+}
+.demo-animation.is-assembling .walk-scene .review-map > b,
+.demo-animation.is-assembling .walk-scene .walk-heading {
+  animation-delay: .65s;
+}
+.demo-animation.is-assembling [data-piece="menu-1"] {
+  animation-delay: 1s;
+}
+.demo-animation.is-assembling [data-piece="explanation-1"] {
+  animation-delay: 1.5s;
+}
+.demo-animation.is-assembling [data-piece="menu-2"] {
+  animation-delay: 4.3s;
+}
+.demo-animation.is-assembling [data-piece="explanation-2"] {
+  animation-delay: 4.8s;
+}
+.demo-animation.is-assembling [data-piece="menu-3"] {
+  animation-delay: 8.9s;
+}
+.demo-animation.is-assembling [data-piece="explanation-3"] {
+  animation-delay: 9.4s;
+}
+.demo-animation.is-assembling .walk-scene .map-meta {
+  animation: piece-from-above .45s 10.8s cubic-bezier(.22,.7,.3,1) both;
+}
+.walk-scene .walk-content {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 10px;
+  padding: 0 16px 16px;
+  overflow: visible;
+}
+.walk-scroll {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd7cd transparent;
+  visibility: hidden;
+}
+.is-assembling .walk-scroll {
+  visibility: visible;
+}
+[data-end-slot] .demo-file {
+  width: 100%;
+}
+.walk-scene .walk-heading {
+  position: static;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 -16px;
+  padding: 0 14px;
+  border-bottom: 1px solid #cbd3ce;
+  color: #17271c;
+  font-size: 15px;
+}
+.walk-scene .walk-heading::before {
+  content: "▾";
+  color: #176b45;
+}
+.walk-scene .explanation {
+  display: block;
+  margin: 0;
+  padding: 18px 8px 8px;
+  color: #3c4d41;
+  background: #fff;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.walk-scene .explanation:not(.first) {
+  border-top: 1px solid #e3ebe5;
+}
+.explanation code {
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: #f4f7f4;
+  font-size: 12px;
+}
+.walk-scene .explanation b {
+  display: block;
+  margin-bottom: 4px;
+}
+.assembly-layer {
+  z-index: 3;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+.assembly-layer .demo-file {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+  overflow: visible;
+  backface-visibility: hidden;
+  will-change: top,left,width,transform,box-shadow;
+}
+.assembly-layer .file-head {
+  border-radius: 7px 7px 0 0;
+}
+.assembly-layer .code-row:last-child {
+  border-radius: 0 0 7px 7px;
+}
+.walk-scene [data-piece] {
+  backface-visibility: hidden;
+}
+.report-demo:has(.is-assembling) .phase-raw {
+  opacity: 0;
+}
+.report-demo:not(:has(.is-ready)) .phase-raw {
+  opacity: 0;
+}
+.report-demo:not(:has(.is-ready)) .phase-walk {
+  opacity: 1;
+}
+.report-demo:has(.is-assembling:not(.is-explained)) .phase-working,
+.report-demo:has(.is-explained) .phase-walk {
+  opacity: 1;
+}
+.demo-animation.is-resetting > :not(.demo-phase) {
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+.demo-animation.is-explained .walk-base,
+.demo-animation.is-explained .review-map,
+.demo-animation.is-explained .review-map > b,
+.demo-animation.is-explained .walk-heading,
+.demo-animation.is-explained [data-piece],
+.demo-animation.is-explained .map-meta {
+  animation: none;
+  opacity: 1;
+  transform: none;
+  box-shadow: none;
+}
+@keyframes scene-base-in {
+  from { opacity: 0; transform: translateY(-24px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes scene-rail-in {
+  from { opacity: 0; transform: translateY(-24px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes piece-from-above {
+  0% { opacity: 0; transform: translateY(-55px); box-shadow: 0 22px 24px #233a2c28; }
+  18% { opacity: 1; }
+  88% { opacity: 1; transform: translateY(-3px); box-shadow: 0 6px 10px #233a2c18; }
+  100% { opacity: 1; transform: none; box-shadow: none; }
 }
 .report-demo img {
   display: block;
@@ -370,8 +838,77 @@ nav .icon-link.github svg {
   .hero p {
     font-size: 16px;
   }
-  .report-chrome > span:not(.window-dots) {
+  .report-chrome .window-dots {
     display: none;
+  }
+  .report-chrome {
+    grid-template-columns: 1fr auto;
+    padding-inline: 10px;
+    font-size: 10px;
+  }
+  .demo-phase {
+    width: 140px;
+    font-size: 8px;
+  }
+  .demo-actions {
+    gap: 8px;
+  }
+  .demo-replay button {
+    font-size: 10px;
+  }
+  .demo-animation {
+    width: 100%;
+    aspect-ratio: auto;
+    font-size: 11px;
+  }
+  .raw-scene,
+  .walk-scene,
+  .assembly-layer {
+    inset: 20px 4% 4%;
+  }
+  .raw-slots {
+    grid-template-columns: 1fr;
+  }
+  .walk-scene {
+    inset: 0;
+    display: grid;
+    grid-template-columns: minmax(0,1fr);
+    grid-template-rows: auto minmax(0,1fr);
+  }
+  .walk-scene .review-map {
+    display: grid;
+    grid-template-columns: repeat(3,minmax(0,1fr));
+    gap: 4px;
+    padding: 12px;
+    border-right: 0;
+    border-bottom: 1px solid #d5ddd7;
+  }
+  .walk-scene .review-map > b {
+    grid-column: 1/-1;
+    margin: 0;
+  }
+  .demo-layout-label {
+    grid-column: 1/-1;
+    margin: 0;
+    font-size: 11px;
+  }
+  .map-item {
+    display: block;
+    min-width: 0;
+    padding: 5px;
+  }
+  .map-item i {
+    display: block;
+    margin-bottom: 3px;
+  }
+  .map-meta {
+    display: none;
+  }
+  .explanation {
+    margin-inline: 3px;
+  }
+  .walk-scene .walk-content {
+    padding-inline: 10px;
   }
   .guide-step {
     padding-left: 36px;
@@ -386,5 +923,16 @@ nav .icon-link.github svg {
   }
   .site > footer p {
     display: none;
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .demo-animation.is-ready {
+    display: none;
+  }
+  .report-demo:has(.is-ready) .demo-fallback {
+    display: block;
   }
 }

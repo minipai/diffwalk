@@ -43,10 +43,112 @@
       </section>
 
       <section class="demo-stage" aria-label="diffwalk product demo">
-        <a class="report-demo" href="https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ">
-          <span class="report-chrome"><span class="window-dots"><i></i><i></i><i></i></span><span>retry-double-charge.diffwalk</span><b>Open review ↗</b></span>
-          <img src="/example-review.png" width="1280" height="820" alt="A diffwalk review with its review map and explanations beside diffs." />
-        </a>
+        <div class="report-demo">
+          <div class="report-chrome">
+            <span class="window-dots"><i></i><i></i><i></i></span>
+            <span class="demo-phase"><span class="phase-raw">RAW GIT DIFF</span><span class="phase-working">EXPLAINING…</span><span class="phase-walk">EXPLAINED WITH DIFFWALK</span></span>
+            <div class="demo-actions">
+              <form class="demo-replay" hidden><button type="submit" aria-label="Replay assembly animation">Replay</button></form>
+              <a href="https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ"><b>Open review ↗</b></a>
+            </div>
+          </div>
+          <span class="demo-description">Six project soft-delete file excerpts, initially ordered alphabetically, become a three-section Diffwalk review: mark projects as deleted, hide them from daily work while allowing recovery for 30 days, then purge them after the recovery window closes. Each explanation is followed by its relevant code excerpts.</span>
+          <span class="demo-animation" data-assembly-demo aria-hidden="true">
+            <span class="raw-scene">
+              <span class="raw-heading"><b>Files changed</b><span>6 file excerpts</span><span>Ordered by file</span></span>
+              <span class="raw-slots">
+                <span class="code-slot" data-start-slot="delete"></span>
+                <span class="code-slot" data-start-slot="list"></span>
+                <span class="code-slot" data-start-slot="purge"></span>
+                <span class="code-slot" data-start-slot="restore"></span>
+                <span class="code-slot" data-start-slot="schema"></span>
+                <span class="code-slot" data-start-slot="trash"></span>
+              </span>
+            </span>
+            <span class="walk-scene">
+              <span class="walk-base"></span>
+              <span class="review-map">
+                <span class="demo-layout-label">Unified diff</span>
+                <b>REVIEW MAP</b>
+                <span class="map-item active" data-piece="menu-1"><i>01</i><span>Mark it, don't destroy it</span></span>
+                <span class="map-item" data-piece="menu-2"><i>02</i><span>Hide it from daily work, keep a way back</span></span>
+                <span class="map-item" data-piece="menu-3"><i>03</i><span>Delete only when the window closes</span></span>
+                <span class="map-meta"><span>3 sections</span><span>6 files</span></span>
+              </span>
+              <span class="walk-scroll">
+              <span class="walk-content">
+                <span class="walk-heading"><b>Give deleted projects a 30-day recovery window</b></span>
+                <span class="explanation first" data-piece="explanation-1"><b>Mark it, don't destroy it.</b> Add a nullable <code>deleted_at</code> timestamp, then make deletion set it instead of removing the project. Only mark active projects so a repeated request does not restart the recovery window.</span>
+                <span class="code-slot" data-end-slot="schema"></span>
+                <span class="code-slot" data-end-slot="delete"></span>
+                <span class="explanation second" data-piece="explanation-2"><b>Hide it from daily work, keep a way back.</b> The project list excludes deleted rows. Trash shows projects still inside the 30-day window with a restore form; the restore query checks the same deadline before clearing the timestamp. These excerpts omit surrounding authorization and request handling.</span>
+                <span class="code-slot" data-end-slot="list"></span>
+                <span class="code-slot" data-end-slot="trash"></span>
+                <span class="code-slot" data-end-slot="restore"></span>
+                <span class="explanation third" data-piece="explanation-3"><b>Delete only when the window closes.</b> The scheduled cleanup permanently removes projects whose deletion timestamp is at least 30 days old. Until then, the row stays available for recovery.</span>
+                <span class="code-slot" data-end-slot="purge"></span>
+              </span>
+              </span>
+            </span>
+            <span class="assembly-layer">
+              <span class="demo-file" data-code-card="schema">
+                <span class="file-head"><code>src/projects/schema.sql</code><span>EXCERPT</span></span>
+                <span class="code-row context"><i>1</i><code>  create table projects (</code></span>
+                <span class="code-row context"><i>2</i><code>    id uuid primary key,</code></span>
+                <span class="code-row context"><i>3</i><code>    name text not null,</code></span>
+                <span class="code-row added"><i>4</i><code>+   deleted_at timestamptz default null,</code></span>
+                <span class="code-row context"><i>5</i><code>    created_at timestamptz not null default now()</code></span>
+                <span class="code-row context"><i>6</i><code>  );</code></span>
+              </span>
+              <span class="demo-file" data-code-card="delete">
+                <span class="file-head"><code>src/projects/delete.ts</code><span>EXCERPT</span></span>
+                 <span class="code-row removed"><i>12</i><code>− await sql`delete from projects where id = ${projectId}`</code></span>
+                <span class="code-row added"><i>12</i><code>+ await sql`</code></span>
+                <span class="code-row added"><i>13</i><code>+   update projects set deleted_at = now()</code></span>
+                <span class="code-row added"><i>14</i><code>+   where id = ${projectId}</code></span>
+                <span class="code-row added"><i>15</i><code>+     and deleted_at is null</code></span>
+                <span class="code-row added"><i>16</i><code>+ `</code></span>
+              </span>
+              <span class="demo-file" data-code-card="list">
+                <span class="file-head"><code>src/projects/list.ts</code><span>EXCERPT</span></span>
+                <span class="code-row context"><i>…</i><code>  // ... within the authorized project scope</code></span>
+                <span class="code-row context"><i>10</i><code>  const projects = await sql`</code></span>
+                <span class="code-row context"><i>11</i><code>    select id, name from projects</code></span>
+                <span class="code-row added"><i>12</i><code>+   where deleted_at is null</code></span>
+                <span class="code-row context"><i>13</i><code>    order by name</code></span>
+                <span class="code-row context"><i>14</i><code>  `</code></span>
+              </span>
+              <span class="demo-file" data-code-card="trash">
+                <span class="file-head"><code>src/projects/trash.tsx</code><span>EXCERPT</span></span>
+                <span class="code-row context"><i>…</i><code>  // ... authorized trash query: deleted_at &gt; now() - interval '30 days'</code></span>
+                <span class="code-row added"><i>20</i><code>+ {projects.map(project =&gt; (</code></span>
+                <span class="code-row added"><i>21</i><code>+   &lt;form key={project.id} onSubmit={event =&gt; restore(event, project.id)}&gt;</code></span>
+                <span class="code-row added"><i>22</i><code>+     &lt;span&gt;{project.name}&lt;/span&gt;&lt;button type="submit"&gt;Restore&lt;/button&gt;</code></span>
+                <span class="code-row added"><i>23</i><code>+   &lt;/form&gt;</code></span>
+                <span class="code-row added"><i>24</i><code>+ ))}</code></span>
+              </span>
+              <span class="demo-file" data-code-card="restore">
+                <span class="file-head"><code>src/projects/restore.ts</code><span>EXCERPT</span></span>
+                <span class="code-row context"><i>…</i><code>  // ... after authorizing access to projectId</code></span>
+                <span class="code-row added"><i>12</i><code>+ const restored = await sql`</code></span>
+                <span class="code-row added"><i>13</i><code>+   update projects set deleted_at = null</code></span>
+                <span class="code-row added"><i>14</i><code>+   where id = ${projectId}</code></span>
+                <span class="code-row added"><i>15</i><code>+     and deleted_at &gt; now() - interval '30 days'</code></span>
+                <span class="code-row added"><i>16</i><code>+   returning id`</code></span>
+              </span>
+              <span class="demo-file" data-code-card="purge">
+                <span class="file-head"><code>src/projects/purge.ts</code><span>EXCERPT</span></span>
+                <span class="code-row context"><i>…</i><code>  // ... scheduled cleanup job</code></span>
+                <span class="code-row added"><i>8</i><code>+ await sql`</code></span>
+                <span class="code-row added"><i>9</i><code>+   delete from projects</code></span>
+                <span class="code-row added"><i>10</i><code>+   where deleted_at is not null</code></span>
+                <span class="code-row added"><i>11</i><code>+     and deleted_at &lt;= now() - interval '30 days'</code></span>
+                <span class="code-row added"><i>12</i><code>+ `</code></span>
+              </span>
+            </span>
+          </span>
+          <img class="demo-fallback" src="/example-review.png" width="1280" height="820" alt="A diffwalk review with its review map and explanations beside diffs." />
+        </div>
       </section>
 
       <section class="guide">
@@ -104,6 +206,172 @@
           button.textContent = 'Copied';
           setTimeout(() => { button.textContent = 'Copy'; }, 1500);
         });
+      }
+
+      const assemblyDemo = document.querySelector('[data-assembly-demo]');
+      if (assemblyDemo && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const cards = [...assemblyDemo.querySelectorAll('[data-code-card]')];
+        const layer = assemblyDemo.querySelector('.assembly-layer');
+        const viewport = assemblyDemo.querySelector('.walk-scroll');
+        const replay = document.querySelector('.demo-replay');
+        const control = replay.querySelector('button');
+        const pending = [];
+        let started = false;
+        let playing = false;
+        let startTimer;
+        let fadeTimer;
+        let scrollFrame;
+
+        const slotRect = (name, side) => {
+          const layer = assemblyDemo.querySelector('.assembly-layer').getBoundingClientRect();
+          const slot = assemblyDemo.querySelector(`[data-${side}-slot="${name}"]`).getBoundingClientRect();
+          return { left: slot.left - layer.left, top: slot.top - layer.top, width: slot.width };
+        };
+
+        const place = (card, rect) => {
+          card.style.left = `${rect.left}px`;
+          card.style.top = `${rect.top}px`;
+          card.style.width = `${rect.width}px`;
+          card.style.transform = 'none';
+        };
+
+        const finish = () => {
+          playing = false;
+          const scrollTop = viewport.scrollTop;
+          cancelAnimationFrame(scrollFrame);
+          pending.splice(0).forEach(clearTimeout);
+          clearTimeout(startTimer);
+          clearTimeout(fadeTimer);
+          for (const card of cards) {
+            card.getAnimations().forEach(animation => animation.cancel());
+            const slot = assemblyDemo.querySelector(`[data-end-slot="${card.dataset.codeCard}"]`);
+            if (card.parentElement !== slot) slot.append(card);
+            card.removeAttribute('style');
+          }
+          assemblyDemo.classList.remove('is-resetting');
+          assemblyDemo.classList.add('is-assembling', 'is-explained');
+          viewport.scrollTop = scrollTop;
+          control.textContent = 'Replay';
+          control.setAttribute('aria-label', 'Replay assembly animation');
+          replay.hidden = false;
+        };
+
+        const reset = () => {
+          playing = true;
+          control.textContent = 'Skip';
+          control.setAttribute('aria-label', 'Skip assembly animation');
+          cancelAnimationFrame(scrollFrame);
+          pending.splice(0).forEach(clearTimeout);
+          clearTimeout(startTimer);
+          clearTimeout(fadeTimer);
+          assemblyDemo.classList.add('is-resetting');
+          fadeTimer = setTimeout(() => {
+            for (const card of cards) {
+              card.getAnimations().forEach(animation => animation.cancel());
+              layer.append(card);
+              place(card, slotRect(card.dataset.codeCard, 'start'));
+            }
+            viewport.scrollTo({ top: 0, behavior: 'instant' });
+            assemblyDemo.classList.remove('is-assembling', 'is-explained');
+            assemblyDemo.classList.remove('is-resetting');
+            startTimer = setTimeout(assemble, 2600);
+          }, 260);
+        };
+
+        const moveCard = (card, dockAt) => {
+          const start = slotRect(card.dataset.codeCard, 'start');
+          const direction = cards.indexOf(card) % 2 === 0 ? -1 : 1;
+          const stage = assemblyDemo.getBoundingClientRect();
+          const rect = card.getBoundingClientRect();
+          const sideways = direction < 0
+            ? stage.left - rect.left - start.width * .8
+            : stage.right - rect.left - start.width * .2;
+          const lift = `translate(${sideways}px, -${card.offsetHeight / 2}px)`;
+          // The same nodes float in the overlay, then join the scrolling document on landing.
+          const lifting = card.animate([
+            { transform: 'none', boxShadow: '0 8px 20px #3045380c' },
+            { transform: lift, boxShadow: '0 28px 30px #233a2c30' }
+          ], { duration: 650, easing: 'cubic-bezier(.22,.7,.3,1)', fill: 'both' });
+
+          pending.push(setTimeout(() => {
+            const slot = assemblyDemo.querySelector(`[data-end-slot="${card.dataset.codeCard}"]`);
+            const target = Math.max(viewport.scrollTop, viewport.scrollTop + slot.getBoundingClientRect().bottom - viewport.getBoundingClientRect().bottom + 24);
+            const from = viewport.scrollTop;
+            const began = performance.now();
+            const scroll = now => {
+              const progress = Math.min(1, (now - began) / 400);
+              viewport.scrollTop = from + (target - from) * (1 - (1 - progress) ** 3);
+              if (progress < 1) scrollFrame = requestAnimationFrame(scroll);
+            };
+            scrollFrame = requestAnimationFrame(scroll);
+            pending.push(setTimeout(() => {
+              cancelAnimationFrame(scrollFrame);
+              viewport.scrollTop = target;
+              const end = slotRect(card.dataset.codeCard, 'end');
+              card.style.transform = lift;
+              lifting.cancel();
+              const docking = card.animate([
+                { left: `${start.left}px`, top: `${start.top}px`, width: `${start.width}px`, transform: lift, boxShadow: '0 28px 30px #233a2c30' },
+                { left: `${end.left}px`, top: `${end.top}px`, width: `${end.width}px`, transform: 'none', boxShadow: '0 8px 20px #3045380c' }
+              ], { duration: 800, easing: 'cubic-bezier(.22,.7,.3,1)', fill: 'both' });
+              docking.finished.then(() => {
+                if (!playing) return;
+                slot.append(card);
+                card.removeAttribute('style');
+                docking.cancel();
+                if (cards.every(card => card.parentElement.hasAttribute('data-end-slot'))) {
+                  finish();
+                }
+              }).catch(() => {});
+            }, 420));
+          }, dockAt - 420));
+        };
+
+        const assemble = () => {
+          started = true;
+          playing = true;
+          observer.disconnect();
+          control.textContent = 'Skip';
+          control.setAttribute('aria-label', 'Skip assembly animation');
+          replay.hidden = false;
+          assemblyDemo.classList.add('is-assembling');
+          moveCard(assemblyDemo.querySelector('[data-code-card="schema"]'), 2000);
+          // Leave room for the previous 800ms landing and the next 420ms scroll.
+          moveCard(assemblyDemo.querySelector('[data-code-card="delete"]'), 3300);
+          moveCard(assemblyDemo.querySelector('[data-code-card="list"]'), 5300);
+          moveCard(assemblyDemo.querySelector('[data-code-card="trash"]'), 6600);
+          moveCard(assemblyDemo.querySelector('[data-code-card="restore"]'), 7900);
+          moveCard(assemblyDemo.querySelector('[data-code-card="purge"]'), 9900);
+        };
+
+        replay.addEventListener('submit', event => {
+          event.preventDefault();
+          if (playing) finish();
+          else reset();
+        });
+        const userScroll = () => {
+          if (playing) finish();
+        };
+        viewport.addEventListener('wheel', userScroll, { passive: true });
+        viewport.addEventListener('touchstart', userScroll, { passive: true });
+        viewport.addEventListener('pointerdown', userScroll);
+        viewport.addEventListener('keydown', event => {
+          if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) userScroll();
+        });
+        addEventListener('resize', () => {
+          if (playing) finish();
+          else if (!started) for (const card of cards) place(card, slotRect(card.dataset.codeCard, 'start'));
+        });
+        const observer = new IntersectionObserver(entries => {
+          clearTimeout(startTimer);
+          if (!started && entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= .2)) {
+            startTimer = setTimeout(assemble, 2600);
+          }
+        }, { threshold: .2 });
+        assemblyDemo.classList.add('is-initializing');
+        for (const card of cards) place(card, slotRect(card.dataset.codeCard, 'start'));
+        assemblyDemo.classList.replace('is-initializing', 'is-ready');
+        observer.observe(assemblyDemo);
       }
     </script>
   </body>
