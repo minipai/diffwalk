@@ -1,6 +1,6 @@
 {
   "name": "diffwalk",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Turn AI-generated Git changes into ordered browser walkthroughs with explanations attached to exact diffs",
   "license": "MIT",
   "homepage": "https://diffwalk.dev",
@@ -27,6 +27,7 @@
   },
   "files": [
     "dist",
+    "skills/diffwalk",
     "README.md",
     "LICENSE"
   ],
