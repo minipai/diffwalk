@@ -21,7 +21,7 @@ The agent runs `diffwalk inspect`, writes the walkthrough in `explanations.yaml`
 ## Documentation
 
 - [README](https://github.com/minipai/diffwalk#readme): installation, authoring format, commands, exports, publishing, and trust boundaries
-- [Agent skill](https://raw.githubusercontent.com/minipai/diffwalk/main/.agents/skills/diffwalk/SKILL.md): instructions for agents using diffwalk
+- [Agent skill](https://raw.githubusercontent.com/minipai/diffwalk/main/skills/diffwalk/SKILL.md): instructions for agents using diffwalk
 - [npm package](https://www.npmjs.com/package/diffwalk): published CLI
 - [Source code](https://github.com/minipai/diffwalk): repository and issue tracker
 

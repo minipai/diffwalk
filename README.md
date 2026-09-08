@@ -249,16 +249,19 @@ Treat it as potentially sensitive and do not publish or send it without authoriz
 
 The repository includes an Agent Skill that teaches compatible coding agents how to
 capture changes, author ordered sections, and validate with Diffwalk without
-hand-writing patches. Its source lives at `.agents/skills/diffwalk`.
+hand-writing patches. Its source lives at `skills/diffwalk/SKILL.md`.
 
-Link it into the shared user-level Agent Skills directory to make it available from
-other repositories:
+Install the skill for your project:
 
 ```bash
-mkdir -p "$HOME/.agents/skills"
-ln -s "$(pwd)/.agents/skills/diffwalk" "$HOME/.agents/skills/diffwalk"
+npx skills add minipai/diffwalk --skill diffwalk
 ```
 
-Agents that use another skill directory can point that directory at the same
-`SKILL.md`. Start a new agent session after installing the skill so it can be
-discovered.
+Add `-g` to install globally instead. From a local checkout of this repository:
+
+```bash
+npx skills add ./skills/diffwalk --skill diffwalk
+```
+
+Skill installation is separate from installing the CLI with `npm install --global diffwalk`.
+Start a new agent session after installing the skill so it can be discovered.

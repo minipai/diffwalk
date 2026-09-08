@@ -55,6 +55,72 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
 7. Run `diffwalk view` when the user asks to preview the review locally. It opens the browser without writing an HTML file and runs until stopped with Ctrl+C.
 8. Run `diffwalk export html` when the user asks for a portable HTML review, or `diffwalk export json` for an ExplainDocument integration artifact. Pass `--output <path>` when the user names a destination.
 
+## Writing explanations
+
+Make the change understandable before making it comprehensive. Name the behavior or
+decision in each section title; order sections by what the reader needs to learn,
+not by filename. Explain why related changes belong together, then attach their
+actual change IDs. Keep each explanation close to the diff it explains.
+
+Use the smallest visual that resolves a real question. A short sentence is enough
+for a simple edit; do not add a diagram to every section or force a fixed number of
+steps. For cross-file changes, show the relationship that individual hunks cannot.
+
+| Reader's question | Useful form inside a step's `text` |
+| --- | --- |
+| What decision changed? | A small pseudocode block with the relevant branches |
+| What runs next? | A call tree showing execution order |
+| Which component owns the state? | A component tree with real module paths and state boundaries |
+| Where did responsibilities move? | A shallow file tree annotated with responsibilities |
+| How did the structure change? | A before/after sketch or a fenced `diff` of the conceptual tree |
+| How do these pieces communicate? | An inline SVG flow or sequence diagram |
+
+Keep only the calls, files, states, and boundaries needed for the current point.
+Use names from the captured source; distinguish existing behavior from new behavior.
+Label pseudocode and conceptual sketches so they cannot be mistaken for exact source
+patches. Never use a hand-written sketch in place of a captured change ID.
+
+For example, a short overview can establish the reading order before the associated
+diffs. Use `summary` for the whole review, or a text-only step for a local explanation:
+
+````yaml
+summary: |
+  Deleting a project now starts a recovery window instead of removing its row.
+
+  Lifecycle overview (conceptual):
+
+  ```text
+  Delete -> mark deleted_at
+              |-> active list hides the project
+              |-> restore clears the timestamp within 30 days
+              `-> cleanup removes expired rows
+  ```
+````
+
+Follow that overview with steps about the real query, UI, and cleanup changes, each
+referencing IDs returned by `diffwalk changes`. Do not repeat the whole diagram
+beside every hunk. Show a complete code block only when the omitted context would
+hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
+
+### Visuals stay in the review
+
+- Put a visual beside its supporting prose in `summary` or `steps[].text`, not in a
+  separate HTML page, slide deck, or screenshot. Preview through `diffwalk view`.
+- Fenced `text`, `tsx`, and `diff` blocks are readable sketches. Mermaid fences do
+  not automatically become diagrams in Diffwalk; use a text sketch or self-contained
+  inline SVG instead of adding a Mermaid runtime or CDN dependency.
+- For SVG, include a `viewBox`, a descriptive title or accessible label, and fluid
+  sizing such as `style="max-width:100%;height:auto"`. Keep labels legible on narrow
+  screens; split a dense diagram rather than shrinking it to unreadable text.
+- Match the review's restrained green, gray, and white palette. Do not build an
+  unrelated visual theme, interactive controls, or animations inside explanations.
+- Embed image data and SVG directly. Do not reference remote images, scripts, fonts,
+  stylesheets, or local file paths: the exported review must work offline and the
+  hosted review blocks remote image sources.
+- `diffwalk check` validates the capture/explanation pairing, not the truth of a
+  diagram or its layout. Check labels and arrows against the source, then preview
+  visuals at desktop and narrow widths when authoring them.
+
 ## Invariants
 
 - Never hand-write the final unified diffs. Diffwalk materializes selected change blocks from captured old/new contents and generates the patches.

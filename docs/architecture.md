@@ -127,4 +127,4 @@ exact corresponding diffs in a deliberate order.
 - `worker/index.test.ts`: Worker route behavior against a stub bucket, covering
   authentication, validation, size limits, revocation, and error states.
 - `test/publish.test.ts`: CLI publish and unpublish behavior against a stubbed fetch.
-- `.agents/skills/diffwalk/SKILL.md`: teaches agents the authoring workflow and invariants.
+- `skills/diffwalk/SKILL.md`: teaches agents the authoring workflow and invariants.
