@@ -176,7 +176,7 @@ export function materializeExplainDocument(
         patches.push(createFilePatch(file, fileChanges))
       }
 
-      return { text: step.text, diff: formatPatch(patches) }
+      return { text: step.text, diff: patches.map(formatFilePatch).join('\n') }
     }),
   }))
 
@@ -218,6 +218,12 @@ function createFilePatch(file: DraftFile, changes: ChangeBlock[]): StructuredPat
     patch.newMode = file.newMode
   }
   return patch
+}
+
+function formatFilePatch(patch: StructuredPatch): string {
+  const formatted = formatPatch(patch)
+  if (!patch.isRename || patch.hunks.length > 0) return formatted
+  return formatted.replace('\nrename from ', '\nsimilarity index 100%\nrename from ')
 }
 
 function validateBlocks(file: DraftFile, changes: ChangeBlock[]) {

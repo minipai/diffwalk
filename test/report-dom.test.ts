@@ -23,6 +23,15 @@ function simplePatch(oldLine = 'old', newLine = 'new'): string {
   ].join('\n')
 }
 
+function pureRenamePatch(): string {
+  return [
+    'diff --git a/old-name.ts b/new-name.ts',
+    'rename from old-name.ts',
+    'rename to new-name.ts',
+    '',
+  ].join('\n')
+}
+
 function section(patch: string, title: string, options: { text?: string } = {}) {
   return {
     title,
@@ -178,6 +187,25 @@ function expectSameContainers(before: Element[], after: Element[]) {
 }
 
 describe('report browser client', () => {
+  test('leaves a legacy pure rename as a static file row with no mount target', () => {
+    const html = renderReport(document([section(pureRenamePatch(), 'Rename')]), clientBundle)
+    const dom = loadReport(html)
+    runReportClient()
+    const doc = dom.document as unknown as Document
+
+    expect(doc.querySelector('.file-summary')?.textContent).toContain(
+      'old-name.ts → new-name.ts Renamed · content unchanged',
+    )
+    expect(doc.querySelector('.file-static')).not.toBeNull()
+    expect(doc.querySelector('.file-static summary')).toBeNull()
+    expect(doc.querySelector('.file-static')?.matches('details')).toBe(false)
+    expect(doc.querySelector('.file-diff')).toBeNull()
+    expect(doc.querySelector('diffs-container')).toBeNull()
+    expect([...doc.querySelectorAll('.review-map-counts span')].map((span) => span.textContent)).toEqual(
+      ['1 section', '1 file'],
+    )
+  })
+
   test('review map anchors resolve to section ids in document order with counts', () => {
     const html = renderReport(
       document([
