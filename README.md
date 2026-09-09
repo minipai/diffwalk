@@ -30,6 +30,9 @@ pnpm build
 pnpm test
 ```
 
+Pull requests targeting `main` run `pnpm check`. Passing same-repository branches are
+rebased automatically and deleted after merge.
+
 ## Quick start
 
 Inside the Git working tree whose changes you want to explain:
