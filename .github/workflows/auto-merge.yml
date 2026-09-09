@@ -1,0 +1,61 @@
+name: Auto merge
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  enable:
+    name: Enable native auto-merge
+    if: >-
+      github.repository == 'minipai/diffwalk' &&
+      github.event.pull_request.base.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR metadata and enable rebase merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          readarray -t pr < <(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '
+            .base.repo.full_name,
+            .base.ref,
+            .head.repo.full_name,
+            .head.ref,
+            .head.sha,
+            .state,
+            (.draft | tostring)
+          ')
+
+          [[ "${pr[0]}" == "$REPOSITORY" ]]
+          [[ "${pr[1]}" == "main" ]]
+          [[ "${pr[2]}" == "$REPOSITORY" ]]
+          [[ "${pr[3]}" == "$HEAD_BRANCH" ]]
+          [[ "${pr[4]}" == "$HEAD_SHA" ]]
+          [[ "${pr[5]}" == "open" ]]
+          [[ "${pr[6]}" == "false" ]]
+
+          gh pr merge "$PR_NUMBER" \
+            --repo "$REPOSITORY" \
+            --auto \
+            --rebase \
+            --match-head-commit "$HEAD_SHA"
