@@ -6,7 +6,7 @@ import {
   materializeExplainDocument,
 } from '../src/authoring'
 import type { CaptureSource, ExplainCapture } from '../src/format'
-import { parseSectionPatch } from '../src/report-patches'
+import { fileDiffStats, parseSectionPatch } from '../src/report-patches'
 
 const source: CaptureSource = {
   kind: 'working-tree',
@@ -213,6 +213,72 @@ describe('explain capture', () => {
 })
 
 describe('explain materialization', () => {
+  test('emits pure rename metadata that Pierre parses with both paths and modes', () => {
+    const capture = createExplainCapture(
+      [
+        {
+          path: 'bin/new-name.sh',
+          oldPath: 'bin/old-name.sh',
+          status: 'renamed',
+          oldMode: '100644',
+          newMode: '100755',
+          oldContent: '#!/bin/sh\necho same\n',
+          newContent: '#!/bin/sh\necho same\n',
+        },
+      ],
+      source,
+    )
+
+    const document = materializeExplainDocument(capture, allChangesAssigned(capture))
+    const patch = document.sections[0]!.steps[0]!.diff!
+
+    expect(patch).toContain('old mode 100644\nnew mode 100755')
+    expect(patch).toContain(
+      'similarity index 100%\nrename from bin/old-name.sh\nrename to bin/new-name.sh',
+    )
+    expect(patch).not.toContain('--- a/bin/old-name.sh')
+    expect(patch).not.toContain('@@ ')
+    expect(parseSectionPatch(patch)).toEqual([
+      expect.objectContaining({
+        name: 'bin/new-name.sh',
+        prevName: 'bin/old-name.sh',
+        type: 'rename-pure',
+        prevMode: '100644',
+        mode: '100755',
+        hunks: [],
+      }),
+    ])
+  })
+
+  test('keeps hunks in renames whose content changed', () => {
+    const capture = createExplainCapture(
+      [
+        {
+          path: 'new-name.ts',
+          oldPath: 'old-name.ts',
+          status: 'renamed',
+          ...regularModes,
+          oldContent: 'old\n',
+          newContent: 'new\n',
+        },
+      ],
+      source,
+    )
+
+    const document = materializeExplainDocument(capture, allChangesAssigned(capture))
+    const patch = document.sections[0]!.steps[0]!.diff!
+    const [file] = parseSectionPatch(patch)
+
+    expect(patch).not.toContain('similarity index 100%')
+    expect(patch).toContain('@@ -1,1 +1,1 @@')
+    expect(file).toMatchObject({
+      name: 'new-name.ts',
+      prevName: 'old-name.ts',
+      type: 'rename-changed',
+    })
+    expect(fileDiffStats(file!)).toEqual({ additions: 1, deletions: 1 })
+  })
+
   test('emits executable modes and textual hunks for additions and deletions', () => {
     const capture = createExplainCapture(
       [

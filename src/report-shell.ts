@@ -151,8 +151,15 @@ function renderSection(section: ExplainDocument['sections'][number], index: numb
     const filesMarkup = files
       .map((file, fileIndex) => {
         const stats = fileDiffStats(file)
+        const pureRename = file.type === 'rename-pure' && file.hunks.length === 0
+        const label = escapeHtml(fileDiffLabel(file))
+        if (pureRename) {
+          return `<div class="file file-static">
+  <div class="file-summary">${label} <span class="file-stats">Renamed · content unchanged</span></div>
+</div>`
+        }
         return `<details class="file" open>
-  <summary class="file-summary">${escapeHtml(fileDiffLabel(file))} <span class="file-stats">+${stats.additions} −${stats.deletions}</span></summary>
+  <summary class="file-summary">${label} <span class="file-stats">+${stats.additions} −${stats.deletions}</span></summary>
   <div class="file-diff" id="section-${index}-step-${stepIndex}-file-${fileIndex}"></div>
 </details>`
       })
@@ -421,13 +428,15 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   border-radius: 7px;
   background: #f8faf8;
 }
-.file > summary {
-  cursor: pointer;
+.file-summary {
   padding: 8px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   color: #314439;
   background: #f3f7f3;
+}
+.file > summary {
+  cursor: pointer;
   list-style: none;
   user-select: none;
 }
