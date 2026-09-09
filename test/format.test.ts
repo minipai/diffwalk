@@ -25,6 +25,8 @@ const capture = {
     {
       path: 'example.ts',
       status: 'modified',
+      oldMode: '100644',
+      newMode: '100644',
       oldContent: 'old\n',
       newContent: 'new\n',
     },
@@ -179,6 +181,23 @@ describe('capture schema', () => {
     expect(parsed.files).toHaveLength(1)
     expect(parsed.changes).toHaveLength(1)
     expect('sections' in parsed).toBe(false)
+  })
+
+  test('defaults status-aware modes when reading captures written before mode metadata', () => {
+    for (const [status, oldMode, newMode] of [
+      ['added', '000000', '100644'],
+      ['modified', '100644', '100644'],
+      ['deleted', '100644', '000000'],
+    ] as const) {
+      const legacy = structuredClone(capture) as Record<string, any>
+      legacy.files[0].status = status
+      delete legacy.files[0].oldMode
+      delete legacy.files[0].newMode
+
+      expect(captureSchema.parse(legacy).files[0]).toEqual(
+        expect.objectContaining({ oldMode, newMode }),
+      )
+    }
   })
 
   test('rejects captures with authored sections or extra fields', () => {

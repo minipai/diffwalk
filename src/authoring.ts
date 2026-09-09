@@ -90,7 +90,7 @@ function changeBlocks(file: DraftFile): Omit<ChangeBlock, 'id' | 'path'>[] {
   return changes
 }
 
-export function captureIdFor(files: DraftFile[]): string {
+export function captureIdFor(files: DraftFile[], includeModes = true): string {
   const hash = createHash('sha256')
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
     hash.update(file.status)
@@ -99,6 +99,12 @@ export function captureIdFor(files: DraftFile[]): string {
     hash.update('\0')
     hash.update(file.oldPath ?? '')
     hash.update('\0')
+    if (includeModes) {
+      hash.update(file.oldMode)
+      hash.update('\0')
+      hash.update(file.newMode)
+      hash.update('\0')
+    }
     hash.update(file.oldContent)
     hash.update('\0')
     hash.update(file.newContent)
@@ -207,6 +213,10 @@ function createFilePatch(file: DraftFile, changes: ChangeBlock[]): StructuredPat
   patch.isCreate = file.status === 'added'
   patch.isDelete = file.status === 'deleted'
   patch.isRename = file.status === 'renamed'
+  if (file.oldMode !== file.newMode) {
+    patch.oldMode = file.oldMode
+    patch.newMode = file.newMode
+  }
   return patch
 }
 

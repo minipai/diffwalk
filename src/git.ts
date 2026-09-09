@@ -20,6 +20,8 @@ interface GitChange {
   kind: string
   path: string
   oldPath?: string
+  oldMode: DraftFile['oldMode']
+  newMode: DraftFile['newMode']
 }
 
 const supportedGitModes = new Set(['000000', '100644', '100755'])
@@ -43,6 +45,8 @@ export async function captureGitChanges(
         path: change.path,
         oldPath: change.oldPath,
         status: 'renamed',
+        oldMode: change.oldMode,
+        newMode: change.newMode,
         oldContent: await gitFile(baseCommit, change.oldPath!, root),
         newContent: await workingTreeFile(change.path, root),
       })
@@ -50,16 +54,25 @@ export async function captureGitChanges(
     }
 
     if (change.kind === 'M') {
+      const oldContent = await gitFile(baseCommit, change.path, root)
+      const newContent = await workingTreeFile(change.path, root)
+      if (change.oldMode !== change.newMode && oldContent === newContent) {
+        throw new Error(`File mode changes are not supported: ${change.path}`)
+      }
       files.push({
         path: change.path,
         status: 'modified',
-        oldContent: await gitFile(baseCommit, change.path, root),
-        newContent: await workingTreeFile(change.path, root),
+        oldMode: change.oldMode,
+        newMode: change.newMode,
+        oldContent,
+        newContent,
       })
     } else if (change.kind === 'A') {
       files.push({
         path: change.path,
         status: 'added',
+        oldMode: change.oldMode,
+        newMode: change.newMode,
         oldContent: '',
         newContent: await workingTreeFile(change.path, root),
       })
@@ -67,6 +80,8 @@ export async function captureGitChanges(
       files.push({
         path: change.path,
         status: 'deleted',
+        oldMode: change.oldMode,
+        newMode: change.newMode,
         oldContent: await gitFile(baseCommit, change.path, root),
         newContent: '',
       })
@@ -75,15 +90,39 @@ export async function captureGitChanges(
     }
   }
 
-  const knownPaths = new Set(files.map((file) => file.path))
+  const filesByPath = new Map(files.map((file) => [file.path, file]))
   const untracked = splitNulls(
     await gitBytes(['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z'], root),
   )
   for (const path of untracked) {
-    if (knownPaths.has(path)) continue
-    files.push({
+    const existing = filesByPath.get(path)
+    if (existing !== undefined) {
+      if (existing.status !== 'deleted') continue
+      const newContent = await workingTreeFile(path, root)
+      const newMode = await workingTreeMode(path, root)
+      if (existing.oldMode !== newMode && existing.oldContent === newContent) {
+        throw new Error(`File mode changes are not supported: ${path}`)
+      }
+      if (existing.oldContent === newContent) {
+        filesByPath.delete(path)
+      } else {
+        filesByPath.set(path, {
+          path,
+          status: 'modified',
+          oldMode: existing.oldMode,
+          newMode,
+          oldContent: existing.oldContent,
+          newContent,
+        })
+      }
+      continue
+    }
+
+    filesByPath.set(path, {
       path,
       status: 'added',
+      oldMode: '000000',
+      newMode: await workingTreeMode(path, root),
       oldContent: '',
       newContent: await workingTreeFile(path, root),
     })
@@ -92,7 +131,7 @@ export async function captureGitChanges(
   return {
     root,
     baseCommit,
-    files: files.sort((left, right) => left.path.localeCompare(right.path)),
+    files: [...filesByPath.values()].sort((left, right) => left.path.localeCompare(right.path)),
   }
 }
 
@@ -112,10 +151,15 @@ export async function captureGitRevisionChanges(
   for (const change of changes) {
     const oldContent = change.kind === 'A' ? '' : await gitFile(fromCommit, change.oldPath ?? change.path, root)
     const newContent = change.kind === 'D' ? '' : await gitFile(toCommit, change.path, root)
+    if (change.kind === 'M' && change.oldMode !== change.newMode && oldContent === newContent) {
+      throw new Error(`File mode changes are not supported: ${change.path}`)
+    }
     files.push({
       path: change.path,
       ...(change.oldPath === undefined ? {} : { oldPath: change.oldPath }),
       status: change.kind === 'R' ? 'renamed' : change.kind === 'M' ? 'modified' : change.kind === 'A' ? 'added' : 'deleted',
+      oldMode: change.oldMode,
+      newMode: change.newMode,
       oldContent,
       newContent,
     })
@@ -148,6 +192,11 @@ async function workingTreeFile(path: string, root: string): Promise<string> {
   if (!file.isFile()) throw new Error(`Non-file Git paths are not supported: ${path}`)
 
   return decodeText(await readFile(absolutePath), path)
+}
+
+async function workingTreeMode(path: string, root: string): Promise<DraftFile['newMode']> {
+  const file = await lstat(resolve(root, path))
+  return (file.mode & 0o100) === 0 ? '100644' : '100755'
 }
 
 async function gitFile(commit: string, path: string, root: string): Promise<string> {
@@ -217,17 +266,13 @@ function parseGitChanges(bytes: Uint8Array): GitChange[] {
     if (!supportedGitModes.has(oldMode!) || !supportedGitModes.has(newMode!)) {
       throw new Error(`Unsupported Git file type: ${path}`)
     }
-    if (oldMode !== '000000' && newMode !== '000000' && oldMode !== newMode) {
-      throw new Error(`File mode changes are not supported: ${path}`)
-    }
-    if (
-      (kind === 'A' && newMode !== '100644') ||
-      (kind === 'D' && oldMode !== '100644')
-    ) {
-      throw new Error(`Executable file additions and deletions are not supported: ${path}`)
-    }
-
-    changes.push({ kind: kind!, path, oldPath })
+    changes.push({
+      kind: kind!,
+      path,
+      oldPath,
+      oldMode: oldMode as DraftFile['oldMode'],
+      newMode: newMode as DraftFile['newMode'],
+    })
   }
 
   return changes

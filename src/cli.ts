@@ -3,7 +3,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { createExplainCapture, duplicatedChangeIds, materializeExplainDocument } from './authoring'
+import { captureIdFor, createExplainCapture, duplicatedChangeIds, materializeExplainDocument } from './authoring'
 import { parseArgs, requirePositionalCount, UsageError, type ParsedArgs, type FlagSpec } from './cli-args'
 import { parseExplanations } from './explanations'
 import {
@@ -214,7 +214,18 @@ async function finishInspect(parsed: ParsedArgs, capture: ExplainCapture, captur
   const previous = await currentWalkIfPresent()
   if (previous !== null) {
     const previousCapture = await readCapture(previous.capture)
-    if (previousCapture.captureId === capture.captureId &&
+    const previousLegacyId = captureIdFor(previousCapture.files, false)
+    const modesAreLegacyCompatible = capture.files.every((file) =>
+      file.status === 'added'
+        ? file.oldMode === '000000' && file.newMode === '100644'
+        : file.status === 'deleted'
+          ? file.oldMode === '100644' && file.newMode === '000000'
+          : file.oldMode === file.newMode,
+    )
+    const sameCapture = previousCapture.captureId === capture.captureId ||
+      (modesAreLegacyCompatible && previousCapture.captureId === previousLegacyId &&
+        previousLegacyId === captureIdFor(capture.files, false))
+    if (sameCapture &&
       sourceIdentity(previousCapture.source) === sourceIdentity(capture.source)) {
       if (existsSync(previous.explanations)) {
         console.log(`Kept existing ${previous.explanations} (inspect never overwrites it)`)
