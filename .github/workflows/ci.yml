@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node.js ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["22.0.0", "22.x", "24.0.0", "24.x"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          standalone: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          check-latest: ${{ endsWith(matrix.node-version, '.x') }}
+          cache: pnpm
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Exercise built CLI with Node.js
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fixture="$(mktemp -d)"
+          trap 'rm -rf "$fixture"' EXIT
+
+          git -C "$fixture" init --quiet
+          git -C "$fixture" config user.name "Diffwalk CI"
+          git -C "$fixture" config user.email "ci@diffwalk.dev"
+          printf 'before\n' > "$fixture/example.txt"
+          git -C "$fixture" add example.txt
+          git -C "$fixture" commit --quiet -m "Add fixture"
+          printf 'after\n' > "$fixture/example.txt"
+
+          cd "$fixture"
+          node "$GITHUB_WORKSPACE/dist/diffwalk.js" inspect
+
+          walk_id="$(< .diffwalk/current)"
+          capture_path=".diffwalk/$walk_id/capture.json"
+          explanations_path=".diffwalk/$walk_id/explanations.yaml"
+          node - "$capture_path" "$explanations_path" <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs')
+          const capture = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+          const lines = [
+            `captureId: ${capture.captureId}`,
+            'title: Node compatibility',
+            'sections:',
+            '  - title: Operational flow',
+            '    steps:',
+            '      - text: Verified with Node.js',
+            '        changes:',
+            ...capture.changes.map((change) => `          - ${change.id}`),
+          ]
+          writeFileSync(process.argv[3], `${lines.join('\n')}\n`)
+          NODE
+
+          node "$GITHUB_WORKSPACE/dist/diffwalk.js" check
+          node "$GITHUB_WORKSPACE/dist/diffwalk.js" export json --output review.json
+          node - review.json <<'NODE'
+          const { readFileSync } = require('node:fs')
+          const document = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+          if (document.title !== 'Node compatibility') throw new Error('Unexpected export title')
+          if (!document.sections[0]?.steps[0]?.diff?.includes('+after')) {
+            throw new Error('Export is missing the captured change')
+          }
+          NODE
