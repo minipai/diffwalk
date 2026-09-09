@@ -32,6 +32,37 @@ function simplePatch(oldLine = 'old', newLine = 'new'): string {
   ].join('\n')
 }
 
+function renamePatch(changed = false): string {
+  return [
+    'diff --git a/old-name.ts b/new-name.ts',
+    'rename from old-name.ts',
+    'rename to new-name.ts',
+    ...(changed
+      ? ['--- a/old-name.ts', '+++ b/new-name.ts', '@@ -1 +1 @@', '-old', '+new']
+      : []),
+    '',
+  ].join('\n')
+}
+
+function quotedRenamePatch(changed = false): string {
+  return [
+    String.raw`diff --git "a/old\t\\\"name.ts" "b/new\t\\\"name.ts"`,
+    ...(changed ? [] : ['similarity index 100%']),
+    String.raw`rename from "old\t\\\"name.ts"`,
+    String.raw`rename to "new\t\\\"name.ts"`,
+    ...(changed
+      ? [
+          String.raw`--- "a/old\t\\\"name.ts"`,
+          String.raw`+++ "b/new\t\\\"name.ts"`,
+          '@@ -1 +1 @@',
+          '-old',
+          '+new',
+        ]
+      : []),
+    '',
+  ].join('\n')
+}
+
 function document(
   sections: ExplainDocument['sections'],
   options: { title?: string; summary?: string } = {},
@@ -119,6 +150,26 @@ describe('renderReport shell', () => {
     expect(html).toContain('section-1-step-0-file-0')
     expect(html).toContain('+1 −1')
     expect(html).toContain('<link rel="icon" href="data:image/svg+xml,')
+  })
+
+  test('renders a legacy pure rename as a static row without an empty diff body', () => {
+    const html = renderReport(document([section(renamePatch(), 'Rename')]), stubClient)
+
+    expect(html).toContain('old-name.ts → new-name.ts')
+    expect(html).toContain('Renamed · content unchanged')
+    expect(html).not.toContain('+0 −0')
+    expect(html).not.toContain('id="section-0-step-0-file-0"')
+    expect(html).toContain('<div class="file file-static">')
+    expect(html).not.toContain('<details class="file"')
+  })
+
+  test('renders changed renames with both paths, statistics, and a diff body', () => {
+    const html = renderReport(document([section(renamePatch(true), 'Changed rename')]), stubClient)
+
+    expect(html).toContain('old-name.ts → new-name.ts')
+    expect(html).toContain('+1 −1')
+    expect(html).not.toContain('Renamed · content unchanged')
+    expect(html).toContain('id="section-0-step-0-file-0"')
   })
 
   test('steps interleave text and diffs in the order they were authored', () => {
@@ -436,6 +487,35 @@ describe('report diff parsing failures', () => {
 })
 
 describe('unified and split share one parsed model', () => {
+  test('normalizes both C-quoted rename paths for pure and changed renames', () => {
+    for (const changed of [false, true]) {
+      const [file] = parseSectionPatch(quotedRenamePatch(changed))
+
+      expect(file).toMatchObject({
+        name: 'new\t\\"name.ts',
+        prevName: 'old\t\\"name.ts',
+        type: changed ? 'rename-changed' : 'rename-pure',
+      })
+      expect(fileDiffStats(file!)).toEqual({
+        additions: changed ? 1 : 0,
+        deletions: changed ? 1 : 0,
+      })
+    }
+  })
+
+  test('recognizes a legacy pure rename within a mixed patch', () => {
+    const files = parseSectionPatch(`${simplePatch()}${renamePatch()}`)
+
+    expect(files).toHaveLength(2)
+    expect(files[0]).toMatchObject({ name: 'example.ts', type: 'change' })
+    expect(files[1]).toMatchObject({
+      name: 'new-name.ts',
+      prevName: 'old-name.ts',
+      type: 'rename-pure',
+      hunks: [],
+    })
+  })
+
   test('a single parse provides coherent coordinates for both layouts', () => {
     const patch = [
       'diff --git a/example.ts b/example.ts',

@@ -1,14 +1,27 @@
 import { z } from 'zod'
 
-export const draftFileSchema = z
-  .object({
+const gitModeSchema = z.enum(['000000', '100644', '100755'])
+
+export const draftFileSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+    const file = value as Record<string, unknown>
+    return {
+      ...file,
+      oldMode: file.oldMode ?? (file.status === 'added' ? '000000' : '100644'),
+      newMode: file.newMode ?? (file.status === 'deleted' ? '000000' : '100644'),
+    }
+  },
+  z.object({
     path: z.string().min(1),
     oldPath: z.string().min(1).optional(),
     status: z.enum(['added', 'modified', 'deleted', 'renamed']),
+    oldMode: gitModeSchema,
+    newMode: gitModeSchema,
     oldContent: z.string(),
     newContent: z.string(),
-  })
-  .strict()
+  }).strict(),
+)
 
 export const changeBlockSchema = z
   .object({

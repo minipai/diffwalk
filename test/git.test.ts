@@ -36,6 +36,8 @@ describe('captureGitChanges', () => {
       {
         path: 'deleted.ts',
         status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
         oldContent: 'delete me\n',
         newContent: '',
       },
@@ -43,22 +45,146 @@ describe('captureGitChanges', () => {
         path: 'new-name.ts',
         oldPath: 'old-name.ts',
         status: 'renamed',
+        oldMode: '100644',
+        newMode: '100644',
         oldContent: 'same\n',
         newContent: 'same\n',
       },
       {
         path: 'tracked.ts',
         status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
         oldContent: 'old\n',
         newContent: 'new\n',
       },
       {
         path: 'untracked.ts',
         status: 'added',
+        oldMode: '000000',
+        newMode: '100644',
         oldContent: '',
         newContent: 'untracked\n',
       },
     ])
+  })
+
+  test('captures executable additions, deletions, and untracked files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'deleted.sh'), '#!/bin/sh\necho deleted\n')
+    await chmod(join(directory, 'deleted.sh'), 0o755)
+    await git(['add', 'deleted.sh'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await unlink(join(directory, 'deleted.sh'))
+    await writeFile(join(directory, 'added.sh'), '#!/bin/sh\necho added\n')
+    await chmod(join(directory, 'added.sh'), 0o755)
+    await git(['add', 'added.sh'], directory)
+    await writeFile(join(directory, 'untracked.sh'), '#!/bin/sh\necho untracked\n')
+    await chmod(join(directory, 'untracked.sh'), 0o755)
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'added.sh',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100755',
+        oldContent: '',
+        newContent: '#!/bin/sh\necho added\n',
+      },
+      {
+        path: 'deleted.sh',
+        status: 'deleted',
+        oldMode: '100755',
+        newMode: '000000',
+        oldContent: '#!/bin/sh\necho deleted\n',
+        newContent: '',
+      },
+      {
+        path: 'untracked.sh',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100755',
+        oldContent: '',
+        newContent: '#!/bin/sh\necho untracked\n',
+      },
+    ])
+  })
+
+  test('captures regular and executable replacements after staged deletions', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'regular.txt'), 'old regular\n')
+    await writeFile(join(directory, 'script.sh'), '#!/bin/sh\necho old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['rm', '--cached', '-q', 'regular.txt', 'script.sh'], directory)
+    await writeFile(join(directory, 'regular.txt'), 'new regular\n')
+    await writeFile(join(directory, 'script.sh'), '#!/bin/sh\necho new\n')
+    await chmod(join(directory, 'script.sh'), 0o755)
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'regular.txt',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'old regular\n',
+        newContent: 'new regular\n',
+      },
+      {
+        path: 'script.sh',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100755',
+        oldContent: '#!/bin/sh\necho old\n',
+        newContent: '#!/bin/sh\necho new\n',
+      },
+    ])
+  })
+
+  test('rejects a binary replacement after a staged deletion', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'replacement.dat'), 'text\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['rm', '--cached', '-q', 'replacement.dat'], directory)
+    await writeFile(join(directory, 'replacement.dat'), new Uint8Array([0, 1, 2]))
+
+    await expect(captureGitChanges('HEAD', directory)).rejects.toThrow(
+      'Binary files are not supported: replacement.dat',
+    )
+  })
+
+  test('rejects a symbolic-link replacement after a staged deletion', async () => {
+    if (process.platform === 'win32') return
+
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'replacement.ts'), 'old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['rm', '--cached', '-q', 'replacement.ts'], directory)
+    await unlink(join(directory, 'replacement.ts'))
+    await writeFile(join(directory, 'target.ts'), 'target\n')
+    await symlink('target.ts', join(directory, 'replacement.ts'))
+
+    await expect(captureGitChanges('HEAD', directory)).rejects.toThrow(
+      'Symbolic links are not supported: replacement.ts',
+    )
   })
 
   test('rejects file mode changes that cannot be represented in the document', async () => {
@@ -111,8 +237,60 @@ describe('captureGitChanges', () => {
     const capture = await captureGitRevisionChanges(first, second, directory)
 
     expect(capture.files).toEqual([
-      { path: 'tracked.ts', status: 'modified', oldContent: 'one\n', newContent: 'two\n' },
-      { path: 'untracked.ts', status: 'added', oldContent: '', newContent: 'ignore\n' },
+      {
+        path: 'tracked.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'one\n',
+        newContent: 'two\n',
+      },
+      {
+        path: 'untracked.ts',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100644',
+        oldContent: '',
+        newContent: 'ignore\n',
+      },
+    ])
+  })
+
+  test('captures executable additions and deletions between committed revisions', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'deleted.sh'), '#!/bin/sh\necho deleted\n')
+    await chmod(join(directory, 'deleted.sh'), 0o755)
+    await git(['add', 'deleted.sh'], directory)
+    await git(['commit', '-q', '-m', 'one'], directory)
+    const first = (await gitText(['rev-parse', 'HEAD'], directory)).trim()
+
+    await unlink(join(directory, 'deleted.sh'))
+    await writeFile(join(directory, 'added.sh'), '#!/bin/sh\necho added\n')
+    await chmod(join(directory, 'added.sh'), 0o755)
+    await git(['add', '-A'], directory)
+    await git(['commit', '-q', '-m', 'two'], directory)
+
+    const capture = await captureGitRevisionChanges(first, 'HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'added.sh',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100755',
+        oldContent: '',
+        newContent: '#!/bin/sh\necho added\n',
+      },
+      {
+        path: 'deleted.sh',
+        status: 'deleted',
+        oldMode: '100755',
+        newMode: '000000',
+        oldContent: '#!/bin/sh\necho deleted\n',
+        newContent: '',
+      },
     ])
   })
 })

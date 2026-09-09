@@ -6,7 +6,7 @@ import {
   materializeExplainDocument,
 } from '../src/authoring'
 import type { CaptureSource, ExplainCapture } from '../src/format'
-import { parseSectionPatch } from '../src/report-patches'
+import { fileDiffStats, parseSectionPatch } from '../src/report-patches'
 
 const source: CaptureSource = {
   kind: 'working-tree',
@@ -14,12 +14,15 @@ const source: CaptureSource = {
   capturedAt: '2026-08-28T00:00:00.000Z',
 }
 
+const regularModes = { oldMode: '100644', newMode: '100644' } as const
+
 function captureWithTwoChanges(): ExplainCapture {
   return createExplainCapture(
     [
       {
         path: 'example.ts',
         status: 'modified',
+        ...regularModes,
         oldContent: 'a\nb\nc\nd\ne\nf\n',
         newContent: 'a\nB\nc\nd\nE\nf\n',
       },
@@ -53,15 +56,39 @@ describe('explain capture', () => {
 
   test('captureId identifies captured contents, not the capture timestamp', () => {
     const morning = createExplainCapture(
-      [{ path: 'a.ts', status: 'modified', oldContent: 'old\n', newContent: 'new\n' }],
+      [
+        {
+          path: 'a.ts',
+          status: 'modified',
+          ...regularModes,
+          oldContent: 'old\n',
+          newContent: 'new\n',
+        },
+      ],
       { ...source, capturedAt: '2026-08-28T08:00:00.000Z' },
     )
     const evening = createExplainCapture(
-      [{ path: 'a.ts', status: 'modified', oldContent: 'old\n', newContent: 'new\n' }],
+      [
+        {
+          path: 'a.ts',
+          status: 'modified',
+          ...regularModes,
+          oldContent: 'old\n',
+          newContent: 'new\n',
+        },
+      ],
       { ...source, capturedAt: '2026-08-28T20:00:00.000Z' },
     )
     const changed = createExplainCapture(
-      [{ path: 'a.ts', status: 'modified', oldContent: 'old\n', newContent: 'different\n' }],
+      [
+        {
+          path: 'a.ts',
+          status: 'modified',
+          ...regularModes,
+          oldContent: 'old\n',
+          newContent: 'different\n',
+        },
+      ],
       { ...source, capturedAt: '2026-08-28T08:00:00.000Z' },
     )
 
@@ -69,25 +96,70 @@ describe('explain capture', () => {
     expect(changed.captureId).not.toBe(morning.captureId)
     expect(
       captureIdFor([
-        { path: 'a.ts', status: 'modified', oldContent: 'old\n', newContent: 'new\n' },
+        {
+          path: 'a.ts',
+          status: 'modified',
+          ...regularModes,
+          oldContent: 'old\n',
+          newContent: 'new\n',
+        },
       ]),
     ).toBe(morning.captureId)
   })
 
   test('captureId is independent of file array order', () => {
     const files = [
-      { path: 'b.ts', status: 'modified' as const, oldContent: '1\n', newContent: '2\n' },
-      { path: 'a.ts', status: 'modified' as const, oldContent: 'x\n', newContent: 'y\n' },
+      {
+        path: 'b.ts',
+        status: 'modified' as const,
+        ...regularModes,
+        oldContent: '1\n',
+        newContent: '2\n',
+      },
+      {
+        path: 'a.ts',
+        status: 'modified' as const,
+        ...regularModes,
+        oldContent: 'x\n',
+        newContent: 'y\n',
+      },
     ]
     const shuffled = [files[1]!, files[0]!]
     expect(captureIdFor(files)).toBe(captureIdFor(shuffled))
   })
 
+  test('captureId includes file modes', () => {
+    const regular = {
+      path: 'script.sh',
+      status: 'added' as const,
+      oldMode: '000000' as const,
+      newMode: '100644' as const,
+      oldContent: '',
+      newContent: '#!/bin/sh\n',
+    }
+
+    expect(captureIdFor([regular])).not.toBe(
+      captureIdFor([{ ...regular, newMode: '100755' }]),
+    )
+  })
+
   test('change IDs are assigned in sorted file order', () => {
     const capture = createExplainCapture(
       [
-        { path: 'z.ts', status: 'modified', oldContent: 'a\n', newContent: 'b\n' },
-        { path: 'a.ts', status: 'modified', oldContent: 'c\n', newContent: 'd\n' },
+        {
+          path: 'z.ts',
+          status: 'modified',
+          ...regularModes,
+          oldContent: 'a\n',
+          newContent: 'b\n',
+        },
+        {
+          path: 'a.ts',
+          status: 'modified',
+          ...regularModes,
+          oldContent: 'c\n',
+          newContent: 'd\n',
+        },
       ],
       source,
     )
@@ -99,12 +171,27 @@ describe('explain capture', () => {
   test('emits placeholder blocks for added, deleted, and pure renamed files', () => {
     const capture = createExplainCapture(
       [
-        { path: 'added.ts', status: 'added', oldContent: '', newContent: 'added\n' },
-        { path: 'deleted.ts', status: 'deleted', oldContent: 'deleted\n', newContent: '' },
+        {
+          path: 'added.ts',
+          status: 'added',
+          oldMode: '000000',
+          newMode: '100644',
+          oldContent: '',
+          newContent: 'added\n',
+        },
+        {
+          path: 'deleted.ts',
+          status: 'deleted',
+          oldMode: '100644',
+          newMode: '000000',
+          oldContent: 'deleted\n',
+          newContent: '',
+        },
         {
           path: 'new-name.ts',
           oldPath: 'old-name.ts',
           status: 'renamed',
+          ...regularModes,
           oldContent: 'same\n',
           newContent: 'same\n',
         },
@@ -126,6 +213,115 @@ describe('explain capture', () => {
 })
 
 describe('explain materialization', () => {
+  test('emits pure rename metadata that Pierre parses with both paths and modes', () => {
+    const capture = createExplainCapture(
+      [
+        {
+          path: 'bin/new-name.sh',
+          oldPath: 'bin/old-name.sh',
+          status: 'renamed',
+          oldMode: '100644',
+          newMode: '100755',
+          oldContent: '#!/bin/sh\necho same\n',
+          newContent: '#!/bin/sh\necho same\n',
+        },
+      ],
+      source,
+    )
+
+    const document = materializeExplainDocument(capture, allChangesAssigned(capture))
+    const patch = document.sections[0]!.steps[0]!.diff!
+
+    expect(patch).toContain('old mode 100644\nnew mode 100755')
+    expect(patch).toContain(
+      'similarity index 100%\nrename from bin/old-name.sh\nrename to bin/new-name.sh',
+    )
+    expect(patch).not.toContain('--- a/bin/old-name.sh')
+    expect(patch).not.toContain('@@ ')
+    expect(parseSectionPatch(patch)).toEqual([
+      expect.objectContaining({
+        name: 'bin/new-name.sh',
+        prevName: 'bin/old-name.sh',
+        type: 'rename-pure',
+        prevMode: '100644',
+        mode: '100755',
+        hunks: [],
+      }),
+    ])
+  })
+
+  test('keeps hunks in renames whose content changed', () => {
+    const capture = createExplainCapture(
+      [
+        {
+          path: 'new-name.ts',
+          oldPath: 'old-name.ts',
+          status: 'renamed',
+          ...regularModes,
+          oldContent: 'old\n',
+          newContent: 'new\n',
+        },
+      ],
+      source,
+    )
+
+    const document = materializeExplainDocument(capture, allChangesAssigned(capture))
+    const patch = document.sections[0]!.steps[0]!.diff!
+    const [file] = parseSectionPatch(patch)
+
+    expect(patch).not.toContain('similarity index 100%')
+    expect(patch).toContain('@@ -1,1 +1,1 @@')
+    expect(file).toMatchObject({
+      name: 'new-name.ts',
+      prevName: 'old-name.ts',
+      type: 'rename-changed',
+    })
+    expect(fileDiffStats(file!)).toEqual({ additions: 1, deletions: 1 })
+  })
+
+  test('emits executable modes and textual hunks for additions and deletions', () => {
+    const capture = createExplainCapture(
+      [
+        {
+          path: 'added.sh',
+          status: 'added',
+          oldMode: '000000',
+          newMode: '100755',
+          oldContent: '',
+          newContent: '#!/bin/sh\necho added\n',
+        },
+        {
+          path: 'deleted.sh',
+          status: 'deleted',
+          oldMode: '100755',
+          newMode: '000000',
+          oldContent: '#!/bin/sh\necho deleted\n',
+          newContent: '',
+        },
+      ],
+      source,
+    )
+
+    const document = materializeExplainDocument(capture, {
+      captureId: capture.captureId,
+      title: 'Executable files',
+      summary: '',
+      sections: [
+        {
+          title: 'Scripts',
+          steps: [{ text: '', changes: capture.changes.map((change) => change.id) }],
+        },
+      ],
+    })
+    const patch = document.sections[0]!.steps[0]!.diff!
+
+    expect(patch).toContain('new file mode 100755')
+    expect(patch).toContain('deleted file mode 100755')
+    expect(patch).toContain('@@ -0,0 +1,2 @@')
+    expect(patch).toContain('@@ -1,2 +0,0 @@')
+    expect(parseSectionPatch(patch)).toHaveLength(2)
+  })
+
   test('materializes each step as an independently parseable Git patch', () => {
     const capture = captureWithTwoChanges()
     const explanations = {

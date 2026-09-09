@@ -1,4 +1,5 @@
 import { parsePatchFiles, type FileDiffMetadata } from '@pierre/diffs'
+import { parsePatch } from 'diff'
 
 export interface FileDiffStats {
   additions: number
@@ -10,6 +11,15 @@ export function parseSectionPatch(patch: string): FileDiffMetadata[] {
   const files = parsed.flatMap((result) => result.files)
   if (files.length === 0) {
     throw new Error('The section patch contains no parseable file diffs')
+  }
+  const structured = parsePatch(patch)
+  for (const [index, file] of files.entries()) {
+    const source = structured[index]
+    if (!source?.isRename || source.oldFileName === undefined || source.newFileName === undefined)
+      continue
+    file.prevName = source.oldFileName.replace(/^a\//, '')
+    file.name = source.newFileName.replace(/^b\//, '')
+    file.type = file.hunks.length === 0 ? 'rename-pure' : 'rename-changed'
   }
   return files
 }

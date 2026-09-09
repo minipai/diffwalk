@@ -7,15 +7,15 @@ exact corresponding diffs in a deliberate order.
 
 - Authoring is split into two files inside `.diffwalk/<walkId>/`. `capture.json` is machine-owned capture data:
   a `captureId`, a `working-tree` `source` with a `from` commit endpoint and an ISO
-  `capturedAt`, full old/new file snapshots, and derived `change-*` blocks. It never
-  contains authored sections. `explanations.yaml` is the only author-edited file: it
+  `capturedAt`, full old/new file snapshots and modes, and derived `change-*` blocks. It
+  never contains authored sections. `explanations.yaml` is the only author-edited file: it
   names the `captureId` it was authored against, carries a required `title` and an
   optional `summary`, and holds ordered sections of `{ title, steps[] }` where a step is
   `{ text?, changes[]? }` with at least one of the two.
 - `captureId` identifies captured code contents, not the capture timestamp. It is a
   SHA-256 over a canonical serialization of the captured file snapshots (status, path,
-  old path, old content, new content), so identical captures pair consistently while
-  changed content produces a different identity.
+  old path, old/new modes, old content, new content), so identical captures pair
+  consistently while changed content produces a different identity.
 - A walk ID combines the capture time in ISO 8601 basic UTC format with the first eight
   captureId characters, for example `20260831T063842Z-a7c9e4f2`. The full captureId
   remains the content identity; the shorter walk ID is only the human-facing directory

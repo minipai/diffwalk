@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { captureIdFor } from '../src/authoring'
 import { captureSchema } from '../src/format'
 
 const directories: string[] = []
@@ -82,6 +83,27 @@ async function authorEveryChange(repo: string) {
   await writeExplanations(repo, everyChangeYaml(capture.captureId, capture.changes))
 }
 
+async function persistCurrentCaptureWithoutModes(repo: string) {
+  const walk = await readCurrentWalkId(repo)
+  const capturePath = join(await currentWalkDir(repo), 'capture.json')
+  const capture = await readCapture(repo)
+  const legacyId = captureIdFor(capture.files, false)
+  const persisted = JSON.parse(await readFile(capturePath, 'utf8')) as {
+    captureId: string
+    files: Record<string, unknown>[]
+    changes: { id: string }[]
+  }
+  persisted.captureId = legacyId
+  for (const file of persisted.files) {
+    delete file.oldMode
+    delete file.newMode
+  }
+  await writeFile(capturePath, `${JSON.stringify(persisted, null, 2)}\n`)
+  const explanations = everyChangeYaml(legacyId, persisted.changes)
+  await writeExplanations(repo, explanations)
+  return { walk, explanations }
+}
+
 async function fixtureRepo(): Promise<string> {
   const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
   directories.push(repo)
@@ -119,6 +141,18 @@ describe('help', () => {
       expect(result.stdout).toContain('explanations.yaml')
       expect(result.stdout).toContain('check')
       expect(result.stdout).toContain('File ownership')
+    }
+  })
+
+  test('--version and -v print the package version', async () => {
+    const repo = await fixtureRepo()
+    const packageJson = JSON.parse(
+      await readFile(join(import.meta.dir, '..', 'package.json'), 'utf8'),
+    ) as { version: string }
+
+    for (const args of [['--version'], ['-v']]) {
+      const result = await runCli(args, repo)
+      expect(result).toEqual({ exitCode: 0, stdout: `${packageJson.version}\n`, stderr: '' })
     }
   })
 
@@ -257,6 +291,45 @@ describe('inspect', () => {
     )
   })
 
+  test('reuses a mode-less persisted capture and its authored explanations', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    const { walk, explanations } = await persistCurrentCaptureWithoutModes(repo)
+
+    const result = await runCli(['inspect'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Working tree is unchanged; kept current walk')
+    expect(await readCurrentWalkId(repo)).toBe(walk)
+    expect(await readExplanationsYaml(repo)).toBe(explanations)
+    expect((await runCli(['check'], repo)).exitCode).toBe(0)
+  })
+
+  test('does not reuse a legacy executable capture after its mode changes', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'script.sh'), '#!/bin/sh\necho old\n')
+    await chmod(join(repo, 'script.sh'), 0o755)
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await writeFile(join(repo, 'script.sh'), '#!/bin/sh\necho new\n')
+    await runCli(['inspect'], repo)
+    const { walk: legacyWalk, explanations } = await persistCurrentCaptureWithoutModes(repo)
+
+    await chmod(join(repo, 'script.sh'), 0o644)
+    const result = await runCli(['inspect'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect(await readCurrentWalkId(repo)).not.toBe(legacyWalk)
+    expect(await readFile(join(diffwalkDir(repo), legacyWalk, 'explanations.yaml'), 'utf8')).toBe(
+      explanations,
+    )
+    expect((await readCapture(repo)).files[0]).toEqual(
+      expect.objectContaining({ oldMode: '100755', newMode: '100644' }),
+    )
+  })
+
   test('creates a new current walk on content change and preserves the earlier authoring pair', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
@@ -341,7 +414,14 @@ describe('inspect', () => {
     expect(capture.source.from.commit).toMatch(/^[0-9a-f]{40}$/)
     expect(capture.source.to.commit).toMatch(/^[0-9a-f]{40}$/)
     expect(capture.files).toEqual([
-      { path: 'committed.ts', status: 'modified', oldContent: 'old\n', newContent: 'new\n' },
+      {
+        path: 'committed.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'old\n',
+        newContent: 'new\n',
+      },
     ])
   })
 

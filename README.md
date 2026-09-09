@@ -3,8 +3,8 @@
 diffwalk turns AI-generated Git changes into ordered browser walkthroughs, with every
 explanation attached to its exact diff.
 
-The CLI requires Node.js 20 or newer. Development commands below also require Bun 1.3
-or newer and pnpm.
+The CLI supports the maintained Node.js 22 and 24 LTS releases. Development commands
+below also require Bun 1.3 or newer and pnpm.
 
 ## Installation
 
