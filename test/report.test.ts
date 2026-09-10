@@ -6,6 +6,7 @@ import type { ExplainDocument } from '../src/format'
 import { renderMarkdown } from '../src/report-markdown'
 import { fileDiffStats, parseSectionPatch } from '../src/report-patches'
 import { loadReportClient, renderReport, writeReport } from '../src/report'
+import { reportTargets } from '../src/report-targets'
 
 const directories: string[] = []
 
@@ -146,8 +147,9 @@ describe('renderReport shell', () => {
     expect(second).toBeGreaterThan(first)
     expect(html).toContain('data-section-index="0"')
     expect(html).toContain('data-section-index="1"')
-    expect(html).toContain('section-0-step-0-file-0')
-    expect(html).toContain('section-1-step-0-file-0')
+    expect(html).toContain('data-diff-mount="0-0-0"')
+    expect(html).toContain('data-diff-mount="1-0-0"')
+    expect(html).not.toContain('id="section-0-step-0-file-0"')
     expect(html).toContain('+1 −1')
     expect(html).toContain('<link rel="icon" href="data:image/svg+xml,')
   })
@@ -158,7 +160,7 @@ describe('renderReport shell', () => {
     expect(html).toContain('old-name.ts → new-name.ts')
     expect(html).toContain('Renamed · content unchanged')
     expect(html).not.toContain('+0 −0')
-    expect(html).not.toContain('id="section-0-step-0-file-0"')
+    expect(html).not.toContain('data-diff-mount="0-0-0"')
     expect(html).toContain('<div class="file file-static">')
     expect(html).not.toContain('<details class="file"')
   })
@@ -169,7 +171,7 @@ describe('renderReport shell', () => {
     expect(html).toContain('old-name.ts → new-name.ts')
     expect(html).toContain('+1 −1')
     expect(html).not.toContain('Renamed · content unchanged')
-    expect(html).toContain('id="section-0-step-0-file-0"')
+    expect(html).toContain('data-diff-mount="0-0-0"')
   })
 
   test('steps interleave text and diffs in the order they were authored', () => {
@@ -188,9 +190,9 @@ describe('renderReport shell', () => {
     )
 
     const setup = html.indexOf('Setup first.')
-    const firstDiff = html.indexOf('section-0-step-1-file-0')
+    const firstDiff = html.indexOf('data-diff-mount="0-1-0"')
     const payoff = html.indexOf('Then the payoff.')
-    const secondDiff = html.indexOf('section-0-step-2-file-0')
+    const secondDiff = html.indexOf('data-diff-mount="0-2-0"')
 
     expect(setup).toBeGreaterThan(-1)
     expect(firstDiff).toBeGreaterThan(setup)
@@ -205,7 +207,7 @@ describe('renderReport shell', () => {
       stubClient,
     )
 
-    expect(html).toContain('section-0-step-0-file-0')
+    expect(html).toContain('data-diff-mount="0-0-0"')
     expect(html).not.toContain('class="step-text prose"')
   })
 
@@ -235,7 +237,7 @@ describe('renderReport shell', () => {
     const heading = withSummary.indexOf('<h1>Share reports by link</h1>')
     const provenance = withSummary.indexOf('<dl class="source-metadata">')
     const summary = withSummary.indexOf('<div class="cover-summary prose">')
-    const firstSection = withSummary.indexOf('id="section-0"')
+    const firstSection = withSummary.indexOf('data-section-index="0"')
 
     expect(main).toBeGreaterThan(-1)
     expect(cover).toBeGreaterThan(main)
@@ -359,13 +361,12 @@ describe('renderReport shell', () => {
   })
 
   test('review map lists every section in document order with zero-padded anchors and counts', () => {
-    const html = renderReport(
-      document([
-        section(simplePatch('a', 'b'), 'First section'),
-        section([simplePatch('c', 'd'), simplePatch('e', 'f')].join(''), 'Second section'),
-      ]),
-      stubClient,
-    )
+    const value = document([
+      section(simplePatch('a', 'b'), 'First section'),
+      section([simplePatch('c', 'd'), simplePatch('e', 'f')].join(''), 'Second section'),
+    ])
+    const html = renderReport(value, stubClient)
+    const targets = reportTargets(value)
 
     const mapStart = html.indexOf('class="review-map"')
     const first = html.indexOf('First section', mapStart)
@@ -373,12 +374,13 @@ describe('renderReport shell', () => {
     expect(mapStart).toBeGreaterThan(-1)
     expect(first).toBeGreaterThan(-1)
     expect(second).toBeGreaterThan(first)
-    expect(html).toContain('href="#section-0"')
-    expect(html).toContain('href="#section-1"')
+    expect(html).toContain(`href="#${targets[0]!.fragment}"`)
+    expect(html).toContain(`href="#${targets[1]!.fragment}"`)
     expect(html).toContain('class="review-map-index">01<')
     expect(html).toContain('class="review-map-index">02<')
-    expect(html).toContain('id="section-0"')
-    expect(html).toContain('id="section-1"')
+    expect(html).toContain(`id="${targets[0]!.fragment}"`)
+    expect(html).toContain(`id="${targets[1]!.fragment}"`)
+    expect(html).not.toContain('href="#section-0"')
     expect(html).toContain('>2 sections<')
     expect(html).toContain('>3 files<')
     expect(html).toContain(
@@ -392,6 +394,32 @@ describe('renderReport shell', () => {
     expect(html).toContain('class="review-map-index">01<')
     expect(html).toContain('>1 section<')
     expect(html).toContain('>1 file<')
+  })
+
+  test('renders canonical copy actions without exposing renderer mounts as fragment IDs', () => {
+    const value = document([
+      {
+        title: 'Linkable',
+        steps: [
+          {
+            text: 'A linkable step.',
+            diff: simplePatch(),
+            changes: ['change-001'],
+          },
+        ],
+      },
+    ])
+    const target = reportTargets(value)[0]!
+    const html = renderReport(value, stubClient)
+
+    expect(html).toContain(`id="${target.fragment}" data-section-index="0"`)
+    expect(html).toContain(`id="${target.steps[0]!.fragment}" data-step-index="0"`)
+    expect(html).toContain('id="change-001" data-target-kind="change"')
+    expect(html).toContain('aria-label="Copy link to section Linkable"')
+    expect(html).toContain('aria-label="Copy link to step 1 in Linkable"')
+    expect(html).toContain('aria-label="Copy link to change change-001"')
+    expect(html).toContain('data-diff-mount="0-0-0"')
+    expect(html).not.toContain('id="section-0-step-0-file-0"')
   })
 
   // The rail has no room on a narrow screen, but the toggle is still needed while
@@ -417,7 +445,7 @@ describe('renderReport shell', () => {
     const html = renderReport(document([section(simplePatch(), 'Print')]), stubClient)
 
     expect(html).toContain('@media print')
-    expect(html).toContain('.layout-form { display: none; }')
+    expect(html).toContain('.layout-form, .copy-link { display: none; }')
     expect(html).toContain('.review-map { display: none; }')
     expect(html).toContain('.report-cover { box-shadow: none; break-inside: avoid; }')
     expect(html).toContain('.source-metadata dd { white-space: normal; overflow: visible; }')

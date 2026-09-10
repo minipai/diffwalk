@@ -77,7 +77,13 @@ function document(titles: string[] = ['A section']): ExplainDocument {
     },
     sections: titles.map((title, index) => ({
       title,
-      steps: [{ text: `Text for ${title}.`, diff: simplePatch(`old${index}`, `new${index}`) }],
+      steps: [
+        {
+          text: `Text for ${title}.`,
+          diff: simplePatch(`old${index}`, `new${index}`),
+          changes: [`change-${String(index + 1).padStart(3, '0')}`],
+        },
+      ],
     })),
   }
 }
@@ -150,6 +156,27 @@ describe('publishing', () => {
     expect((await worker.fetch(publishRequest({ formatVersion: 2 }), env)).status).toBe(400)
     expect((await worker.fetch(publishRequest({ sections: [] }), env)).status).toBe(400)
     expect(bucket.objects.size).toBe(0)
+  })
+
+  test('strictly validates and stores optional captured change IDs on version 1 steps', async () => {
+    const withChanges = document()
+
+    const accepted = await publish(withChanges)
+    expect(accepted.response.status).toBe(201)
+    expect(JSON.parse(bucket.objects.get(`reports/${accepted.id}.json`)!.body)).toEqual(withChanges)
+
+    const invalid = structuredClone(withChanges) as Record<string, any>
+    invalid.sections[0].steps[0].changes = []
+    expect((await worker.fetch(publishRequest(invalid), env)).status).toBe(400)
+  })
+
+  test('continues accepting version 1 documents published before captured change IDs', async () => {
+    const legacy = document()
+    delete legacy.sections[0]!.steps[0]!.changes
+
+    const accepted = await publish(legacy)
+    expect(accepted.response.status).toBe(201)
+    expect(JSON.parse(bucket.objects.get(`reports/${accepted.id}.json`)!.body)).toEqual(legacy)
   })
 
   test('an oversized body is rejected without creating an object', async () => {
@@ -225,6 +252,7 @@ describe('reading a report', () => {
     expect(html).toContain('<link rel="stylesheet" href="/report.css">')
     expect(html).toContain('<link rel="icon" href="data:image/svg+xml,')
     expect(html).toContain('<script src="/report-client.js" defer></script>')
+    expect(html).toContain('data-copy-fragment="change-001"')
     expect(html).not.toContain('<style>')
   })
 

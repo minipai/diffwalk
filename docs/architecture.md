@@ -28,9 +28,11 @@ exact corresponding diffs in a deliberate order.
   coercions (`yes`, `on`) stay plain strings; the result is validated by a strict Zod
   schema so numbers, booleans, and nulls are never coerced into strings.
 - The final read model is an ordered document of `{ title, summary, sections: [{ title,
-  steps: [{ text, diff? }] }] }`. Prose and diffs interleave inside a section because a
+  steps: [{ text, diff?, changes? }] }] }`. Prose and diffs interleave inside a section because a
   step materializes its own patch from its own change IDs. Every captured change must be
-  shown at least once; materialization rejects unknown IDs and unexplained changes.
+  shown at least once; materialization rejects unknown IDs and unexplained changes. Materialized
+  steps preserve those IDs for stable report targets; version 1 documents published before that
+  field was added remain readable.
 - Showing a change in more than one step is allowed. Re-showing a hunk is how an author
   builds an argument, so `check` names the repeats and still succeeds; only an
   unexplained change fails. Completeness is the guarantee a reader relies on, not
@@ -49,6 +51,10 @@ exact corresponding diffs in a deliberate order.
   trusted; containment is the review origin's Content Security Policy, not escaping.
   Images must be inline `<svg>` or `data:` URIs: a remote URL renders in the local file
   but is blocked on the hosted review.
+- Report fragments derive from section and step content plus captured change IDs. A
+  section-local discriminator separates otherwise-identical step seeds in same-titled
+  sections. Truly indistinguishable duplicate sections or steps have no content identity
+  to preserve, so they receive deterministic occurrence suffixes.
 - `diffwalk view` serves the review from an ephemeral loopback-only HTTP server and
   opens the default browser without writing a file. `diffwalk export html` writes the
   same review as one portable offline file. `diffwalk publish` uploads the same

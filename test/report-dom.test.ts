@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import type { FileDiff } from '@pierre/diffs'
 import { Window } from 'happy-dom'
 import type { ExplainDocument } from '../src/format'
 import { loadReportClient, renderReport } from '../src/report'
+import { mountReport } from '../src/report-client'
+import { reportTargets } from '../src/report-targets'
 
 const clientBundle = await loadReportClient()
 
@@ -55,8 +58,11 @@ function shellWithoutClient(html: string): string {
   return html.slice(0, clientStart) + html.slice(clientEnd + '</script>'.length)
 }
 
-function loadReport(html: string, options: { narrow?: boolean } = {}): Window {
-  const dom = new Window({ url: 'file:///tmp/diffwalk-report.html' })
+function loadReport(
+  html: string,
+  options: { narrow?: boolean; url?: string } = {},
+): Window {
+  const dom = new Window({ url: options.url ?? 'file:///tmp/diffwalk-report.html' })
   windows.push(dom)
   const win = dom.window
   const anyWindow = win as unknown as Record<string, unknown>
@@ -207,21 +213,20 @@ describe('report browser client', () => {
   })
 
   test('review map anchors resolve to section ids in document order with counts', () => {
-    const html = renderReport(
-      document([
-        section(simplePatch('a', 'b'), 'First section'),
-        section([simplePatch('c', 'd'), simplePatch('e', 'f')].join(''), 'Second section'),
-      ]),
-      clientBundle,
-    )
+    const value = document([
+      section(simplePatch('a', 'b'), 'First section'),
+      section([simplePatch('c', 'd'), simplePatch('e', 'f')].join(''), 'Second section'),
+    ])
+    const html = renderReport(value, clientBundle)
     const dom = loadReport(html)
     const doc = dom.document as unknown as Document
+    const targets = reportTargets(value)
 
     const links = doc.querySelectorAll('.review-map a')
     expect(links).toHaveLength(2)
     expect([...links].map((link) => link.getAttribute('href'))).toEqual([
-      '#section-0',
-      '#section-1',
+      `#${targets[0]!.fragment}`,
+      `#${targets[1]!.fragment}`,
     ])
     expect([...links].map((link) => link.querySelector('.review-map-index')?.textContent)).toEqual(
       ['01', '02'],
@@ -234,6 +239,474 @@ describe('report browser client', () => {
       (span) => span.textContent,
     )
     expect(counts).toEqual(['2 sections', '3 files'])
+  })
+
+  test('initial change hashes reveal folded content, scroll, and focus the canonical action', async () => {
+    const value = document([
+      {
+        title: 'Folded target',
+        steps: [{ text: 'Target this change.', diff: simplePatch(), changes: ['change-004'] }],
+      },
+    ])
+    const fragment = reportTargets(value)[0]!.steps[0]!.changes[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const details = [...doc.querySelectorAll<HTMLDetailsElement>('details')]
+    for (const fold of details) fold.open = false
+    const target = doc.getElementById(fragment) as HTMLElement
+    let scrollCount = 0
+    target.scrollIntoView = () => {
+      scrollCount++
+    }
+
+    runReportClient()
+
+    expect(details.every((fold) => fold.open)).toBe(true)
+    await waitFor(() => scrollCount === 1)
+    expect(scrollCount).toBe(1)
+    expect(doc.activeElement).toBe(
+      doc.querySelector(`[data-copy-fragment="${fragment}"]`),
+    )
+  })
+
+  test('hashchange reveals a folded step and its files without replacing fold controls', async () => {
+    const value = document([
+      {
+        title: 'Navigate later',
+        steps: [{ text: 'Target this step.', diff: simplePatch() }],
+      },
+    ])
+    const fragment = reportTargets(value)[0]!.steps[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: 'https://reports.example/r/report-id',
+    })
+    const doc = dom.document as unknown as Document
+    runReportClient()
+    const details = [...doc.querySelectorAll<HTMLDetailsElement>('details')]
+    for (const fold of details) fold.open = false
+    const target = doc.getElementById(fragment) as HTMLElement
+    let scrollCount = 0
+    target.scrollIntoView = () => {
+      scrollCount++
+    }
+
+    dom.window.location.hash = fragment
+    dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'))
+
+    expect(details.every((fold) => fold.open)).toBe(true)
+    await waitFor(() => scrollCount > 0)
+    expect(scrollCount).toBeGreaterThan(0)
+    expect(doc.activeElement).toBe(
+      doc.querySelector(`[data-copy-fragment="${fragment}"]`),
+    )
+    expect(doc.querySelector('.section-fold > summary')).not.toBeNull()
+    expect(doc.querySelector('.file > summary')).not.toBeNull()
+  })
+
+  test('legacy positional review-map hashes migrate to the matching canonical section', async () => {
+    const value = document([
+      section(simplePatch('one', 'one!'), 'First'),
+      section(simplePatch('two', 'two!'), 'Second'),
+    ])
+    const fragment = reportTargets(value)[1]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: 'https://reports.example/r/report-id#section-1',
+    })
+    const doc = dom.document as unknown as Document
+    const target = doc.getElementById(fragment) as HTMLElement
+    const fold = target.querySelector<HTMLDetailsElement>('.section-fold')!
+    fold.open = false
+    let scrolled = false
+    target.scrollIntoView = () => {
+      scrolled = true
+    }
+
+    runReportClient()
+
+    expect(dom.window.location.hash).toBe(`#${fragment}`)
+    expect(fold.open).toBe(true)
+    await waitFor(() => scrolled)
+    expect(scrolled).toBe(true)
+    expect(doc.activeElement).toBe(
+      doc.querySelector(`[data-copy-fragment="${fragment}"]`),
+    )
+  })
+
+  test('authored summary and step IDs cannot shadow or duplicate canonical targets', async () => {
+    const value = document([
+      {
+        title: 'Reserved IDs',
+        steps: [
+          {
+            text: '<span class="change-target" data-target-kind="change" data-step-collision id="change-001">Authored step collision</span>',
+            diff: simplePatch(),
+            changes: ['change-001'],
+          },
+        ],
+      },
+    ])
+    value.summary = '<span class="change-target" data-target-kind="change" data-summary-collision id="change-001">Authored summary collision</span>'
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: 'https://reports.example/r/report-id#change-001',
+    })
+    const doc = dom.document as unknown as Document
+    expect(doc.querySelectorAll('[id="change-001"]')).toHaveLength(3)
+    const target = doc.querySelector<HTMLElement>(
+      '.step-actions > .change-target[data-target-kind="change"]',
+    )!
+    let scrolled = false
+    target.scrollIntoView = () => {
+      scrolled = true
+    }
+
+    runReportClient()
+    await waitFor(() => scrolled)
+
+    expect(doc.querySelector('[data-summary-collision]')?.hasAttribute('id')).toBe(false)
+    expect(doc.querySelector('[data-step-collision]')?.hasAttribute('id')).toBe(false)
+    expect([...doc.querySelectorAll('[id="change-001"]')]).toEqual([target])
+    const ids = [...doc.querySelectorAll<HTMLElement>('[id]')].map((element) => element.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment="change-001"]'))
+  })
+
+  test('waits for every initial render and honors a hashchange while mounting', async () => {
+    const value = document([
+      section(simplePatch('one', 'one!'), 'Delayed first'),
+      section(simplePatch('two', 'two!'), 'Delayed second'),
+    ])
+    const targets = reportTargets(value)
+    const firstFragment = targets[0]!.steps[0]!.fragment
+    const secondFragment = targets[1]!.steps[0]!.fragment
+    const dom = loadReport(renderReport(value, ''), {
+      url: `https://reports.example/r/report-id#${firstFragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    for (const fold of doc.querySelectorAll<HTMLDetailsElement>('details')) fold.open = false
+    const first = doc.getElementById(firstFragment) as HTMLElement
+    const second = doc.getElementById(secondFragment) as HTMLElement
+    let firstScrolls = 0
+    let secondScrolls = 0
+    first.scrollIntoView = () => {
+      firstScrolls++
+    }
+    second.scrollIntoView = () => {
+      secondScrolls++
+    }
+    const completions: (() => void)[] = []
+    const frames: FrameRequestCallback[] = []
+    const timers = new Map<number, () => void>()
+    let nextTimer = 1
+    const previousSetTimeout = globalThis.setTimeout
+    const previousClearTimeout = globalThis.clearTimeout
+    const previousRequestAnimationFrame = globalThis.requestAnimationFrame
+    globalThis.setTimeout = ((callback: () => void, delay?: number) => {
+      expect(delay).toBe(10_000)
+      const id = nextTimer++
+      timers.set(id, callback)
+      return id
+    }) as unknown as typeof setTimeout
+    globalThis.clearTimeout = ((id: number) => {
+      timers.delete(id)
+    }) as unknown as typeof clearTimeout
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    }) as typeof requestAnimationFrame
+
+    try {
+      mountReport((options) => {
+        const instance = {
+          options,
+          render({ containerWrapper }: { containerWrapper: HTMLElement }) {
+            completions.push(() =>
+              options.onPostRender?.(
+                containerWrapper,
+                instance as unknown as FileDiff,
+                'mount',
+              ),
+            )
+            return false
+          },
+          setOptions(next: typeof options) {
+            instance.options = next
+          },
+        }
+        return instance as unknown as FileDiff
+      })
+
+      expect(completions).toHaveLength(2)
+      expect(timers.size).toBe(2)
+      expect(first.closest<HTMLDetailsElement>('.section-fold')?.open).toBe(true)
+      expect(first.closest('.step')?.querySelector<HTMLDetailsElement>('.file')?.open).toBe(true)
+      expect(firstScrolls).toBe(0)
+      expect(frames).toHaveLength(0)
+
+      dom.window.location.hash = secondFragment
+      dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'))
+      expect(second.closest<HTMLDetailsElement>('.section-fold')?.open).toBe(true)
+      expect(second.closest('.step')?.querySelector<HTMLDetailsElement>('.file')?.open).toBe(true)
+
+      completions[0]!()
+      await Promise.resolve()
+      expect(timers.size).toBe(1)
+      expect(frames).toHaveLength(0)
+      completions[1]!()
+      for (let turn = 0; turn < 4; turn++) await Promise.resolve()
+      expect(timers.size).toBe(0)
+      expect(frames).toHaveLength(1)
+      expect(firstScrolls).toBe(0)
+      expect(secondScrolls).toBe(0)
+
+      frames[0]!(Date.now())
+      expect(firstScrolls).toBe(0)
+      expect(secondScrolls).toBe(1)
+      expect(doc.activeElement).toBe(
+        second.querySelector(`[data-copy-fragment="${secondFragment}"]`),
+      )
+    } finally {
+      globalThis.setTimeout = previousSetTimeout
+      globalThis.clearTimeout = previousClearTimeout
+      globalThis.requestAnimationFrame = previousRequestAnimationFrame
+    }
+  })
+
+  test('a never-callback renderer settles through the bounded deadline', async () => {
+    const value = document([section(simplePatch(), 'Bounded render')])
+    const fragment = reportTargets(value)[0]!.steps[0]!.fragment
+    const dom = loadReport(renderReport(value, ''), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const target = doc.getElementById(fragment) as HTMLElement
+    const timers = new Map<number, () => void>()
+    const frames: FrameRequestCallback[] = []
+    let nextTimer = 1
+    let scrolled = false
+    target.scrollIntoView = () => {
+      scrolled = true
+    }
+    const previousSetTimeout = globalThis.setTimeout
+    const previousClearTimeout = globalThis.clearTimeout
+    const previousRequestAnimationFrame = globalThis.requestAnimationFrame
+    globalThis.setTimeout = ((callback: () => void, delay?: number) => {
+      expect(delay).toBe(10_000)
+      const id = nextTimer++
+      timers.set(id, callback)
+      return id
+    }) as unknown as typeof setTimeout
+    globalThis.clearTimeout = ((id: number) => {
+      timers.delete(id)
+    }) as unknown as typeof clearTimeout
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    }) as typeof requestAnimationFrame
+
+    try {
+      mountReport((options) => {
+        const instance = {
+          options,
+          render() {
+            return false
+          },
+          setOptions(next: typeof options) {
+            instance.options = next
+          },
+        }
+        return instance as unknown as FileDiff
+      })
+
+      expect(target.closest<HTMLDetailsElement>('.section-fold')?.open).toBe(true)
+      expect(timers.size).toBe(1)
+      expect(frames).toHaveLength(0)
+      expect(scrolled).toBe(false)
+
+      const [timerId, expire] = [...timers.entries()][0]!
+      timers.delete(timerId)
+      expire()
+      for (let turn = 0; turn < 4; turn++) await Promise.resolve()
+      expect(timers.size).toBe(0)
+      expect(frames).toHaveLength(1)
+      expect(scrolled).toBe(false)
+
+      frames[0]!(Date.now())
+      expect(scrolled).toBe(true)
+      expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment]'))
+    } finally {
+      globalThis.setTimeout = previousSetTimeout
+      globalThis.clearTimeout = previousClearTimeout
+      globalThis.requestAnimationFrame = previousRequestAnimationFrame
+    }
+  })
+
+  test('finalizes hash navigation when there are no diff mounts', async () => {
+    const value = document([{ title: 'Text only', steps: [{ text: 'No diff to mount.' }] }])
+    const fragment = reportTargets(value)[0]!.steps[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const target = doc.getElementById(fragment) as HTMLElement
+    let scrolled = false
+    target.scrollIntoView = () => {
+      scrolled = true
+    }
+
+    runReportClient()
+    await waitFor(() => scrolled)
+
+    expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment]'))
+  })
+
+  test('finalizes hash navigation when an initial renderer throws', async () => {
+    const value = document([section(simplePatch(), 'Render failure')])
+    const fragment = reportTargets(value)[0]!.steps[0]!.fragment
+    const dom = loadReport(renderReport(value, ''), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const target = doc.getElementById(fragment) as HTMLElement
+    let scrolled = false
+    target.scrollIntoView = () => {
+      scrolled = true
+    }
+
+    mountReport(() => {
+      throw new Error('renderer failed')
+    })
+    await waitFor(() => scrolled)
+
+    expect(doc.querySelector('.diff-error')?.textContent).toContain('renderer failed')
+    expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment]'))
+  })
+
+  test('copy actions are keyboard-accessible and report clipboard success without folding', async () => {
+    const value = document([
+      {
+        title: 'Copy target',
+        steps: [{ text: 'Copy this change.', diff: simplePatch(), changes: ['change-001'] }],
+      },
+    ])
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: 'https://reports.example/r/report-id?layout=split',
+    })
+    const doc = dom.document as unknown as Document
+    const copied: string[] = []
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (value: string) => copied.push(value) },
+    })
+    runReportClient()
+
+    const buttons = [...doc.querySelectorAll<HTMLButtonElement>('[data-copy-fragment]')]
+    expect(buttons).toHaveLength(3)
+    for (const button of buttons) {
+      expect(button.type).toBe('button')
+      expect(button.tabIndex).toBe(0)
+      expect(button.getAttribute('aria-label')).toMatch(/^Copy link to /)
+    }
+
+    const sectionButton = buttons[0]!
+    const sectionFold = doc.querySelector<HTMLDetailsElement>('.section-fold')!
+    sectionButton.focus()
+    expect(doc.activeElement).toBe(sectionButton)
+    sectionButton.click()
+    await waitFor(() => sectionButton.dataset.copyState === 'success')
+
+    const fragment = sectionButton.dataset.copyFragment!
+    expect(copied).toEqual([
+      `https://reports.example/r/report-id?layout=split#${fragment}`,
+    ])
+    expect(sectionFold.open).toBe(true)
+    expect(sectionButton.textContent).toBe('Copied')
+    expect(doc.querySelector('[data-copy-status]')?.textContent).toBe(
+      'Link copied to clipboard.',
+    )
+  })
+
+  test('a rejected clipboard write falls back to textarea copying', async () => {
+    const value = document([section(simplePatch(), 'Copy fallback')])
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: 'https://reports.example/r/report-id',
+    })
+    const doc = dom.document as unknown as Document
+    let clipboardAttempts = 0
+    let fallbackValue = ''
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          clipboardAttempts++
+          throw new Error('denied')
+        },
+      },
+    })
+    ;(doc as Document & { execCommand(command: string): boolean }).execCommand = () => {
+      fallbackValue = doc.querySelector('textarea')?.value ?? ''
+      return true
+    }
+    runReportClient()
+
+    const button = doc.querySelector<HTMLButtonElement>('.step [data-copy-fragment]')!
+    button.click()
+    await waitFor(() => button.dataset.copyState === 'success')
+
+    expect(clipboardAttempts).toBe(1)
+    expect(fallbackValue).toBe(
+      `https://reports.example/r/report-id#${button.dataset.copyFragment}`,
+    )
+    expect(button.textContent).toBe('Copied')
+  })
+
+  test('double clipboard failures are exposed visually and through live status', async () => {
+    const value = document([section(simplePatch(), 'Copy failure')])
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: 'https://reports.example/r/report-id',
+    })
+    const doc = dom.document as unknown as Document
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async () => Promise.reject(new Error('denied')) },
+    })
+    ;(doc as Document & { execCommand(command: string): boolean }).execCommand = () => false
+    runReportClient()
+
+    const button = doc.querySelector<HTMLButtonElement>('.step [data-copy-fragment]')!
+    button.click()
+    await waitFor(() => button.dataset.copyState === 'failure')
+
+    expect(button.textContent).toBe('Failed')
+    expect(doc.querySelector('[data-copy-status]')?.getAttribute('role')).toBe('status')
+    expect(doc.querySelector('[data-copy-status]')?.textContent).toBe('Could not copy link.')
+  })
+
+  test('file reports use the clipboard fallback and restore keyboard focus', async () => {
+    const value = document([section(simplePatch(), 'Offline copy')])
+    const dom = loadReport(renderReport(value, clientBundle))
+    const doc = dom.document as unknown as Document
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    })
+    let copied = ''
+    ;(doc as Document & { execCommand(command: string): boolean }).execCommand = (command) => {
+      expect(command).toBe('copy')
+      copied = doc.querySelector('textarea')?.value ?? ''
+      return true
+    }
+    runReportClient()
+
+    const button = doc.querySelector<HTMLButtonElement>('.step [data-copy-fragment]')!
+    button.focus()
+    button.click()
+    await waitFor(() => button.dataset.copyState === 'success')
+
+    expect(copied).toBe(`file:///tmp/diffwalk-report.html#${button.dataset.copyFragment}`)
+    expect(doc.querySelector('textarea')).toBeNull()
+    expect(doc.activeElement).toBe(button)
   })
 
   test(

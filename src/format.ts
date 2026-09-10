@@ -124,10 +124,14 @@ export const documentStepSchema = z
   .object({
     text: z.string().default(''),
     diff: z.string().min(1).optional(),
+    changes: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict()
   .refine((step) => step.text.trim() !== '' || step.diff !== undefined, {
     message: 'a step needs text, a diff, or both',
+  })
+  .refine((step) => step.changes === undefined || step.diff !== undefined, {
+    message: 'captured change IDs require a diff',
   })
 
 export const explainDocumentSchema = z

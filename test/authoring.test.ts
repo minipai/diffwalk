@@ -352,8 +352,10 @@ describe('explain materialization', () => {
     ])
     expect(document.sections[0]!.steps[0]!.diff).toContain('+E')
     expect(document.sections[0]!.steps[0]!.diff).not.toContain('+B')
+    expect(document.sections[0]!.steps[0]!.changes).toEqual(['change-002'])
     expect(document.sections[1]!.steps[0]!.diff).toContain('+B')
     expect(document.sections[1]!.steps[0]!.diff).not.toContain('+E')
+    expect(document.sections[1]!.steps[0]!.changes).toEqual(['change-001'])
     for (const section of document.sections) {
       expect(parseSectionPatch(section.steps[0]!.diff!)).toHaveLength(1)
     }
@@ -382,8 +384,11 @@ describe('explain materialization', () => {
 
     expect(steps).toHaveLength(3)
     expect(steps[0]!.diff).toBeUndefined()
+    expect(steps[0]!.changes).toBeUndefined()
     expect(steps[1]!.diff).toContain('+B')
+    expect(steps[1]!.changes).toEqual(['change-001'])
     expect(steps[2]!.diff).toContain('+E')
+    expect(steps[2]!.changes).toEqual(['change-002'])
   })
 
   test('requires the explanations to target the captured captureId', () => {
