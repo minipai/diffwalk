@@ -778,7 +778,7 @@ describe('JSON export', () => {
       title: string
       summary: string
       source: { kind: string }
-      sections: { title: string; steps: { text: string; diff?: string }[] }[]
+      sections: { title: string; steps: { text: string; diff?: string; changes?: string[] }[] }[]
     }
     expect(document.formatVersion).toBe(1)
     expect(document.title).toBe('A change set')
@@ -787,6 +787,7 @@ describe('JSON export', () => {
     for (const section of document.sections) {
       expect(section.title).toMatch(/^Section \d+$/)
       expect(section.steps[0]!.diff).toContain('diff --git')
+      expect(section.steps[0]!.changes).toEqual([expect.stringMatching(/^change-\d+$/)])
     }
   })
 

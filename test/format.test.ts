@@ -47,7 +47,7 @@ const capture = {
 
 describe('document schema steps', () => {
   test('a version 1 document section accepts interleaved steps', () => {
-    const document = explainDocumentSchema.parse({
+    const input = {
       formatVersion: 1,
       title: 'Add a card',
       summary: 'Why the card exists.',
@@ -57,16 +57,24 @@ describe('document schema steps', () => {
           title: 'Add a card',
           steps: [
             { text: 'Text that stands alone.' },
-            { text: 'And the change it describes.', diff: diff() },
+            {
+              text: 'And the change it describes.',
+              diff: diff(),
+              changes: ['change-001'],
+            },
           ],
         },
       ],
-    })
+    } as const
+    const document = explainDocumentSchema.parse(input)
+    const roundTripped = explainDocumentSchema.parse(JSON.parse(JSON.stringify(document)))
 
     expect(document.title).toBe('Add a card')
     expect(document.summary).toBe('Why the card exists.')
     expect(document.sections[0]!.steps[0]!.diff).toBeUndefined()
     expect(document.sections[0]!.steps[1]!.diff).toContain('diff --git')
+    expect(document.sections[0]!.steps[1]!.changes).toEqual(['change-001'])
+    expect(roundTripped).toEqual(document)
   })
 
   test('a summary defaults to empty and a title is required', () => {
@@ -105,6 +113,48 @@ describe('document schema steps', () => {
         sections: [{ title: 'Bad', steps: [{ text: '  ' }] }],
       }),
     ).toThrow()
+    expect(() =>
+      explainDocumentSchema.parse({
+        formatVersion: 1,
+        title: 'Bad',
+        source: proposalSource,
+        sections: [{ title: 'Bad', steps: [{ text: 'x', changes: [] }] }],
+      }),
+    ).toThrow()
+  })
+
+  test('strictly validates captured change IDs when the field is present', () => {
+    for (const changes of [[], [''], [1], null, 'change-001']) {
+      expect(() =>
+        explainDocumentSchema.parse({
+          formatVersion: 1,
+          title: 'Bad changes',
+          source: proposalSource,
+          sections: [{ title: 'Bad changes', steps: [{ text: 'x', diff: diff(), changes }] }],
+        }),
+      ).toThrow()
+    }
+    expect(() =>
+      explainDocumentSchema.parse({
+        formatVersion: 1,
+        title: 'Missing diff',
+        source: proposalSource,
+        sections: [
+          { title: 'Missing diff', steps: [{ text: 'Only text.', changes: ['change-001'] }] },
+        ],
+      }),
+    ).toThrow('captured change IDs require a diff')
+  })
+
+  test('keeps legacy version 1 steps without captured change IDs compatible', () => {
+    const document = explainDocumentSchema.parse({
+      formatVersion: 1,
+      title: 'Published before targets',
+      source: proposalSource,
+      sections: [{ title: 'Legacy', steps: [{ text: 'Still readable.', diff: diff() }] }],
+    })
+
+    expect(document.sections[0]!.steps[0]!.changes).toBeUndefined()
   })
 })
 

@@ -2,6 +2,7 @@ import type { ExplainDocument } from './format'
 import { faviconDataUrl } from './favicon'
 import { renderMarkdown } from './report-markdown'
 import { fileDiffLabel, fileDiffStats, parseSectionPatch } from './report-patches'
+import { reportTargets, type ReportSectionTarget } from './report-targets'
 import type { FileDiffMetadata } from '@pierre/diffs'
 
 export type ReportLayout = 'split' | 'unified'
@@ -39,7 +40,10 @@ function renderReportBody(
 ): ReportBody {
   const title = options.title ?? document.title
   const layout = options.layout ?? 'split'
-  const sections = document.sections.map(renderSection)
+  const targets = reportTargets(document)
+  const sections = document.sections.map((section, index) =>
+    renderSection(section, index, targets[index]!),
+  )
   const files = sections.reduce((total, section) => total + section.fileCount, 0)
   const layoutForm = `<form class="layout-form" data-layout-form aria-label="Diff layout">
     <label><input type="radio" name="layout" value="split" ${layout === 'split' ? 'checked' : ''}> Split</label>
@@ -47,7 +51,10 @@ function renderReportBody(
     <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
   </form>`
   const reviewMap = renderReviewMap(
-    document.sections.map((section) => section.title),
+    document.sections.map((section, index) => ({
+      title: section.title,
+      fragment: targets[index]!.fragment,
+    })),
     { sections: sections.length, files },
     layoutForm,
   )
@@ -69,6 +76,7 @@ ${reviewMap}
 </section>
 ${sections.map((section) => section.markup).join('\n')}
 </main>
+<div class="copy-status" data-copy-status role="status" aria-live="polite"></div>
 </div>`
   return {
     title,
@@ -123,7 +131,11 @@ ${client}
 `
 }
 
-function renderSection(section: ExplainDocument['sections'][number], index: number): {
+function renderSection(
+  section: ExplainDocument['sections'][number],
+  index: number,
+  target: ReportSectionTarget,
+): {
   markup: string
   fileCount: number
   diffs: ReportDiffMount[]
@@ -132,10 +144,21 @@ function renderSection(section: ExplainDocument['sections'][number], index: numb
   let fileCount = 0
 
   const steps = section.steps.map((step, stepIndex) => {
+    const stepTarget = target.steps[stepIndex]!
     const text = step.text.trim()
     const textMarkup = text === '' ? '' : `<div class="step-text prose">${renderMarkdown(text)}</div>`
+    const changeTargets = stepTarget.changes
+      .filter((change) => change.canonical)
+      .map(
+        (change) =>
+          `<span class="change-target" id="${change.fragment}" data-target-kind="change">${renderCopyLink(change.fragment, `Copy link to change ${change.id}`, change.id)}</span>`,
+      )
+      .join('')
+    const actions = `<div class="step-actions">
+    ${renderCopyLink(stepTarget.fragment, `Copy link to step ${stepIndex + 1} in ${section.title}`)}${changeTargets}
+  </div>`
     if (step.diff === undefined) {
-      return `<div class="step" data-step-index="${stepIndex}">${textMarkup}</div>`
+      return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}</div>`
     }
 
     let files: FileDiffMetadata[]
@@ -160,19 +183,19 @@ function renderSection(section: ExplainDocument['sections'][number], index: numb
         }
         return `<details class="file" open>
   <summary class="file-summary">${label} <span class="file-stats">+${stats.additions} −${stats.deletions}</span></summary>
-  <div class="file-diff" id="section-${index}-step-${stepIndex}-file-${fileIndex}"></div>
+  <div class="file-diff" data-diff-mount="${index}-${stepIndex}-${fileIndex}"></div>
 </details>`
       })
       .join('\n')
 
-    return `<div class="step" data-step-index="${stepIndex}">${textMarkup}
+    return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}
   <div class="step-files">${filesMarkup}</div>
 </div>`
   })
 
-  const markup = `<section class="section" id="section-${index}" data-section-index="${index}">
+  const markup = `<section class="section" id="${target.fragment}" data-section-index="${index}" data-target-kind="section">
   <details class="section-fold" open>
-    <summary class="section-title">${escapeHtml(section.title)}</summary>
+    <summary class="section-title"><span class="section-title-text">${escapeHtml(section.title)}</span>${renderCopyLink(target.fragment, `Copy link to section ${section.title}`)}</summary>
 ${steps.join('\n')}
   </details>
 </section>`
@@ -180,14 +203,14 @@ ${steps.join('\n')}
 }
 
 function renderReviewMap(
-  titles: string[],
+  sections: { title: string; fragment: string }[],
   counts: { sections: number; files: number },
   layoutForm: string,
 ): string {
-  const links = titles
+  const links = sections
     .map(
-      (title, index) =>
-        `<li><a href="#section-${index}"><span class="review-map-index">${String(index + 1).padStart(2, '0')}</span><span class="review-map-title">${escapeHtml(title)}</span></a></li>`,
+      (section, index) =>
+        `<li><a href="#${section.fragment}"><span class="review-map-index">${String(index + 1).padStart(2, '0')}</span><span class="review-map-title">${escapeHtml(section.title)}</span></a></li>`,
     )
     .join('\n')
   return `<nav class="review-map" aria-label="Review map">
@@ -201,6 +224,10 @@ ${links}
     <span>${pluralize(counts.files, 'file')}</span>
   </p>
 </nav>`
+}
+
+function renderCopyLink(fragment: string, label: string, text = 'Link'): string {
+  return `<button type="button" class="copy-link" data-copy-fragment="${fragment}" aria-label="${escapeHtml(label)}"><span data-copy-label>${escapeHtml(text)}</span></button>`
 }
 
 function pluralize(count: number, noun: string): string {
@@ -348,6 +375,9 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   box-shadow: 0 14px 38px rgba(37, 72, 48, .07);
 }
 .section-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
   overflow-wrap: anywhere;
   padding: 12px 16px;
@@ -359,12 +389,40 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   list-style: none;
   user-select: none;
 }
+.section-title-text { min-width: 0; flex: 1; }
 .section-fold > summary::-webkit-details-marker { display: none; }
 .section-fold > summary::before { content: "▾ "; color: var(--accent); }
 .section-fold:not([open]) > summary::before { content: "▸ "; }
 .section-fold[open] > summary { border-bottom-color: var(--border); }
 .prose { color: #3c4d41; font-size: 14px; }
-.step-text { max-width: 900px; padding: 18px 20px 8px; }
+.step { scroll-margin-top: 18px; }
+.step-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; padding: 8px 12px 0; }
+.step-text { max-width: 900px; padding: 8px 20px; }
+.copy-link {
+  padding: 3px 7px;
+  border: 1px solid #c4d1c6;
+  border-radius: 5px;
+  color: #53665a;
+  background: #f8faf8;
+  font: 600 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+}
+.copy-link:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
+.copy-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.copy-link[data-copy-state="success"] { color: var(--accent); border-color: #8eaa95; }
+.copy-link[data-copy-state="failure"] { color: #a1262f; border-color: #d7a4a8; }
+.change-target { scroll-margin-top: 18px; }
+.copy-status {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .prose strong { color: #142c1d; }
 .step-files { padding: 12px; display: grid; gap: 9px; }
 .step + .step { border-top: 1px solid #e3ebe5; }
@@ -481,7 +539,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .section-fold > summary { font-size: 14px; }
 }
 @media print {
-  .layout-form { display: none; }
+  .layout-form, .copy-link { display: none; }
   .review-map { display: none; }
   .review-workspace { display: block; }
   .report-cover { box-shadow: none; break-inside: avoid; }

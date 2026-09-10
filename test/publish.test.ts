@@ -26,6 +26,7 @@ const document: ExplainDocument = {
         {
           text: 'Text.',
           diff: 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n',
+          changes: ['change-001'],
         },
       ],
     },

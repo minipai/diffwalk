@@ -176,7 +176,11 @@ export function materializeExplainDocument(
         patches.push(createFilePatch(file, fileChanges))
       }
 
-      return { text: step.text, diff: patches.map(formatFilePatch).join('\n') }
+      return {
+        text: step.text,
+        diff: patches.map(formatFilePatch).join('\n'),
+        changes: step.changes,
+      }
     }),
   }))
 
