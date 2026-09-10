@@ -731,6 +731,65 @@ describe('check', () => {
   })
 })
 
+describe('view', () => {
+  test('serves the rendered review through the built CLI until the process stops', async () => {
+    if (process.platform === 'win32') return
+
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const bin = join(repo, 'bin')
+    const openedUrlPath = join(repo, 'opened-url')
+    const launcher = process.platform === 'darwin' ? 'open' : 'xdg-open'
+    await mkdir(bin)
+    await writeFile(
+      join(bin, launcher),
+      '#!/bin/sh\nprintf "%s" "$1" > "$DIFFWALK_OPENED_URL"\n',
+    )
+    await chmod(join(bin, launcher), 0o755)
+
+    const child = Bun.spawn(['node', cliPath, 'view'], {
+      cwd: repo,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        DIFFWALK_OPENED_URL: openedUrlPath,
+      },
+    })
+    const stdout = new Response(child.stdout).text()
+    const stderr = new Response(child.stderr).text()
+
+    try {
+      let previewUrl = ''
+      for (let attempt = 0; attempt < 100 && previewUrl === ''; attempt++) {
+        previewUrl = await readFile(openedUrlPath, 'utf8').catch(() => '')
+        if (previewUrl === '') await Bun.sleep(20)
+      }
+      expect(previewUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+
+      const response = await fetch(previewUrl)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      const html = await response.text()
+      expect(html).toContain('<title>A change set</title>')
+      expect(html).toContain('data-copy-fragment="change-001"')
+      expect((await fetch(`${previewUrl}/other`)).status).toBe(404)
+      expect(await readdir(await currentWalkDir(repo))).not.toContain('diffwalk.html')
+
+      child.kill('SIGTERM')
+      await child.exited
+      expect(await stdout).toContain(`Viewing 2 sections at ${previewUrl}`)
+      expect(await stderr).toBe('')
+      await expect(fetch(previewUrl, { signal: AbortSignal.timeout(1000) })).rejects.toThrow()
+    } finally {
+      child.kill('SIGKILL')
+      await child.exited
+    }
+  })
+})
+
 describe('HTML export', () => {
   test('writes a self-contained HTML report from capture plus explanations', async () => {
     const repo = await fixtureRepo()
