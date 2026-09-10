@@ -1,0 +1,45 @@
+# diffwalk's Igniter workflow. Credentials come from the environment.
+project: diffwalk
+team: Starcoder
+
+max_running: 3
+
+stages:
+  build:
+    prompt: .igniter/workflow/build.md
+    agent: builder
+  review:
+    prompt: .igniter/workflow/review.md
+    agent: reviewer
+  deliver:
+    prompt: .igniter/workflow/deliver.md
+    agent: deliverer
+
+states:
+  backlog: Backlog
+  todo: Todo
+  build: Build
+  review: Review
+  deliver: Deliver
+  done: Done
+
+progress:
+  group: Progress
+  pending: Pending
+  in_progress: In progress
+  complete: Complete
+  blocked: Blocked
+
+# Agent overrides may set any profile field (commander, builder,
+# builder.fallback, reviewer, deliverer: harness, model, effort).
+# Omitted profiles inherit src/commander/config.yaml.
+agents:
+  builder:
+    harness: opencode
+    model: opencode-go/deepseek-v4.1-flash
+    # DeepSeek V4.1 Flash defaults to high, its recommended effort for daily
+    # agent work. OpenCode's interactive TUI has no --variant launch option.
+
+  reviewer:
+    harness: claude
+    model: claude-sonnet-5

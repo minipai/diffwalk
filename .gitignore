@@ -3,4 +3,6 @@ dist/
 node_modules/
 worker/public/
 .wrangler/
+.igniter/dispatch.log
+.igniter/runtime/
 plan.md
