@@ -1,16 +1,27 @@
 ---
 name: diffwalk
-description: Use the Diffwalk CLI to capture Git working-tree changes, author ordered explanations in the current `.diffwalk` walk, validate with check, and preview, export, or publish the review. Trigger when the user asks to use Diffwalk or create/update its capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
+description: Use the Diffwalk CLI to capture working-tree or committed Git changes, author ordered explanations in the current `.diffwalk` walk, validate with check, and preview, export, publish, or remove the review. Trigger when the user asks to use Diffwalk or create/update its capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
 ---
 
 # Diffwalk
 
-Use Diffwalk from the Git repository whose uncommitted changes should be explained.
+Use Diffwalk from the Git repository whose working-tree or committed changes should be
+explained.
 
 ## Workflow
 
 1. Confirm `diffwalk` is available with `command -v diffwalk`. If it is missing, report that installation is required; do not modify shell configuration without authorization.
-2. Run `diffwalk inspect`. Use `--base <revision>`, `--output <path>`, or `--explanations <path>` only when the user requests a non-default base or path.
+2. Choose the capture that matches the requested change set:
+   - Run `diffwalk inspect` for staged, unstaged, renamed, deleted, and untracked
+     working-tree changes relative to `HEAD`. Use `--base <revision>` when the user
+     names a different working-tree base.
+   - Run `diffwalk inspect <commit>` for one commit relative to its first parent. A
+     root commit has no first parent, so use an explicit range instead.
+   - Run `diffwalk inspect --from <revision> --to <revision>` for a committed range.
+     Committed captures ignore working-tree changes and record both supplied revision
+     labels and resolved commit hashes.
+   - Use `--output <path>` or `--explanations <path>` only when the user requests an
+     explicit path.
 3. Inspect what was captured with the focused read commands. Never open `capture.json` directly:
    - `diffwalk changes` for a concise summary, or `diffwalk changes --json` for structured IDs, paths, coordinates, before, and after.
    - `diffwalk change <id>` to read one captured change block.
@@ -54,6 +65,11 @@ Use Diffwalk from the Git repository whose uncommitted changes should be explain
 6. Run `diffwalk check` before viewing or exporting. Fix any stale `captureId`, malformed YAML, unknown ID, unexplained change, or materialization mismatch it reports.
 7. Run `diffwalk view` when the user asks to preview the review locally. It opens the browser without writing an HTML file and runs until stopped with Ctrl+C.
 8. Run `diffwalk export html` when the user asks for a portable HTML review, or `diffwalk export json` for an ExplainDocument integration artifact. Pass `--output <path>` when the user names a destination.
+9. Run `diffwalk publish` only when the user explicitly asks to publish. Publishing is
+   an external write: it uploads the materialized review to an unlisted, publicly
+   readable URL. Return both the URL and the one-time revocation token without placing
+   the token in the review. Use `diffwalk unpublish <id> --token <token>` only when the
+   user asks to remove that exact review.
 
 ## Writing explanations
 
@@ -130,19 +146,26 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
 - Do not edit captured file contents or change coordinates to force a check. Re-run
   `diffwalk inspect` when the working tree has changed; it creates a new current walk
   and never overwrites an authored `explanations.yaml`.
-- Stop and report errors for binary files, symbolic links, unsupported file types, or file-mode changes. Do not bypass these boundaries.
+- Executable modes are preserved for additions, deletions, renames, and content
+  changes. A chmod-only change has no representable explanation block, so stop when
+  Diffwalk reports it. Also stop for binary files, symbolic links, or non-file Git
+  paths; do not bypass these boundaries.
+- Treat a pure rename as a real assignable change. Diffwalk renders it as a move rather
+  than an empty textual diff.
 - The capture contains full file contents. Treat it as potentially sensitive and do not publish or send it without the user's authorization.
 
 ## Commands
 
 ```bash
-diffwalk inspect [--base HEAD] [--output <capture-path>] [--explanations <yaml-path>]
+diffwalk inspect [revision] [--base <revision>] [--from <revision> --to <revision>] [--output <capture-path>] [--explanations <yaml-path>]
 diffwalk changes [--json] [--input <capture-path>]
 diffwalk change <id> [--input <capture-path>]
 diffwalk file <path> (--before | --after) [--input <capture-path>]
 diffwalk check [--input <capture-path>] [--explanations <yaml-path>]
 diffwalk view [--input <capture-path>] [--explanations <yaml-path>]
 diffwalk export <html|json> [--input <capture-path>] [--explanations <yaml-path>] [--output <path>]
+diffwalk publish [--input <capture-path>] [--explanations <yaml-path>] [--service <url>]
+diffwalk unpublish <id> --token <token> [--service <url>]
 ```
 
 ## Trusted-text boundary
