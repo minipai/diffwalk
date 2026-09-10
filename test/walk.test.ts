@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { currentWalk, currentWalkIfPresent, setCurrentWalk, walkId, walkPaths } from '../src/walk'
+import { currentWalk, currentWalkIfPresent, setCurrentWalk, walkId, walkPaths } from '../src/authoring/walk'
 
 const directories: string[] = []
 

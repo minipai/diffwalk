@@ -3,8 +3,8 @@ import type { FileDiff } from '@pierre/diffs'
 import { Window } from 'happy-dom'
 import type { ExplainDocument } from '../src/format'
 import { loadReportClient, renderReport } from '../src/report'
-import { mountReport } from '../src/report-client'
-import { reportTargets } from '../src/report-targets'
+import { mountReport } from '../src/report/client'
+import { reportTargets } from '../src/report/targets'
 
 const clientBundle = await loadReportClient()
 

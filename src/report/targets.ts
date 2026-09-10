@@ -1,4 +1,4 @@
-import type { ExplainDocument } from './format'
+import type { ExplainDocument } from '../format'
 
 export interface ReportChangeTarget {
   id: string

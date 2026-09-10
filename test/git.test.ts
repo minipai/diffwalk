@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmod, mkdir, mkdtemp, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { captureGitChanges, captureGitRevisionChanges } from '../src/git'
+import { captureGitChanges, captureGitRevisionChanges } from '../src/authoring/git'
 
 const directories: string[] = []
 

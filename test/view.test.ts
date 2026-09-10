@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { startReportPreview, type ReportPreview } from '../src/view'
+import { startReportPreview, type ReportPreview } from '../src/report/view'
 
 const previews: ReportPreview[] = []
 
