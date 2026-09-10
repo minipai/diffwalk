@@ -9,7 +9,7 @@ import {
   type ExplainCapture,
   type ExplainDocument,
   type Explanations,
-} from './format'
+} from '../format'
 
 export function createExplainCapture(files: DraftFile[], source: CaptureSource): ExplainCapture {
   let nextId = 1

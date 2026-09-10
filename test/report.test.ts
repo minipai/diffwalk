@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ExplainDocument } from '../src/format'
-import { renderMarkdown } from '../src/report-markdown'
-import { fileDiffStats, parseSectionPatch } from '../src/report-patches'
+import { renderMarkdown } from '../src/report/markdown'
+import { fileDiffStats, parseSectionPatch } from '../src/report/patches'
 import { loadReportClient, renderReport, writeReport } from '../src/report'
-import { reportTargets } from '../src/report-targets'
+import { reportTargets } from '../src/report/targets'
 
 const directories: string[] = []
 

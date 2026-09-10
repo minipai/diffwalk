@@ -4,9 +4,9 @@ import {
   createExplainCapture,
   duplicatedChangeIds,
   materializeExplainDocument,
-} from '../src/authoring'
+} from '../src/authoring/capture'
 import type { CaptureSource, ExplainCapture } from '../src/format'
-import { fileDiffStats, parseSectionPatch } from '../src/report-patches'
+import { fileDiffStats, parseSectionPatch } from '../src/report/patches'
 
 const source: CaptureSource = {
   kind: 'working-tree',

@@ -90,32 +90,32 @@ exact corresponding diffs in a deliberate order.
 
 - `src/format.ts`: Zod schemas for the machine-owned capture and the author-edited
   explanations, plus the version 1 ExplainDocument.
-- `src/git.ts`: captures staged, unstaged, deleted, renamed, and untracked UTF-8
+- `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked UTF-8
   files from an immutable Git base commit.
-- `src/authoring.ts`: derives change blocks and the content `captureId`, and
+- `src/authoring/capture.ts`: derives change blocks and the content `captureId`, and
   materializes exact section patches from capture plus explanations.
-- `src/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.
-- `src/cli-args.ts`: shared flag/positional parsing and usage errors.
-- `src/help.ts`: top-level and per-command help for purpose, quick start, file
-  ownership, defaults, options, and next steps.
-- `src/walk.ts`: timestamped walk IDs, per-walk paths, and the current-walk pointer.
+- `src/authoring/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.
+- `src/cli/commands/`: one typed handler module per CLI command.
+- `src/authoring/input.ts`: shared capture and explanations path resolution, schemas,
+  validation, and persistence.
+- `src/authoring/walk.ts`: timestamped walk IDs, per-walk paths, and the current-walk pointer.
 - `src/cli.ts`: executable entry point for `inspect`, `changes`, `change`, `file`,
-  `check`, `view`, `export`, `publish`, `unpublish`, and `help`.
-- `src/view.ts`: loopback-only report preview server and default-browser launch.
-- `src/report-patches.ts`: shared Pierre parse seam used by the generator, the browser
+  `check`, `view`, `export`, `publish`, and `unpublish`.
+- `src/report/view.ts`: loopback-only report preview server and default-browser launch.
+- `src/report/patches.ts`: shared Pierre parse seam used by the generator, the browser
   client, and tests.
-- `src/report-markdown.ts`: Markdown rendering with inline HTML passed through.
+- `src/report/markdown.ts`: Markdown rendering with inline HTML passed through.
 - `src/report.ts`: atomic report writes and client-bundle loading.
-- `src/report-shell.ts`: the one report shell, embedded-data escaping, and shell styles,
+- `src/report/shell.ts`: the one report shell, embedded-data escaping, and shell styles,
   rendered with inlined assets for the offline file or linked assets for the hosted page.
 - `src/publish.ts`: review service origin checks, publish credential lookup, and the
   publish and unpublish requests.
-- `src/report-client.ts`: browser entry that mounts a `FileDiff` per file and switches
+- `src/report/client.ts`: browser entry that mounts a `FileDiff` per file and switches
   unified/split through `setOptions`.
 - `test/*.test.ts`: focused tests for schemas, capture identity, strict YAML parsing,
   materialization, Git capture, local preview, report schemas,
-  Markdown escaping, embedded-data escaping, Pierre parse failures, CLI argument
-  parsing, help, and atomic writes.
+  Markdown escaping, embedded-data escaping, Pierre parse failures, CLI behavior,
+  help, and atomic writes.
 - `test/cli.test.ts`: end-to-end CLI tests in real temporary Git repositories for
   inspect file behavior (including preservation of authored explanations and stale
   pairing), inspection commands, validation, HTML/JSON exports, and rejection of the

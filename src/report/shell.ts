@@ -1,8 +1,8 @@
-import type { ExplainDocument } from './format'
+import type { ExplainDocument } from '../format'
 import { faviconDataUrl } from './favicon'
-import { renderMarkdown } from './report-markdown'
-import { fileDiffLabel, fileDiffStats, parseSectionPatch } from './report-patches'
-import { reportTargets, type ReportSectionTarget } from './report-targets'
+import { renderMarkdown } from './markdown'
+import { fileDiffLabel, fileDiffStats, parseSectionPatch } from './patches'
+import { reportTargets, type ReportSectionTarget } from './targets'
 import type { FileDiffMetadata } from '@pierre/diffs'
 
 export type ReportLayout = 'split' | 'unified'

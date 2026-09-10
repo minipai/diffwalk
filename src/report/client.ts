@@ -1,5 +1,5 @@
 import { FileDiff, type FileDiffMetadata, type FileDiffOptions } from '@pierre/diffs'
-import { parseSectionPatch } from './report-patches'
+import { parseSectionPatch } from './patches'
 
 interface ReportDiffMount {
   section: number

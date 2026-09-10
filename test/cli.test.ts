@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { captureIdFor } from '../src/authoring'
+import { captureIdFor } from '../src/authoring/capture'
 import { captureSchema } from '../src/format'
 
 const directories: string[] = []
@@ -131,16 +131,16 @@ async function committedFixtureRepo(): Promise<string> {
 }
 
 describe('help', () => {
-  test('bare diffwalk, --help, and -h exit 0 and describe the workflow', async () => {
+  test('bare diffwalk, --help, and -h show CAC help', async () => {
     const repo = await fixtureRepo()
-    for (const args of [[], ['--help'], ['-h'], ['help']]) {
+    for (const args of [[], ['--help'], ['-h']]) {
       const result = await runCli(args, repo)
       expect(result.exitCode).toBe(0)
-      expect(result.stdout).toContain('Quick start')
+      expect(result.stdout).toContain('Usage:')
+      expect(result.stdout).toContain('Commands:')
       expect(result.stdout).toContain('inspect')
-      expect(result.stdout).toContain('explanations.yaml')
       expect(result.stdout).toContain('check')
-      expect(result.stdout).toContain('File ownership')
+      expect(result.stdout).toContain('--help')
     }
   })
 
@@ -156,68 +156,25 @@ describe('help', () => {
     }
   })
 
-  test('help <command> describes options, defaults, and next steps', async () => {
+  test('command --help describes its usage and options', async () => {
     const repo = await fixtureRepo()
-    for (const command of ['inspect', 'changes', 'change', 'file', 'check', 'view', 'export', 'publish']) {
-      const result = await runCli(['help', command], repo)
+    for (const command of ['inspect', 'changes', 'change', 'file', 'check', 'view', 'export', 'publish', 'unpublish']) {
+      const result = await runCli([command, '--help'], repo)
       expect(result.exitCode).toBe(0)
-      expect(result.stdout).toContain(`diffwalk ${command} —`)
+      expect(result.stdout).toContain(`Usage: diffwalk ${command}`)
       expect(result.stdout).toContain('Options:')
-      expect(result.stdout).toContain('Next steps:')
     }
   })
 
-  test('help unpublish describes the revocation token it requires', async () => {
+  test('unknown commands and top-level options exit nonzero', async () => {
     const repo = await fixtureRepo()
-    const result = await runCli(['help', 'unpublish'], repo)
+    const command = await runCli(['bogus'], repo)
+    expect(command.exitCode).not.toBe(0)
+    expect(command.stderr).toContain('too many arguments')
 
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('diffwalk unpublish —')
-    expect(result.stdout).toContain('--token')
-    expect(result.stdout).toContain('Next steps:')
-  })
-
-  test('help for an unknown command exits nonzero', async () => {
-    const repo = await fixtureRepo()
-    const result = await runCli(['help', 'bogus'], repo)
-    expect(result.exitCode).not.toBe(0)
-    expect(result.stderr).toContain('Unknown command: bogus')
-  })
-
-  test('help rejects extra topics and unknown options with usage guidance', async () => {
-    const repo = await fixtureRepo()
-    const cases: string[][] = [
-      ['help', 'inspect', 'extra'],
-      ['help', 'inspect', 'extra', 'more'],
-      ['help', '--bogus'],
-      ['help', 'inspect', '--bogus'],
-    ]
-    for (const args of cases) {
-      const result = await runCli(args, repo)
-      expect(result.exitCode).not.toBe(0)
-      expect(result.stderr).toContain('diffwalk help')
-    }
-  })
-
-  test('help still succeeds with --help, -h, or a topic plus --help', async () => {
-    const repo = await fixtureRepo()
-    for (const args of [
-      ['help', '--help'],
-      ['help', '-h'],
-      ['help', 'inspect', '--help'],
-      ['help', 'inspect'],
-    ]) {
-      const result = await runCli(args, repo)
-      expect(result.exitCode).toBe(0)
-      expect(result.stdout).toContain('diffwalk')
-    }
-  })
-
-  test('an unknown top-level command exits nonzero', async () => {
-    const repo = await fixtureRepo()
-    const result = await runCli(['bogus'], repo)
-    expect(result.exitCode).not.toBe(0)
-    expect(result.stderr).toContain('Unknown command: bogus')
+    const option = await runCli(['--bogus'], repo)
+    expect(option.exitCode).not.toBe(0)
+    expect(option.stderr).toContain("unknown option '--bogus'")
   })
 })
 
@@ -237,7 +194,7 @@ describe('usage errors', () => {
     for (const args of cases) {
       const result = await runCli(args, repo)
       expect(result.exitCode).not.toBe(0)
-      expect(result.stderr).toContain('diffwalk')
+      expect(result.stderr.length).toBeGreaterThan(0)
     }
   })
 
@@ -245,7 +202,22 @@ describe('usage errors', () => {
     const repo = await fixtureRepo()
     const result = await runCli(['inspect', '--help'], repo)
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('diffwalk inspect —')
+    expect(result.stdout).toContain('Usage: diffwalk inspect [options] [revision]')
+  })
+
+  test('rejects malformed and dot-nested options', async () => {
+    const repo = await fixtureRepo()
+    for (const args of [
+      ['inspect', '--bogus'],
+      ['changes', '--input'],
+      ['changes', '--input='],
+      ['changes', '--input', '--input', 'capture.json'],
+      ['inspect', '--from.foo', 'HEAD^1', '--to.foo', 'HEAD'],
+    ]) {
+      const result = await runCli(args, repo)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr.length).toBeGreaterThan(0)
+    }
   })
 })
 
@@ -401,6 +373,26 @@ describe('inspect', () => {
     )
   })
 
+  test('preserves numeric-looking option values as strings', async () => {
+    const repo = await fixtureRepo()
+
+    const inspect = await runCli(['inspect', '--output', '001'], repo)
+
+    expect(inspect.exitCode).toBe(0)
+    expect(inspect.stdout).toContain('files to 001')
+    expect(await readFile(join(repo, '001'), 'utf8')).toContain('"captureId"')
+  })
+
+  test('preserves equals signs in inline option values', async () => {
+    const repo = await fixtureRepo()
+
+    const inspect = await runCli(['inspect', '--output=foo=bar'], repo)
+
+    expect(inspect.exitCode).toBe(0)
+    expect(inspect.stdout).toContain('files to foo=bar')
+    expect(await readFile(join(repo, 'foo=bar'), 'utf8')).toContain('"captureId"')
+  })
+
   test('captures a commit relative to its first parent', async () => {
     const repo = await committedFixtureRepo()
     const result = await runCli(['inspect', 'HEAD'], repo)
@@ -440,7 +432,7 @@ describe('inspect', () => {
     ]) {
       const result = await runCli(args, repo)
       expect(result.exitCode).not.toBe(0)
-      expect(result.stderr).toContain('diffwalk inspect')
+      expect(result.stderr.length).toBeGreaterThan(0)
     }
   })
 
@@ -526,6 +518,10 @@ describe('changes', () => {
     expect(result.stdout).not.toContain('"newContent"')
     expect(result.stdout).not.toContain('"files"')
     expect(result.stdout).not.toContain('keep')
+
+    const repeated = await runCli(['changes', '--json', '--json'], repo)
+    expect(repeated.exitCode).toBe(0)
+    expect(() => JSON.parse(repeated.stdout)).not.toThrow()
   })
 })
 
@@ -589,6 +585,13 @@ describe('file', () => {
     const double = await runCli(['file', 'greeting.ts', '--before', '--after'], repo)
     expect(double.exitCode).not.toBe(0)
     expect(double.stderr).toContain('--before or --after')
+
+    const repeated = await runCli(
+      ['file', 'greeting.ts', '--before', '--before', '--after'],
+      repo,
+    )
+    expect(repeated.exitCode).not.toBe(0)
+    expect(repeated.stderr).toContain('--before or --after')
   })
 })
 
@@ -1009,11 +1012,10 @@ describe('unpublish', () => {
     const noToken = await runCli(['unpublish', reportId], repo)
     expect(noToken.exitCode).not.toBe(0)
     expect(noToken.stderr).toContain('--token')
-    expect(noToken.stderr).toContain('diffwalk unpublish')
 
     const noId = await runCli(['unpublish', '--token', revocationToken], repo)
     expect(noId.exitCode).not.toBe(0)
-    expect(noId.stderr).toContain('exactly 1 argument')
+    expect(noId.stderr).toContain("missing required argument 'id'")
   })
 })
 
@@ -1025,7 +1027,7 @@ describe('removed workflow', () => {
     const result = await runCli(['build'], repo)
 
     expect(result.exitCode).not.toBe(0)
-    expect(result.stderr).toContain('Unknown command: build')
+    expect(result.stderr).toContain('too many arguments')
   })
 
   test('the report command is replaced by export html', async () => {
@@ -1033,8 +1035,7 @@ describe('removed workflow', () => {
     const result = await runCli(['report'], repo)
 
     expect(result.exitCode).not.toBe(0)
-    expect(result.stderr).toContain('Unknown command: report')
-    expect(result.stderr).toContain('diffwalk export html')
+    expect(result.stderr).toContain('too many arguments')
   })
 
   test('the old combined draft is not accepted as input', async () => {

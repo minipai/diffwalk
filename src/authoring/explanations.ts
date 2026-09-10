@@ -1,6 +1,6 @@
 import { parseDocument } from 'yaml'
 import { ZodError } from 'zod'
-import { explanationsSchema, type Explanations } from './format'
+import { explanationsSchema, type Explanations } from '../format'
 
 export function parseExplanations(text: string): Explanations {
   const document = parseDocument(text, { strict: true, schema: 'core' })

@@ -1,6 +1,6 @@
 import { explainDocumentSchema } from '../src/format'
-import { faviconSvg } from '../src/favicon'
-import { renderHostedReport } from '../src/report-shell'
+import { faviconSvg } from '../src/report/favicon'
+import { renderHostedReport } from '../src/report/shell'
 import {
   bearerToken,
   createReportId,

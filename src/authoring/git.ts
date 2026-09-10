@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { lstat, readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
-import type { DraftFile } from './format'
+import type { DraftFile } from '../format'
 
 export interface GitCapture {
   root: string
