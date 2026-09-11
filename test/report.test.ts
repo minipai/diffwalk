@@ -456,7 +456,7 @@ describe('renderReport shell', () => {
     const html = renderReport(document([section(simplePatch(), 'Distinct')]), stubClient)
 
     expect(html).toContain(
-      '<summary class="section-title"><span class="section-title-index">01</span><span class="section-title-text">Distinct</span><button type="button" class="copy-link"',
+      '<summary class="section-title"><span class="section-title-index">01</span><span class="section-title-text">Distinct</span><a class="permalink" href="#section-distinct-p000ra1271amq" aria-label="Permalink to section Distinct">Link</a><button type="button" class="copy-link"',
     )
     expect(html).toContain('.section-fold > summary::before { content: "▾ "; color: var(--accent); }')
     expect(html).toContain(
@@ -490,6 +490,73 @@ describe('renderReport shell', () => {
     expect(html).not.toContain('id="section-0-step-0-file-0"')
   })
 
+  test('section, step, and change titles carry native permalinks beside distinct copy buttons', () => {
+    const value = document([
+      {
+        title: 'Linkable',
+        steps: [
+          {
+            text: 'A linkable step.',
+            diff: simplePatch(),
+            changes: ['change-001'],
+          },
+        ],
+      },
+    ])
+    const target = reportTargets(value)[0]!
+    const html = renderReport(value, stubClient)
+
+    // Native same-document anchors point at the target's stable id.
+    expect(html).toContain(
+      `<a class="permalink" href="#${target.fragment}" aria-label="Permalink to section Linkable">Link</a>`,
+    )
+    expect(html).toContain(
+      `<a class="permalink" href="#${target.steps[0]!.fragment}" aria-label="Permalink to step 1 in Linkable">Link</a>`,
+    )
+    // A change's id is its title, so the anchor itself carries that marker.
+    expect(html).toContain(
+      `<a class="permalink" href="#change-001" aria-label="Permalink to change change-001">change-001</a>`,
+    )
+
+    // Copying stays a separate button with an explicit action, not a navigation.
+    expect(html).toContain(
+      `<button type="button" class="copy-link" data-copy-fragment="${target.fragment}" aria-label="Copy link to section Linkable"><span data-copy-label>Copy</span></button>`,
+    )
+    expect(html).toContain('aria-label="Copy link to step 1 in Linkable"')
+    expect(html).toContain('aria-label="Copy link to change change-001"')
+    expect(html).not.toContain('<a class="permalink" data-copy-fragment')
+  })
+
+  test('hosted and exported reports share identical native permalink markup', () => {
+    const value = document([
+      section(simplePatch(), 'First section'),
+      {
+        title: 'Second section',
+        steps: [
+          { text: 'Target.', diff: simplePatch('two', 'two!'), changes: ['change-007'] },
+        ],
+      },
+    ])
+    const exported = renderReport(value, stubClient)
+    const hosted = renderHostedReport(value, {
+      stylesHref: '/report.css',
+      clientSrc: '/report-client.js',
+    })
+
+    const main = (html: string) => {
+      const start = html.indexOf('<main>')
+      const end = html.indexOf('</main>')
+      return html.slice(start, end + '</main>'.length)
+    }
+    const hostedMain = main(hosted)
+    expect(hostedMain).toBe(main(exported))
+    expect(hostedMain).toContain('<a class="permalink"')
+    expect(hostedMain).toContain('href="#')
+    expect(hostedMain).toContain('data-copy-fragment')
+    expect(hosted).toContain('<link rel="stylesheet" href="/report.css">')
+    expect(exported).toContain('<style>')
+  })
+
   // The rail has no room on a narrow screen, but the toggle is still needed while
   // scrolled into a diff, so the map collapses to a sticky strip that keeps it.
   test('the review map collapses to a strip that keeps the layout toggle on narrow screens', () => {
@@ -500,6 +567,14 @@ describe('renderReport shell', () => {
     expect(html).toContain('.review-map-label, .review-map-list, .review-map-counts { display: none; }')
     expect(html).not.toContain('.review-map { display: none; }\n  main { padding: 14px')
     expect(html).toContain('@media (max-width: 520px)')
+  })
+
+  test('narrow screens offset anchored targets past the sticky review strip', () => {
+    const html = renderReport(document([section(simplePatch(), 'Narrow anchor')]), stubClient)
+
+    expect(html).toContain('.section, .step, .change-target { scroll-margin-top: 64px; }')
+    // The wide-screen offset stays tight because the review map is a side rail.
+    expect(html).toContain('.section { max-width: 1480px; margin: 0 auto 22px; scroll-margin-top: 18px; }')
   })
 
   test('section titles wrap long unbroken words instead of clipping inside the fold', () => {
@@ -546,7 +621,7 @@ describe('renderReport shell', () => {
     const html = renderReport(document([section(simplePatch(), 'Print')]), stubClient)
 
     expect(html).toContain('@media print')
-    expect(html).toContain('.layout-form, .copy-link { display: none; }')
+    expect(html).toContain('.layout-form, .copy-link, .permalink { display: none; }')
     expect(html).toContain('.review-map { display: none; }')
     expect(html).toContain('.report-cover { box-shadow: none; break-inside: avoid; }')
     expect(html).toContain('.source-metadata dd { white-space: normal; overflow: visible; }')
