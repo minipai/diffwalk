@@ -16,9 +16,10 @@ criteria, checkpoint context, and any failures returned from Review.
   or Worker API named by the criterion. Build the CLI first and invoke the
   generated `dist/diffwalk.js` rather than treating source-level tests as
   acceptance evidence.
-- Never publish a review, mutate the live review service, deploy the Worker, or
-  publish the npm package during Build unless the owner explicitly authorizes
-  that external action.
+- Never mutate the live review service, deploy the Worker, or publish the npm
+  package during Build unless the owner explicitly authorizes that external
+  action. Publishing the required Diffwalk walkthrough below is the sole
+  standing exception.
 - After implementation and self-acceptance, ask one subagent to inspect the
   current diff once for concrete correctness, security, and test-gap findings.
   Fix relevant in-scope findings and rerun affected checks. Do not start a
@@ -26,9 +27,18 @@ criteria, checkpoint context, and any failures returned from Review.
 - Inspect the final diff and create one checkpoint commit with a concise English
   message, following the repository's commit authorship instructions. Fold
   review fixes and check fixes into that feature commit.
+- Create a Diffwalk walkthrough for the final committed change before handoff:
+  run `diffwalk inspect --from <checkpoint-context> --to HEAD`, inspect the
+  capture only through `diffwalk changes`, `diffwalk change`, and
+  `diffwalk file`, then author ordered explanations that show every captured
+  change. Run `diffwalk check`, publish the walkthrough, and include its URL in
+  the Build result. Do not comment on Linear yourself; the Global Commander
+  verifies the URL and adds it to the ticket before submitting the Build
+  receipt.
 - Do not push. Only Deliver updates the remote branch after Review passes and
   the owner approves the accepted checkpoint.
 
 Report the checkpoint commit, every required check and its result, one
 self-acceptance result per criterion, reproduction commands, evidence paths,
-the one-pass subagent findings and fixes, and unresolved concerns.
+the one-pass subagent findings and fixes, the published Diffwalk URL, and
+unresolved concerns.
