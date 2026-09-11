@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmod, mkdir, mkdtemp, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { captureGitChanges, captureGitRevisionChanges } from '../src/authoring/git'
+import { captureGitChanges, captureGitRevisionChanges, gitUserName } from '../src/authoring/git'
 
 const directories: string[] = []
 
@@ -709,6 +709,48 @@ describe('captureGitChanges selection', () => {
     await expect(captureGitChanges('HEAD', directory, { staged: true })).rejects.toThrow(
       'File mode changes are not supported: script.sh',
     )
+  })
+})
+
+describe('gitUserName', () => {
+  test('reads the configured Git user name', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+
+    expect(await gitUserName(directory)).toBe('Test')
+  })
+
+  test('returns undefined when Git has no user name to report', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'user.name', ''], directory)
+
+    expect(await gitUserName(directory)).toBeUndefined()
+  })
+
+  test('returns undefined instead of throwing when the config cannot be read', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await git(['init', '-q'], directory)
+    const previous = {
+      global: process.env['GIT_CONFIG_GLOBAL'],
+      system: process.env['GIT_CONFIG_SYSTEM'],
+    }
+    process.env['GIT_CONFIG_GLOBAL'] = '/dev/null'
+    process.env['GIT_CONFIG_SYSTEM'] = '/dev/null'
+    try {
+      expect(await gitUserName(directory)).toBeUndefined()
+    } finally {
+      for (const [key, value] of [
+        ['GIT_CONFIG_GLOBAL', previous.global],
+        ['GIT_CONFIG_SYSTEM', previous.system],
+      ] as const) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
   })
 })
 

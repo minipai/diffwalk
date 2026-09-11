@@ -222,6 +222,65 @@ describe('document source variants', () => {
   })
 })
 
+describe('document metadata', () => {
+  function attributed(metadata: unknown): unknown {
+    return {
+      formatVersion: 1,
+      title: 'Attribution',
+      source: proposalSource,
+      metadata,
+      sections: [{ title: 'Attribution', steps: [{ text: 'Text.', diff: diff() }] }],
+    }
+  }
+
+  test('accepts full, partial, and absent attribution metadata', () => {
+    const full = explainDocumentSchema.parse(
+      attributed({
+        explainedBy: 'Claude Code',
+        publishedBy: 'Art',
+        publishedAt: '2026-09-02T06:10:00.000Z',
+      }),
+    )
+    expect(full.metadata).toEqual({
+      explainedBy: 'Claude Code',
+      publishedBy: 'Art',
+      publishedAt: '2026-09-02T06:10:00.000Z',
+    })
+
+    for (const metadata of [
+      { explainedBy: 'Claude Code' },
+      { publishedBy: 'Art' },
+      { publishedAt: '2026-09-02T06:10:00.000Z' },
+      {},
+    ]) {
+      expect(explainDocumentSchema.parse(attributed(metadata)).metadata).toEqual(metadata)
+    }
+
+    expect(explainDocumentSchema.parse(attributed(undefined)).metadata).toBeUndefined()
+    expect(explainDocumentSchema.parse(attributed({})).metadata).toEqual({})
+  })
+
+  test('rejects unknown metadata keys and malformed values', () => {
+    for (const metadata of [
+      { explainedBy: 'Claude Code', extra: 'nope' },
+      { explainedBy: '' },
+      { publishedBy: 7 },
+      { publishedAt: 'yesterday' },
+      { publishedAt: '2026-09-02' },
+      'not an object',
+    ]) {
+      expect(() => explainDocumentSchema.parse(attributed(metadata))).toThrow()
+    }
+  })
+
+  test('round-trips attribution metadata through JSON', () => {
+    const document = explainDocumentSchema.parse(
+      attributed({ explainedBy: 'Claude Code', publishedBy: 'Art' }),
+    )
+    expect(explainDocumentSchema.parse(JSON.parse(JSON.stringify(document)))).toEqual(document)
+  })
+})
+
 describe('capture schema', () => {
   test('accepts the machine-owned capture shape with no sections', () => {
     const parsed = captureSchema.parse(capture)
@@ -377,5 +436,31 @@ describe('explanations schema', () => {
         sections: [{ title: '', steps: [{ changes: ['c'] }] }],
       }),
     ).toThrow()
+  })
+
+  test('accepts an optional explainedBy author and nothing else', () => {
+    const withAuthor = explanationsSchema.parse({
+      captureId: 'x',
+      title: 'x',
+      metadata: { explainedBy: 'Claude Code' },
+      sections: [],
+    })
+    expect(withAuthor.metadata).toEqual({ explainedBy: 'Claude Code' })
+    expect(
+      explanationsSchema.parse({ captureId: 'x', title: 'x', sections: [] }).metadata,
+    ).toBeUndefined()
+
+    // publishedBy and publishedAt are supplied by other layers, so the authoring file
+    // rejects them instead of silently dropping authored data.
+    for (const metadata of [
+      { publishedBy: 'Art' },
+      { publishedAt: '2026-09-02T06:10:00.000Z' },
+      { explainedBy: 'Claude Code', extra: 'nope' },
+      { explainedBy: '' },
+    ]) {
+      expect(() =>
+        explanationsSchema.parse({ captureId: 'x', title: 'x', metadata, sections: [] }),
+      ).toThrow()
+    }
   })
 })

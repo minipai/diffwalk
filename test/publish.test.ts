@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { ExplainDocument } from '../src/format'
-import { publishDocument, reportService, unpublishDocument, updateDocument } from '../src/publish'
+import {
+  publishDocument,
+  reportService,
+  unpublishDocument,
+  updateDocument,
+  withPublisher,
+} from '../src/publish'
 
 const originalFetch = globalThis.fetch
 const originalEnvironment = { ...process.env }
@@ -82,6 +88,25 @@ describe('reportService', () => {
   test('a local service may be reached without TLS for development', () => {
     expect(reportService('http://localhost:8787')).toBe('http://localhost:8787')
     expect(reportService('http://127.0.0.1:8787')).toBe('http://127.0.0.1:8787')
+  })
+})
+
+describe('withPublisher', () => {
+  test('adds the Git user name beside the authored author without mutating the source', () => {
+    const authored: ExplainDocument = {
+      ...document,
+      metadata: { explainedBy: 'Claude Code' },
+    }
+
+    const outgoing = withPublisher(authored, 'Art')
+
+    expect(outgoing.metadata).toEqual({ explainedBy: 'Claude Code', publishedBy: 'Art' })
+    expect(authored.metadata).toEqual({ explainedBy: 'Claude Code' })
+    expect(outgoing.sections).toBe(authored.sections)
+  })
+
+  test('returns the document unchanged when Git has no user name', () => {
+    expect(withPublisher(document, undefined)).toBe(document)
   })
 })
 

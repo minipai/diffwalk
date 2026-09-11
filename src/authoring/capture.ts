@@ -194,6 +194,7 @@ export function materializeExplainDocument(
     title: explanations.title,
     summary: explanations.summary,
     source: capture.source,
+    ...(explanations.metadata === undefined ? {} : { metadata: explanations.metadata }),
     sections,
   })
 }

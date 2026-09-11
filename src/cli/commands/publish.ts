@@ -1,7 +1,8 @@
 import { z } from 'zod'
+import { gitUserName } from '../../authoring/git'
 import { authoringOptionsSchema, materialize } from '../../authoring/input'
 import { readPublishedReview, writePublishedReview } from '../../authoring/published'
-import { publishDocument, reportService, updateDocument } from '../../publish'
+import { publishDocument, reportService, updateDocument, withPublisher } from '../../publish'
 import type { ExplainDocument } from '../../format'
 import { UsageError } from '../usage'
 
@@ -13,16 +14,17 @@ type PublishOptions = z.infer<typeof publishOptionsSchema>
 
 export async function publishCommand(options: PublishOptions): Promise<void> {
   const { document, paths } = await materialize(options)
+  const outgoing = withPublisher(document, await gitUserName())
   if (options.update === true) {
-    await updatePublishedReview(document, paths.published, options.service)
+    await updatePublishedReview(outgoing, paths.published, options.service)
     return
   }
 
   const service = reportService(options.service)
-  const published = await publishDocument(document, service)
+  const published = await publishDocument(outgoing, service)
   // The token is shown before the retention write so a failed write can never leave a
   // live review whose only credential was never surfaced.
-  console.log(`Published ${document.sections.length} explanation sections to ${published.url}`)
+  console.log(`Published ${outgoing.sections.length} explanation sections to ${published.url}`)
   console.log(`Revocation token: ${published.revocationToken}`)
   await writePublishedReview(paths.published, {
     id: published.id,

@@ -181,4 +181,28 @@ sections: []
 `),
     ).toThrow()
   })
+
+  test('parses an optional explainedBy attribution author', () => {
+    const explanations = parseExplanations(`${head}metadata:
+  explainedBy: Claude Code
+sections: []
+`)
+
+    expect(explanations.metadata).toEqual({ explainedBy: 'Claude Code' })
+  })
+
+  test('omits author metadata when the file does not name one', () => {
+    expect(parseExplanations(`${head}sections: []\n`).metadata).toBeUndefined()
+  })
+
+  test('rejects metadata keys the authoring file must not set', () => {
+    for (const body of [
+      `metadata:\n  publishedBy: Art\n`,
+      `metadata:\n  publishedAt: "2026-09-02T06:10:00.000Z"\n`,
+      `metadata:\n  explainedBy: Claude Code\n  extra: nope\n`,
+      `metadata:\n  explainedBy: 7\n`,
+    ]) {
+      expect(() => parseExplanations(`${head}${body}sections: []\n`)).toThrow()
+    }
+  })
 })

@@ -81,9 +81,10 @@ async function publishReport(request: Request, env: Env): Promise<Response> {
   const parsed = await readReportDocument(request)
   if (!parsed.ok) return parsed.response
 
+  const document = withPublishedAt(parsed.document)
   const id = createReportId()
   const revocationToken = createRevocationToken()
-  await env.REPORTS.put(reportKey(id), JSON.stringify(parsed.document), {
+  await env.REPORTS.put(reportKey(id), JSON.stringify(document), {
     httpMetadata: { contentType: 'application/json' },
     customMetadata: { revocation: await hashToken(revocationToken) },
   })
@@ -109,13 +110,23 @@ async function updateReport(id: string, request: Request, env: Env): Promise<Res
   const parsed = await readReportDocument(request)
   if (!parsed.ok) return parsed.response
 
+  const document = withPublishedAt(parsed.document)
   // The ID and the revocation digest are the review's identity, so replacing the document
   // leaves both untouched: the same link and the same credential keep working.
-  await env.REPORTS.put(reportKey(id), JSON.stringify(parsed.document), {
+  await env.REPORTS.put(reportKey(id), JSON.stringify(document), {
     httpMetadata: { contentType: 'application/json' },
     customMetadata: { revocation: expected },
   })
   return json(200, { id })
+}
+
+// The service stamps its own publication time so a client cannot claim one. The explained
+// and published names stay client-supplied attribution, never verified identity.
+function withPublishedAt(document: ExplainDocument): ExplainDocument {
+  return {
+    ...document,
+    metadata: { ...document.metadata, publishedAt: new Date().toISOString() },
+  }
 }
 
 type ReportDocumentResult =

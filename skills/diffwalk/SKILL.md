@@ -39,6 +39,8 @@ explained.
    title: What this whole change set does
    summary: |
      Optional opening for someone deciding whether to read.
+   metadata:
+     explainedBy: Claude Code
    sections:
      - title: A concise change title
        steps:
@@ -53,7 +55,11 @@ explained.
    ```
 
    `title` is required: it becomes the review heading and the browser tab, which is how
-   two shared links tell themselves apart.
+   two shared links tell themselves apart. `metadata.explainedBy` optionally names the
+   person or agent who wrote the walkthrough. It is self-reported attribution, not a
+   verified identity, and it shows in local views and exports. Publishing fills
+   `metadata.publishedBy` from `git config user.name` and the service stamps
+   `metadata.publishedAt`; do not write either one in `explanations.yaml`.
 
    A step carries `text`, `changes`, or both, so prose and diffs interleave in the order
    you write them. Prefer several short steps over one long one: the point of a step is

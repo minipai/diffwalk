@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { ExplainDocument } from '../src/format'
 import { renderMarkdown } from '../src/report/markdown'
 import { fileDiffStats, parseSectionPatch } from '../src/report/patches'
-import { loadReportClient, renderReport, writeReport } from '../src/report'
+import { loadReportClient, renderHostedReport, renderReport, writeReport } from '../src/report'
 import { reportTargets } from '../src/report/targets'
 
 const directories: string[] = []
@@ -754,5 +754,94 @@ describe('writeReport', () => {
     await expect(writeReport(join(directory, 'occupied'), 'content')).rejects.toThrow()
 
     expect((await readdir(directory)).filter((name) => name.endsWith('.tmp'))).toEqual([])
+  })
+})
+
+describe('attribution metadata', () => {
+  const assets = { stylesHref: '/report.css', clientSrc: '/report-client.js' }
+
+  function attributed(metadata: ExplainDocument['metadata']): ExplainDocument {
+    return { ...document([section(simplePatch(), 'Plain')]), metadata }
+  }
+
+  test('a hosted report shows the author, publisher, and publication time', () => {
+    const html = renderHostedReport(
+      attributed({
+        explainedBy: 'Claude Code',
+        publishedBy: 'Art',
+        publishedAt: '2026-09-02T06:10:00.000Z',
+      }),
+      assets,
+    )
+
+    expect(html).toContain('<dt>Explained by</dt><dd>Claude Code</dd>')
+    expect(html).toContain('<dt>Published by</dt><dd>Art</dd>')
+    expect(html).toContain('<dt>Published at</dt><dd>2026-09-02T06:10:00.000Z</dd>')
+    expect(html).toContain('class="attribution-note"')
+    expect(html).toContain('self-reported attribution, not verified identity')
+  })
+
+  test('a local report keeps the author but never claims a publisher or time', () => {
+    const html = renderReport(
+      attributed({
+        explainedBy: 'Claude Code',
+        publishedBy: 'Art',
+        publishedAt: '2026-09-02T06:10:00.000Z',
+      }),
+      stubClient,
+    )
+
+    expect(html).toContain('<dt>Explained by</dt><dd>Claude Code</dd>')
+    expect(html).not.toContain('Published by')
+    expect(html).not.toContain('Published at')
+    expect(html).not.toContain('<dd>Art</dd>')
+  })
+
+  test('partial metadata renders only the rows that are present', () => {
+    const authorOnly = renderHostedReport(attributed({ explainedBy: 'Claude Code' }), assets)
+    expect(authorOnly).toContain('<dt>Explained by</dt>')
+    expect(authorOnly).not.toContain('<dt>Published by</dt>')
+    expect(authorOnly).not.toContain('<dt>Published at</dt>')
+
+    const timeOnly = renderHostedReport(attributed({ publishedAt: '2026-09-02T06:10:00.000Z' }), assets)
+    expect(timeOnly).toContain('<dt>Published at</dt>')
+    expect(timeOnly).not.toContain('<dt>Explained by</dt>')
+    expect(timeOnly).not.toContain('<dt>Published by</dt>')
+  })
+
+  test('absent metadata adds no attribution markup at all', () => {
+    const html = renderHostedReport(document([section(simplePatch(), 'Plain')]), assets)
+
+    expect(html).not.toContain('attribution-metadata')
+    expect(html).not.toContain('attribution-note')
+    expect(html).not.toContain('Explained by')
+  })
+
+  test('local output with only service fields renders no attribution block', () => {
+    const html = renderReport(
+      attributed({ publishedBy: 'Art', publishedAt: '2026-09-02T06:10:00.000Z' }),
+      stubClient,
+    )
+
+    expect(html).not.toContain('<dl class="attribution-metadata">')
+    expect(html).not.toContain('Published by')
+    expect(html).not.toContain('Published at')
+  })
+
+  test('attribution values are escaped', () => {
+    const html = renderHostedReport(
+      attributed({
+        explainedBy: '<script>alert(1)</script>',
+        publishedBy: '<img src=x onerror=alert(1)>',
+        publishedAt: '" onmouseover="alert(1)',
+      }),
+      assets,
+    )
+
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).not.toContain('<script>alert(1)')
+    expect(html).not.toContain('<img src=x')
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;')
+    expect(html).not.toContain('onmouseover="alert(1)"')
   })
 })

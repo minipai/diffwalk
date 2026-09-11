@@ -1053,6 +1053,46 @@ describe('JSON export', () => {
   })
 })
 
+describe('author attribution', () => {
+  async function authorWithAttribution(repo: string) {
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    await writeExplanations(
+      repo,
+      (await readExplanationsYaml(repo)).replace(
+        'title: A change set',
+        'title: A change set\nmetadata:\n  explainedBy: Claude Code',
+      ),
+    )
+  }
+
+  test('retains explainedBy in the JSON export', async () => {
+    const repo = await fixtureRepo()
+    await authorWithAttribution(repo)
+    const output = join(repo, 'out', 'document.json')
+
+    const result = await runCli(['export', 'json', '--output', output], repo)
+
+    expect(result.exitCode).toBe(0)
+    const document = JSON.parse(await readFile(output, 'utf8')) as { metadata?: unknown }
+    expect(document.metadata).toEqual({ explainedBy: 'Claude Code' })
+  })
+
+  test('displays explainedBy locally without claiming a publisher or time', async () => {
+    const repo = await fixtureRepo()
+    await authorWithAttribution(repo)
+    const output = join(repo, 'out', 'report.html')
+
+    const result = await runCli(['export', 'html', '--output', output], repo)
+
+    expect(result.exitCode).toBe(0)
+    const html = await readFile(output, 'utf8')
+    expect(html).toContain('<dt>Explained by</dt><dd>Claude Code</dd>')
+    expect(html).not.toContain('Published by')
+    expect(html).not.toContain('Published at')
+  })
+})
+
 interface FakeService {
   origin: string
   published: unknown[]
@@ -1137,6 +1177,62 @@ describe('publish', () => {
       expect(uploaded['captureId']).toBeUndefined()
       expect(uploaded['files']).toBeUndefined()
       expect(JSON.stringify(uploaded)).not.toContain('<!doctype html>')
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('adds the Git user name without rewriting the authoring files', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    await writeExplanations(
+      repo,
+      (await readExplanationsYaml(repo)).replace(
+        'title: A change set',
+        'title: A change set\nmetadata:\n  explainedBy: Claude Code',
+      ),
+    )
+    const explanationsPath = join(await currentWalkDir(repo), 'explanations.yaml')
+    const capturePath = join(await currentWalkDir(repo), 'capture.json')
+    const explanationsBefore = await readFile(explanationsPath, 'utf8')
+    const captureBefore = await readFile(capturePath, 'utf8')
+    const service = startFakeService()
+
+    try {
+      const result = await runCli(['publish', '--service', service.origin], repo)
+
+      expect(result.exitCode).toBe(0)
+      const uploaded = service.published[0] as { metadata?: Record<string, string> }
+      expect(uploaded.metadata).toEqual({ explainedBy: 'Claude Code', publishedBy: 'Test' })
+      expect(JSON.stringify(uploaded)).not.toContain('test@example.com')
+      expect(await readFile(explanationsPath, 'utf8')).toBe(explanationsBefore)
+      expect(await readFile(capturePath, 'utf8')).toBe(captureBefore)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('omits the publisher when Git has no user name', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    await writeExplanations(
+      repo,
+      (await readExplanationsYaml(repo)).replace(
+        'title: A change set',
+        'title: A change set\nmetadata:\n  explainedBy: Claude Code',
+      ),
+    )
+    await git(['config', 'user.name', ''], repo)
+    const service = startFakeService()
+
+    try {
+      const result = await runCli(['publish', '--service', service.origin], repo)
+
+      expect(result.exitCode).toBe(0)
+      const uploaded = service.published[0] as { metadata?: unknown }
+      expect(uploaded.metadata).toEqual({ explainedBy: 'Claude Code' })
     } finally {
       service.stop()
     }

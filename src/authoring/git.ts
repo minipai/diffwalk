@@ -202,6 +202,17 @@ export async function commitForRevision(revision: string, root = process.cwd()):
   return (await gitText(['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`], root)).trim()
 }
 
+// Reflects whatever Git would stamp on the next commit. A missing or empty name is the
+// only reason to omit it, so every other failure also means "unavailable".
+export async function gitUserName(root = process.cwd()): Promise<string | undefined> {
+  try {
+    const name = (await gitText(['config', 'user.name'], root)).trim()
+    return name === '' ? undefined : name
+  } catch {
+    return undefined
+  }
+}
+
 async function workingTreeFile(path: string, root: string): Promise<string> {
   const absolutePath = resolve(root, path)
   const pathWithinRoot = relative(root, absolutePath)
