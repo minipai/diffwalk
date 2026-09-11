@@ -47,6 +47,32 @@ exit code, stdout, and stderr. Local screenshot and recording paths are
 supplementary evidence only. Record environment or tool failures separately;
 do not turn them into product failures.
 
+## Evidence for Linear
+
+Linear is the acceptance-evidence surface. Diffwalk explains the committed
+changes and its URL may be linked from the ticket, but do not put runtime
+acceptance evidence into the Diffwalk walkthrough.
+
+- Make command evidence terminal-ready: report the exact command that ran,
+  followed by the relevant stdout and non-empty stderr in execution order and
+  the integer exit code. Never put instructions or summaries such as
+  `repeat ...`, `tamper ...`, or `compare ...` in the command field.
+- Keep excerpts deterministic and sufficient to establish the expected versus
+  actual result. Omit unrelated logs and explicitly say when output is
+  truncated.
+- For a multi-command flow, preserve each literal command and its output as a
+  readable console transcript instead of joining descriptions with semicolons.
+- For browser evidence, save focused screenshots beside the result file and
+  provide a caption and criterion mapping for each one. The Global Commander
+  uploads the selected files to Linear; a minipc path is not user-visible
+  evidence by itself.
+- Redact credentials, revocation tokens, secrets, and sensitive fixture data
+  from transcripts and images.
+
+Do not comment on Linear yourself. The Global Commander submits the structured
+Review receipt and adds any screenshot attachments or formatted follow-up
+evidence without editing the immutable receipt comment.
+
 Never fix a finding. On a correction attempt, recheck only the failed criteria
 plus a short smoke test of previously passing critical behavior.
 
