@@ -25,6 +25,7 @@ describe('walk paths', () => {
       explanations: join('.diffwalk', '20260831T063842Z-a7c9e4f2', 'explanations.yaml'),
       html: join('.diffwalk', '20260831T063842Z-a7c9e4f2', 'diffwalk.html'),
       json: join('.diffwalk', '20260831T063842Z-a7c9e4f2', 'diffwalk.json'),
+      published: join('.diffwalk', '20260831T063842Z-a7c9e4f2', 'published.json'),
     })
   })
 

@@ -84,7 +84,11 @@ exact corresponding diffs in a deliberate order.
   needs. Each review mints a revocation token returned once and kept only as a SHA-256
   digest, so a lost token means the review stays published. The publish response carries
   no URL; the CLI builds the link from the service origin it dialed, because deriving it
-  in the Worker would trust the request's `Host` header.
+  in the Worker would trust the request's `Host` header. The CLI retains the review's ID,
+  URL, service, and revocation token in the walk's `published.json`, and `diffwalk publish
+  --update` authenticates with that token to `PUT /api/reports/:id`. The Worker replaces
+  the stored document while keeping the ID, the link, and the revocation digest, so the
+  reader's URL and the author's credential both keep working.
 
 ## Source map
 
@@ -99,6 +103,8 @@ exact corresponding diffs in a deliberate order.
 - `src/authoring/input.ts`: shared capture and explanations path resolution, schemas,
   validation, and persistence.
 - `src/authoring/walk.ts`: timestamped walk IDs, per-walk paths, and the current-walk pointer.
+- `src/authoring/published.ts`: the locally retained published review (ID, URL, service,
+  and revocation token), written by `publish` and read by `publish --update`.
 - `src/cli.ts`: executable entry point for `inspect`, `changes`, `change`, `file`,
   `check`, `view`, `export`, `publish`, and `unpublish`.
 - `src/report/view.ts`: loopback-only report preview server and default-browser launch.
@@ -109,7 +115,7 @@ exact corresponding diffs in a deliberate order.
 - `src/report/shell.ts`: the one report shell, embedded-data escaping, and shell styles,
   rendered with inlined assets for the offline file or linked assets for the hosted page.
 - `src/publish.ts`: review service origin checks, publish credential lookup, and the
-  publish and unpublish requests.
+  publish, update, and unpublish requests.
 - `src/report/client.ts`: browser entry that mounts a `FileDiff` per file and switches
   unified/split through `setOptions`.
 - `test/*.test.ts`: focused tests for schemas, capture identity, strict YAML parsing,
@@ -132,5 +138,6 @@ exact corresponding diffs in a deliberate order.
   WAF managed rules, and rate limits.
 - `worker/index.test.ts`: Worker route behavior against a stub bucket, covering
   authentication, validation, size limits, revocation, and error states.
-- `test/publish.test.ts`: CLI publish and unpublish behavior against a stubbed fetch.
+- `test/publish.test.ts`: CLI publish, update, and unpublish behavior against a stubbed fetch.
+- `test/published.test.ts`: retaining and reading the locally stored published review.
 - `skills/diffwalk/SKILL.md`: teaches agents the authoring workflow and invariants.

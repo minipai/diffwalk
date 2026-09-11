@@ -87,10 +87,11 @@ function createCli(): Command {
 
   cli
     .command('publish')
-    .description('Publish a hosted review')
+    .description('Publish a hosted review, or replace its content with --update')
     .option('--input <path>', 'Use an explicit capture path')
     .option('--explanations <path>', 'Use an explicit explanations path')
     .option('--service <url>', 'Use an explicit review service origin')
+    .option('--update', 'Replace the content behind the retained review link')
     .action(withOptions(publishOptionsSchema, publishCommand))
 
   cli

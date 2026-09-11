@@ -961,6 +961,7 @@ describe('JSON export', () => {
 interface FakeService {
   origin: string
   published: unknown[]
+  updated: { id: string; token: string; body: unknown }[]
   revoked: { id: string; token: string }[]
   stop: () => void
 }
@@ -970,6 +971,7 @@ const revocationToken = 'end-to-end-revocation-token'
 
 function startFakeService(): FakeService {
   const published: unknown[] = []
+  const updated: { id: string; token: string; body: unknown }[] = []
   const revoked: { id: string; token: string }[] = []
   const server = Bun.serve({
     port: 0,
@@ -982,15 +984,26 @@ function startFakeService(): FakeService {
         return Response.json({ id: reportId, revocationToken }, { status: 201 })
       }
 
-      const revoke = /^\/api\/reports\/(.+)$/.exec(url.pathname)
-      if (request.method === 'DELETE' && revoke) {
+      const report = /^\/api\/reports\/(.+)$/.exec(url.pathname)
+      if (request.method === 'PUT' && report) {
+        if (credential !== revocationToken) {
+          return Response.json(
+            { error: 'That credential does not update this report' },
+            { status: 403 },
+          )
+        }
+        updated.push({ id: report[1]!, token: credential, body: await request.json() })
+        return Response.json({ id: report[1]! }, { status: 200 })
+      }
+
+      if (request.method === 'DELETE' && report) {
         if (credential !== revocationToken) {
           return Response.json(
             { error: 'That credential does not revoke this report' },
             { status: 403 },
           )
         }
-        revoked.push({ id: revoke[1]!, token: credential })
+        revoked.push({ id: report[1]!, token: credential })
         return new Response(null, { status: 204 })
       }
 
@@ -1001,6 +1014,7 @@ function startFakeService(): FakeService {
   return {
     origin: `http://127.0.0.1:${server.port}`,
     published,
+    updated,
     revoked,
     stop: () => server.stop(true),
   }
@@ -1057,6 +1071,103 @@ describe('publish', () => {
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain('over HTTPS')
+  })
+
+  test('publish --update replaces the retained link content and keeps its ID', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      const first = await runCli(['publish', '--service', service.origin], repo)
+      expect(first.exitCode).toBe(0)
+      expect(first.stdout).toContain(`${service.origin}/r/${reportId}`)
+
+      await writeExplanations(
+        repo,
+        (await readExplanationsYaml(repo)).replace('title: A change set', 'title: Updated change'),
+      )
+
+      const update = await runCli(['publish', '--update'], repo)
+
+      expect(update.exitCode).toBe(0)
+      expect(update.stdout).toContain(`${service.origin}/r/${reportId}`)
+      expect(update.stdout).toContain(reportId)
+      expect(service.published).toHaveLength(1)
+      expect(service.updated).toHaveLength(1)
+      expect(service.updated[0]!.id).toBe(reportId)
+      expect(service.updated[0]!.token).toBe(revocationToken)
+      expect((service.updated[0]!.body as { title: string }).title).toBe('Updated change')
+
+      const retainedPath = join(await currentWalkDir(repo), 'published.json')
+      const retainedBefore = await readFile(retainedPath, 'utf8')
+      const again = await runCli(['publish', '--update'], repo)
+      expect(again.exitCode).toBe(0)
+      expect(service.updated).toHaveLength(2)
+      expect(await readFile(retainedPath, 'utf8')).toBe(retainedBefore)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('publish --update without a retained review asks for a first publish', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+
+    const result = await runCli(['publish', '--update'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('diffwalk publish')
+  })
+
+  test('publish --update refuses a service other than the retained host', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+
+      const result = await runCli(
+        ['publish', '--update', '--service', 'https://other.example.test'],
+        repo,
+      )
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain(service.origin)
+      expect(service.updated).toHaveLength(0)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('publish --update surfaces a rejected credential', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+      const retainedPath = join(await currentWalkDir(repo), 'published.json')
+      const retained = JSON.parse(await readFile(retainedPath, 'utf8')) as {
+        revocationToken: string
+      }
+      retained.revocationToken = 'stale-token'
+      await writeFile(retainedPath, `${JSON.stringify(retained, null, 2)}\n`)
+
+      const result = await runCli(['publish', '--update'], repo)
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('Could not update the review')
+      expect(result.stderr).toContain('403')
+      expect(service.updated).toHaveLength(0)
+    } finally {
+      service.stop()
+    }
   })
 })
 

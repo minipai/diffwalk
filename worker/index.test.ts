@@ -113,6 +113,16 @@ function revokeRequest(id: string, token: string): Request {
   })
 }
 
+function updateRequest(id: string, token: string | null, body: unknown): Request {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (token !== null) headers['authorization'] = `Bearer ${token}`
+  return new Request(`https://reports.example/api/reports/${id}`, {
+    method: 'PUT',
+    headers,
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  })
+}
+
 describe('publishing', () => {
   test('an anonymous document returns an unguessable ID and stores only the document', async () => {
     const { response, id, revocationToken } = await publish()
@@ -363,6 +373,108 @@ describe('revoking a report', () => {
     expect(wrong.status).toBe(403)
 
     expect(bucket.objects.size).toBe(1)
+  })
+})
+
+describe('updating a report', () => {
+  test('replaces the content behind the same ID and keeps the link working', async () => {
+    const { id, revocationToken } = await publish(document(['Original']))
+
+    const response = await worker.fetch(
+      updateRequest(id, revocationToken, document(['Revised', 'Another section'])),
+      env,
+    )
+
+    expect(response.status).toBe(200)
+    expect([...bucket.objects.keys()]).toEqual([`reports/${id}.json`])
+    expect(JSON.parse(bucket.objects.get(`reports/${id}.json`)!.body)).toEqual(
+      document(['Revised', 'Another section']),
+    )
+
+    const html = await (await worker.fetch(read(id), env)).text()
+    expect(html).toContain('Revised')
+    expect(html).not.toContain('Original')
+  })
+
+  test('the revocation token still removes the updated report', async () => {
+    const { id, revocationToken } = await publish()
+    await worker.fetch(updateRequest(id, revocationToken, document(['Revised'])), env)
+
+    const wrong = await worker.fetch(updateRequest(id, 'not-the-token', document(['Again'])), env)
+    expect(wrong.status).toBe(403)
+
+    const revoked = await worker.fetch(revokeRequest(id, revocationToken), env)
+
+    expect(revoked.status).toBe(204)
+    expect(bucket.objects.size).toBe(0)
+  })
+
+  test('a missing, wrong, crossed, or unknown credential leaves the report unchanged', async () => {
+    const { id, revocationToken } = await publish(document(['Original']))
+    const before = bucket.objects.get(`reports/${id}.json`)!.body
+    const other = await publish()
+
+    const noToken = await worker.fetch(updateRequest(id, null, document(['Revised'])), env)
+    expect(noToken.status).toBe(401)
+
+    const wrong = await worker.fetch(updateRequest(id, 'wrong-token', document(['Revised'])), env)
+    expect(wrong.status).toBe(403)
+
+    const crossed = await worker.fetch(
+      updateRequest(other.id, revocationToken, document(['Revised'])),
+      env,
+    )
+    expect(crossed.status).toBe(403)
+
+    const unknown = await worker.fetch(
+      updateRequest('AAAAAAAAAAAAAAAAAAAAAA', revocationToken, document(['Revised'])),
+      env,
+    )
+    expect(unknown.status).toBe(404)
+
+    expect(bucket.objects.get(`reports/${id}.json`)!.body).toBe(before)
+  })
+
+  test('an invalid document is refused without replacing the stored report', async () => {
+    const { id, revocationToken } = await publish(document(['Original']))
+    const before = bucket.objects.get(`reports/${id}.json`)!.body
+
+    const wrongShape = await worker.fetch(
+      updateRequest(id, revocationToken, { formatVersion: 2 }),
+      env,
+    )
+    expect(wrongShape.status).toBe(400)
+
+    const invalidJson = await worker.fetch(updateRequest(id, revocationToken, '{not json'), env)
+    expect(invalidJson.status).toBe(400)
+
+    const wrongType = await worker.fetch(
+      new Request(`https://reports.example/api/reports/${id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'text/plain', authorization: `Bearer ${revocationToken}` },
+        body: 'nope',
+      }),
+      env,
+    )
+    expect(wrongType.status).toBe(415)
+
+    const oversized = document(['Original'])
+    oversized.sections[0]!.steps[0]!.text = 'x'.repeat(1024 * 1024 + 1)
+    const tooLarge = await worker.fetch(updateRequest(id, revocationToken, oversized), env)
+    expect(tooLarge.status).toBe(413)
+
+    expect(bucket.objects.get(`reports/${id}.json`)!.body).toBe(before)
+  })
+
+  test('the endpoint accepts GET, PUT, and DELETE', async () => {
+    const { id } = await publish()
+    const response = await worker.fetch(
+      new Request(`https://reports.example/api/reports/${id}`, { method: 'PATCH' }),
+      env,
+    )
+
+    expect(response.status).toBe(405)
+    expect(response.headers.get('allow')).toBe('GET, PUT, DELETE')
   })
 })
 
