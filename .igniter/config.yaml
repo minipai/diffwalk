@@ -19,7 +19,7 @@ states:
   backlog: Backlog
   todo: Todo
   build: Build
-  review: Review
+  review: Acceptance
   deliver: Deliver
   done: Done
 
