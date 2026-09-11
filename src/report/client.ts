@@ -346,6 +346,61 @@ function wireLayout(mounted: MountedDiff[]) {
   })
 }
 
+// The global control is one toggle: it folds every section while any is open and
+// unfolds them once they are all closed. It only touches `open` on existing section
+// folds, so the report data is untouched and a single section still toggles natively.
+function sectionFolds(): HTMLDetailsElement[] {
+  return [...document.querySelectorAll<HTMLDetailsElement>('details.section-fold')]
+}
+
+// The focused child of a fold that just closed is no longer rendered, but browsers can
+// leave focus on it. Only the fold's own summary row stays visible.
+function hiddenByClosedFold(element: Element): boolean {
+  for (let node: Element | null = element; node; node = node.parentElement) {
+    if (!node.matches('details:not([open])')) continue
+    const summary = node.querySelector(':scope > summary')
+    // A closed details hides its content but not its own summary row, so keep
+    // walking: an outer closed details can still hide that summary.
+    if (summary && (summary === element || summary.contains(element))) continue
+    return true
+  }
+  return false
+}
+
+function wireGlobalFolds() {
+  const button = document.querySelector<HTMLButtonElement>('[data-fold-all]')
+  if (!button) return
+  const label = button.querySelector<HTMLElement>('[data-fold-all-label]')
+  const folds = sectionFolds()
+  if (folds.length === 0) return
+
+  const allFolded = () => folds.every((fold) => !fold.open)
+  const sync = () => {
+    const folded = allFolded()
+    if (label) label.textContent = folded ? 'Unfold all' : 'Fold all'
+    button.setAttribute(
+      'aria-label',
+      folded ? 'Unfold all review sections' : 'Fold all review sections',
+    )
+  }
+
+  button.addEventListener('click', () => {
+    // Read focus before closing: a browser blurs a descendant the moment its
+    // ancestor details closes, so afterwards activeElement may already be body.
+    const active = document.activeElement
+    const unfold = allFolded()
+    for (const fold of folds) fold.open = unfold
+    if (active instanceof HTMLElement && hiddenByClosedFold(active)) {
+      const section = active.closest('details.section-fold')
+      const summary = section?.querySelector<HTMLElement>(':scope > summary')
+      ;(summary ?? button).focus({ preventScroll: true })
+    }
+    sync()
+  })
+  for (const fold of folds) fold.addEventListener('toggle', sync)
+  sync()
+}
+
 function prepareForPrint() {
   window.addEventListener('beforeprint', () => {
     for (const details of document.querySelectorAll<HTMLDetailsElement>('details')) {
@@ -372,6 +427,7 @@ export function mountReport(
   void mountedDiffs.initialRender.then(finishInitialRender)
   const { mounted } = mountedDiffs
   wireLayout(mounted)
+  wireGlobalFolds()
   prepareForPrint()
 }
 

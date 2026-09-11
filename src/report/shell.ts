@@ -50,13 +50,15 @@ function renderReportBody(
     <label><input type="radio" name="layout" value="unified" ${layout === 'unified' ? 'checked' : ''}> Unified</label>
     <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
   </form>`
+  const foldAll = `<button type="button" class="fold-all" data-fold-all aria-label="Fold all review sections"><span data-fold-all-label>Fold all</span></button>`
+  const readingControls = `<div class="review-controls">${layoutForm}${foldAll}</div>`
   const reviewMap = renderReviewMap(
     document.sections.map((section, index) => ({
       title: section.title,
       fragment: targets[index]!.fragment,
     })),
     { sections: sections.length, files },
-    layoutForm,
+    readingControls,
   )
   const summary =
     document.summary.trim() === ''
@@ -205,7 +207,7 @@ ${steps.join('\n')}
 function renderReviewMap(
   sections: { title: string; fragment: string }[],
   counts: { sections: number; files: number },
-  layoutForm: string,
+  controls: string,
 ): string {
   const links = sections
     .map(
@@ -214,7 +216,7 @@ function renderReviewMap(
     )
     .join('\n')
   return `<nav class="review-map" aria-label="Review map">
-  ${layoutForm}
+  ${controls}
   <p class="review-map-label">Review map</p>
   <ol class="review-map-list">
 ${links}
@@ -308,9 +310,14 @@ body {
 .source-metadata dt { color: #7e8d82; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
 .source-metadata dd { margin: 0; min-width: 0; overflow: hidden; color: #4e5d53; text-overflow: ellipsis; white-space: nowrap; }
 .source-metadata code { color: #263a2d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.review-controls {
+  display: grid;
+  gap: 8px;
+  margin: 0 10px 20px;
+}
 .layout-form {
   display: flex;
-  margin: 0 10px 20px;
+  margin: 0;
   border: 1px solid #bdcbbf;
   border-radius: 7px;
   overflow: hidden;
@@ -319,6 +326,18 @@ body {
 .layout-form label { flex: 1; padding: 5px 10px; color: #607066; font-size: 13px; text-align: center; cursor: pointer; }
 .layout-form input { display: none; }
 .layout-form label:has(input:checked) { color: #ffffff; background: var(--accent); font-weight: 600; }
+.fold-all {
+  padding: 6px 10px;
+  border: 1px solid #bdcbbf;
+  border-radius: 7px;
+  color: #53665a;
+  background: #f3f7f3;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fold-all:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
+.fold-all:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .review-workspace {
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
@@ -529,13 +548,16 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
     backdrop-filter: blur(12px);
   }
   .review-map-label, .review-map-list, .review-map-counts { display: none; }
-  .layout-form { max-width: 260px; margin: 0 0 0 auto; }
+  .review-controls { display: flex; gap: 6px; justify-content: flex-end; margin: 0; }
+  .layout-form { flex: 1 1 auto; max-width: 220px; margin: 0 0 0 auto; }
+  .fold-all { flex: none; padding: 5px 9px; font-size: 12px; }
   main { padding: 14px 10px 50px; }
 }
 @media (max-width: 520px) {
   .report-cover { padding: 18px 16px 8px; }
   .report-cover h1 { font-size: 21px; }
   .layout-form label { padding: 4px 7px; font-size: 11px; }
+  .fold-all { padding: 4px 7px; font-size: 11px; }
   .section-fold > summary { font-size: 14px; }
 }
 @media print {
