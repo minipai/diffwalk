@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
-import { lstat, readFile } from 'node:fs/promises'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { lstat, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import type { DraftFile } from '../format'
 
 export interface GitCapture {
@@ -191,7 +192,18 @@ async function workingTreeFile(path: string, root: string): Promise<string> {
   if (file.isSymbolicLink()) throw new Error(`Symbolic links are not supported: ${path}`)
   if (!file.isFile()) throw new Error(`Non-file Git paths are not supported: ${path}`)
 
-  return decodeText(await readFile(absolutePath), path)
+  const scratch = await mkdtemp(join(tmpdir(), 'diffwalk-working-tree-'))
+  try {
+    const objectDirectory = join(scratch, 'objects')
+    await mkdir(objectDirectory)
+    const environment = { GIT_OBJECT_DIRECTORY: objectDirectory }
+    const object = (
+      await gitText(['hash-object', '-w', `--path=${path}`, '--', absolutePath], root, environment)
+    ).trim()
+    return decodeText(await gitBytes(['cat-file', 'blob', object], root, environment), path)
+  } finally {
+    await rm(scratch, { recursive: true, force: true })
+  }
 }
 
 async function workingTreeMode(path: string, root: string): Promise<DraftFile['newMode']> {
@@ -203,14 +215,23 @@ async function gitFile(commit: string, path: string, root: string): Promise<stri
   return decodeText(await gitBytes(['show', `${commit}:${path}`], root), path)
 }
 
-async function gitText(args: string[], cwd: string): Promise<string> {
-  return decodeText(await gitBytes(args, cwd), `git ${args[0]}`)
+async function gitText(
+  args: string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv = {},
+): Promise<string> {
+  return decodeText(await gitBytes(args, cwd, environment), `git ${args[0]}`)
 }
 
-async function gitBytes(args: string[], cwd: string): Promise<Uint8Array> {
+async function gitBytes(
+  args: string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv = {},
+): Promise<Uint8Array> {
   const child = spawn('git', args, {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, ...environment },
   })
   const stdout: Uint8Array[] = []
   let stderr = ''
