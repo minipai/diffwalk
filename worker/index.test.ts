@@ -133,8 +133,39 @@ describe('publishing', () => {
 
     expect([...bucket.objects.keys()]).toEqual([`reports/${id}.json`])
     const stored = JSON.parse(bucket.objects.get(`reports/${id}.json`)!.body) as ExplainDocument
-    expect(stored).toEqual(document())
+    const { metadata, ...rest } = stored
+    expect(rest).toEqual(document())
+    expect(metadata?.publishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
     expect(JSON.stringify(stored)).not.toContain('captureId')
+  })
+
+  test('stamps its own ISO 8601 publishedAt and overrides any claimed value', async () => {
+    const claimed: ExplainDocument = {
+      ...document(),
+      metadata: { publishedAt: '1999-01-01T00:00:00.000Z' },
+    }
+
+    const { id } = await publish(claimed)
+    const stored = JSON.parse(bucket.objects.get(`reports/${id}.json`)!.body) as ExplainDocument
+
+    expect(stored.metadata?.publishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    expect(stored.metadata?.publishedAt).not.toBe('1999-01-01T00:00:00.000Z')
+  })
+
+  test('accepts explainedBy and publishedBy attribution but rejects unknown metadata keys', async () => {
+    const attributed: ExplainDocument = {
+      ...document(),
+      metadata: { explainedBy: 'Claude Code', publishedBy: 'Art' },
+    }
+
+    const accepted = await publish(attributed)
+    expect(accepted.response.status).toBe(201)
+    const stored = JSON.parse(bucket.objects.get(`reports/${accepted.id}.json`)!.body) as ExplainDocument
+    expect(stored.metadata).toMatchObject({ explainedBy: 'Claude Code', publishedBy: 'Art' })
+
+    const invalid = structuredClone(attributed) as Record<string, any>
+    invalid.metadata.extra = 'nope'
+    expect((await worker.fetch(publishRequest(invalid), env)).status).toBe(400)
   })
 
   test('the revocation token is stored only as a digest', async () => {
@@ -173,7 +204,7 @@ describe('publishing', () => {
 
     const accepted = await publish(withChanges)
     expect(accepted.response.status).toBe(201)
-    expect(JSON.parse(bucket.objects.get(`reports/${accepted.id}.json`)!.body)).toEqual(withChanges)
+    expect(JSON.parse(bucket.objects.get(`reports/${accepted.id}.json`)!.body)).toMatchObject(withChanges)
 
     const invalid = structuredClone(withChanges) as Record<string, any>
     invalid.sections[0].steps[0].changes = []
@@ -186,7 +217,7 @@ describe('publishing', () => {
 
     const accepted = await publish(legacy)
     expect(accepted.response.status).toBe(201)
-    expect(JSON.parse(bucket.objects.get(`reports/${accepted.id}.json`)!.body)).toEqual(legacy)
+    expect(JSON.parse(bucket.objects.get(`reports/${accepted.id}.json`)!.body)).toMatchObject(legacy)
   })
 
   test('an oversized body is rejected without creating an object', async () => {
@@ -266,6 +297,19 @@ describe('reading a report', () => {
     expect(html).not.toContain('<style>')
   })
 
+  test('renders the author, publisher, and service-stamped time as attribution', async () => {
+    const { id } = await publish({
+      ...document(['Attributed']),
+      metadata: { explainedBy: 'Claude Code', publishedBy: 'Art' },
+    })
+    const html = await (await worker.fetch(read(id), env)).text()
+
+    expect(html).toContain('<dt>Explained by</dt><dd>Claude Code</dd>')
+    expect(html).toContain('<dt>Published by</dt><dd>Art</dd>')
+    expect(html).toContain('<dt>Published at</dt><dd>')
+    expect(html).toContain('self-reported attribution, not verified identity')
+  })
+
   test('the report origin sets a policy that forbids inline scripts and outbound connections', async () => {
     const { id } = await publish()
     const response = await worker.fetch(read(id), env)
@@ -329,7 +373,7 @@ describe('reading a report', () => {
     )
 
     expect(response.status).toBe(200)
-    expect((await response.json()) as ExplainDocument).toEqual(document())
+    expect((await response.json()) as ExplainDocument).toMatchObject(document())
   })
 })
 
@@ -387,13 +431,43 @@ describe('updating a report', () => {
 
     expect(response.status).toBe(200)
     expect([...bucket.objects.keys()]).toEqual([`reports/${id}.json`])
-    expect(JSON.parse(bucket.objects.get(`reports/${id}.json`)!.body)).toEqual(
+    expect(JSON.parse(bucket.objects.get(`reports/${id}.json`)!.body)).toMatchObject(
       document(['Revised', 'Another section']),
     )
 
     const html = await (await worker.fetch(read(id), env)).text()
     expect(html).toContain('Revised')
     expect(html).not.toContain('Original')
+  })
+
+  test('re-stamps publishedAt on update and keeps the client attribution', async () => {
+    const { id, revocationToken } = await publish(document(['Original']))
+
+    const response = await worker.fetch(
+      updateRequest(id, revocationToken, {
+        ...document(['Revised']),
+        metadata: {
+          explainedBy: 'Claude Code',
+          publishedBy: 'Art',
+          publishedAt: '1999-01-01T00:00:00.000Z',
+        },
+      }),
+      env,
+    )
+
+    expect(response.status).toBe(200)
+    const stored = JSON.parse(bucket.objects.get(`reports/${id}.json`)!.body) as ExplainDocument
+    expect(stored.metadata?.explainedBy).toBe('Claude Code')
+    expect(stored.metadata?.publishedBy).toBe('Art')
+    expect(stored.metadata?.publishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    expect(stored.metadata?.publishedAt).not.toBe('1999-01-01T00:00:00.000Z')
+
+    const invalid = structuredClone({
+      ...document(['Refused']),
+      metadata: { explainedBy: 'Claude Code' },
+    }) as Record<string, any>
+    invalid.metadata.extra = 'nope'
+    expect((await worker.fetch(updateRequest(id, revocationToken, invalid), env)).status).toBe(400)
   })
 
   test('the revocation token still removes the updated report', async () => {

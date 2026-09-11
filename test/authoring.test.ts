@@ -452,6 +452,20 @@ describe('explain materialization', () => {
     expect(duplicatedChangeIds(allChangesAssigned(capture))).toEqual([])
   })
 
+  test('preserves the authored explainedBy attribution and omits absent metadata', () => {
+    const capture = captureWithTwoChanges()
+
+    const attributed = {
+      ...allChangesAssigned(capture),
+      metadata: { explainedBy: 'Claude Code' },
+    }
+    expect(materializeExplainDocument(capture, attributed).metadata).toEqual({
+      explainedBy: 'Claude Code',
+    })
+
+    expect(materializeExplainDocument(capture, allChangesAssigned(capture)).metadata).toBeUndefined()
+  })
+
   test('rejects a change block that no longer matches captured content', () => {
     const capture = captureWithTwoChanges()
     const explanations = allChangesAssigned(capture)

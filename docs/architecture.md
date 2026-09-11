@@ -11,7 +11,8 @@ exact corresponding diffs in a deliberate order.
   never contains authored sections. `explanations.yaml` is the only author-edited file: it
   names the `captureId` it was authored against, carries a required `title` and an
   optional `summary`, and holds ordered sections of `{ title, steps[] }` where a step is
-  `{ text?, changes[]? }` with at least one of the two.
+  `{ text?, changes[]? }` with at least one of the two. An optional
+  `metadata.explainedBy` records who wrote the walkthrough.
 - `captureId` identifies captured code contents, not the capture timestamp. It is a
   SHA-256 over a canonical serialization of the captured file snapshots (status, path,
   old path, old/new modes, old content, new content), so identical captures pair
@@ -37,6 +38,13 @@ exact corresponding diffs in a deliberate order.
   builds an argument, so `check` names the repeats and still succeeds; only an
   unexplained change fails. Completeness is the guarantee a reader relies on, not
   uniqueness.
+- A version 1 ExplainDocument may carry an optional, strict top-level `metadata` object.
+  `explainedBy` is authored in `explanations.yaml` and survives materialization;
+  `publishedBy` is added at publish time from `git config user.name`; `publishedAt` is
+  stamped by the review service when it accepts the upload. The names are self-reported
+  attribution, not verified identity. Local views and exports show only `explainedBy`;
+  the hosted report shows all three. Absent values are omitted and never block viewing,
+  exporting, or publishing, and unknown metadata keys are rejected.
 - `check`, `view`, `export`, and `publish` read capture plus explanations, validate the
   pairing and assignments, and materialize exact patches in memory. No `document.json`
   is required at runtime; `export json` writes the portable ExplainDocument (format
@@ -93,7 +101,7 @@ exact corresponding diffs in a deliberate order.
 ## Source map
 
 - `src/format.ts`: Zod schemas for the machine-owned capture and the author-edited
-  explanations, plus the version 1 ExplainDocument.
+  explanations, plus the version 1 ExplainDocument and its optional attribution metadata.
 - `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked UTF-8
   files from an immutable Git base commit, optionally reading the index or limiting the
   capture to named paths.
@@ -115,8 +123,9 @@ exact corresponding diffs in a deliberate order.
 - `src/report.ts`: atomic report writes and client-bundle loading.
 - `src/report/shell.ts`: the one report shell, embedded-data escaping, and shell styles,
   rendered with inlined assets for the offline file or linked assets for the hosted page.
-- `src/publish.ts`: review service origin checks, publish credential lookup, and the
-  publish, update, and unpublish requests.
+- `src/publish.ts`: review service origin checks, publish credential lookup, the
+  publish, update, and unpublish requests, and adding the Git user name as
+  `metadata.publishedBy` without mutating the authoring files.
 - `src/report/client.ts`: browser entry that mounts a `FileDiff` per file and switches
   unified/split through `setOptions`.
 - `test/*.test.ts`: focused tests for schemas, capture identity, strict YAML parsing,
@@ -127,8 +136,9 @@ exact corresponding diffs in a deliberate order.
   inspect file behavior (including preservation of authored explanations and stale
   pairing), inspection commands, validation, HTML/JSON exports, and rejection of the
   removed `build`, `report`, and draft workflows.
-- `worker/index.ts`: the Cloudflare Worker that stores, renders, and revokes reports and
-  sets the review origin's Content Security Policy, security headers, and caching.
+- `worker/index.ts`: the Cloudflare Worker that stores, renders, and revokes reports,
+  stamps `metadata.publishedAt` when it accepts an upload, and sets the review origin's
+  Content Security Policy, security headers, and caching.
 - `worker/reports.ts`: report IDs, revocation tokens, token digests, constant-time secret
   comparison, and the bounded document size.
 - `worker/build-assets.ts`: writes the shared stylesheet and client bundle into the Static

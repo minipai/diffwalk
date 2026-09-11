@@ -98,6 +98,9 @@ summary: |
   Optional opening, shown above the review map.
 
   <figure><svg viewBox="0 0 640 180" role="img">...</svg></figure>
+
+metadata:
+  explainedBy: Claude Code
 sections:
   - title: Keep the greeting concise
     steps:
@@ -114,7 +117,8 @@ sections:
 ```
 
 `title` is required: it becomes the review heading and the browser tab, which is how two
-shared links tell themselves apart. `summary` is optional.
+shared links tell themselves apart. `summary` is optional. `metadata.explainedBy` is an
+optional, self-reported author shown in every local view and export.
 
 Every change must be shown at least once. Showing one in more than one step is allowed
 and reported, because re-showing a hunk is how an argument gets built. Validate, then
@@ -216,6 +220,12 @@ Publishing is anonymous and unlisted, not private. The link cannot be guessed, b
 anyone holding it can read the review without signing in. Treat the link as the secret,
 and do not publish a document you would not hand to everyone who might receive it.
 
+A hosted report can show attribution: `explainedBy` from the explanations, `publishedBy`
+from `git config user.name` when one is configured, and a `publishedAt` timestamp the
+service stamps when it accepts the upload. These names are self-reported attribution, not
+verified identity. Publishing adds them to the uploaded document only; it never rewrites
+`explanations.yaml` or `capture.json`, and a missing value is simply omitted.
+
 Publishing retains the review ID, link, service, and revocation token in the current
 walk's `published.json` (or next to an explicit `--input`/`--explanations` pair). The
 file stays local and is never uploaded, but it holds the revocation token, so keep it
@@ -261,8 +271,10 @@ the CLI at another deployment with `--service` or `DIFFWALK_SERVICE_URL`.
 
 `diffwalk export json` materializes capture plus explanations and writes `diffwalk.json`
 inside the current walk by default. It is the portable ExplainDocument JSON (format
-version 1) for integrations or archiving. View, HTML export, and publish do not require
-it; they validate and materialize directly from the authoring files.
+version 1) for integrations or archiving. An authored `metadata.explainedBy` is
+preserved; a local export never claims a publisher or publication time. View, HTML
+export, and publish do not require it; they validate and materialize directly from the
+authoring files.
 
 ## Captured data sensitivity
 

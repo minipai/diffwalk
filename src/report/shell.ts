@@ -37,6 +37,7 @@ interface ReportBody {
 function renderReportBody(
   document: ExplainDocument,
   options: ReportOptions = {},
+  hosted = false,
 ): ReportBody {
   const title = options.title ?? document.title
   const layout = options.layout ?? 'split'
@@ -64,9 +65,9 @@ function renderReportBody(
     document.summary.trim() === ''
       ? ''
       : `\n  <div class="cover-summary prose">${renderMarkdown(document.summary)}</div>`
-  // Title, provenance, and summary are one opening, so they share one card. The layout
-  // toggle lives in the sticky map instead: it is a reading control, wanted while
-  // scrolled into a diff, and the card scrolls away.
+  // Title, provenance, attribution, and summary are one opening, so they share one card.
+  // The layout toggle lives in the sticky map instead: it is a reading control, wanted
+  // while scrolled into a diff, and the card scrolls away.
   const markup = `<div class="review-workspace">
 ${reviewMap}
 <main>
@@ -74,7 +75,7 @@ ${reviewMap}
   <h1>${escapeHtml(title)}</h1>
   <dl class="source-metadata">
     ${renderSourceMetadata(document.source)}
-  </dl>${summary}
+  </dl>${renderAttribution(document.metadata, hosted)}${summary}
 </section>
 ${sections.map((section) => section.markup).join('\n')}
 </main>
@@ -108,7 +109,7 @@ export function renderHostedReport(
   options: ReportOptions = {},
 ): string {
   return renderShell(
-    renderReportBody(document, options),
+    renderReportBody(document, options, true),
     `<link rel="stylesheet" href="${escapeHtml(assets.stylesHref)}">`,
     `<script src="${escapeHtml(assets.clientSrc)}" defer></script>`,
   )
@@ -240,6 +241,28 @@ function sectionIndex(index: number): string {
   return String(index + 1).padStart(2, '0')
 }
 
+function renderAttribution(metadata: ExplainDocument['metadata'], hosted: boolean): string {
+  if (metadata === undefined) return ''
+  const rows: string[] = []
+  if (metadata.explainedBy !== undefined) {
+    rows.push(`<dt>Explained by</dt><dd>${escapeHtml(metadata.explainedBy)}</dd>`)
+  }
+  // A local preview or export must not claim a publisher or a publication time, even if
+  // a document somehow carries one. Only the review service renders those rows.
+  if (hosted && metadata.publishedBy !== undefined) {
+    rows.push(`<dt>Published by</dt><dd>${escapeHtml(metadata.publishedBy)}</dd>`)
+  }
+  if (hosted && metadata.publishedAt !== undefined) {
+    rows.push(`<dt>Published at</dt><dd>${escapeHtml(metadata.publishedAt)}</dd>`)
+  }
+  if (rows.length === 0) return ''
+  return `
+  <dl class="attribution-metadata">
+    ${rows.join('\n    ')}
+  </dl>
+  <p class="attribution-note">The names are self-reported attribution, not verified identity.</p>`
+}
+
 function renderSourceMetadata(source: ExplainDocument['source']): string {
   if (source.kind === 'commit-diff') {
     return `<dt>From</dt><dd>${renderEndpoint(source.from)}</dd>
@@ -314,6 +337,17 @@ body {
 .source-metadata dt { color: #7e8d82; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
 .source-metadata dd { margin: 0; min-width: 0; overflow: hidden; color: #4e5d53; text-overflow: ellipsis; white-space: nowrap; }
 .source-metadata code { color: #263a2d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.attribution-metadata {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0 8px;
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.attribution-metadata dt { color: #7e8d82; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
+.attribution-metadata dd { min-width: 0; margin: 0; color: #4e5d53; overflow-wrap: anywhere; }
+.attribution-note { margin: 6px 0 0; color: #7e8d82; font-size: 11px; font-style: italic; }
 .review-controls {
   display: grid;
   gap: 8px;

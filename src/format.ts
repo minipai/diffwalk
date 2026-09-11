@@ -111,11 +111,18 @@ export const explanationSectionSchema = z
   })
   .strict()
 
+export const explanationMetadataSchema = z
+  .object({
+    explainedBy: z.string().min(1).optional(),
+  })
+  .strict()
+
 export const explanationsSchema = z
   .object({
     captureId: z.string().min(1),
     title: z.string().min(1),
     summary: z.preprocess((value) => value ?? '', z.string()).default(''),
+    metadata: explanationMetadataSchema.optional(),
     sections: z.array(explanationSectionSchema),
   })
   .strict()
@@ -134,12 +141,21 @@ export const documentStepSchema = z
     message: 'captured change IDs require a diff',
   })
 
+export const documentMetadataSchema = z
+  .object({
+    explainedBy: z.string().min(1).optional(),
+    publishedBy: z.string().min(1).optional(),
+    publishedAt: z.string().datetime().optional(),
+  })
+  .strict()
+
 export const explainDocumentSchema = z
   .object({
     formatVersion: z.literal(1),
     title: z.string().min(1),
     summary: z.string().default(''),
     source: documentSourceSchema,
+    metadata: documentMetadataSchema.optional(),
     sections: z
       .array(
         z

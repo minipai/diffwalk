@@ -6,6 +6,16 @@ export interface PublishedReport {
   revocationToken: string
 }
 
+// The publisher is self-reported attribution, not a credential. It is read at publish time
+// so the authoring files never carry it, and omitted cleanly when Git has no user name.
+export function withPublisher(
+  document: ExplainDocument,
+  publishedBy: string | undefined,
+): ExplainDocument {
+  if (publishedBy === undefined) return document
+  return { ...document, metadata: { ...document.metadata, publishedBy } }
+}
+
 const defaultService = 'https://review.diffwalk.dev'
 
 export function reportService(explicit: string | undefined): string {
