@@ -360,6 +360,21 @@ describe('renderReport shell', () => {
     expect(html).toContain('value="unified" checked')
   })
 
+  test('the review map carries one global fold control after the layout toggle', () => {
+    const html = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
+    const form = html.indexOf('<form class="layout-form"')
+    const fold = html.indexOf('data-fold-all')
+    const label = html.indexOf('<p class="review-map-label">')
+
+    expect(fold).toBeGreaterThan(form)
+    expect(label).toBeGreaterThan(fold)
+    expect(html).toContain('<button type="button" class="fold-all" data-fold-all')
+    expect(html).toContain('aria-label="Fold all review sections"')
+    expect(html).toContain('data-fold-all-label>Fold all<')
+    expect(html).toContain('.review-controls {')
+    expect(html).toContain('.fold-all:focus-visible')
+  })
+
   test('review map lists every section in document order with zero-padded anchors and counts', () => {
     const value = document([
       section(simplePatch('a', 'b'), 'First section'),

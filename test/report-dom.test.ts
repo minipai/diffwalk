@@ -908,4 +908,180 @@ describe('report browser client', () => {
     },
     120000,
   )
+
+  test(
+    'one control folds and unfolds every section and individual folds still work',
+    async () => {
+      const value = document([
+        section(simplePatch('one', 'one!'), 'First section'),
+        section(simplePatch('two', 'two!'), 'Second section'),
+      ])
+      const dom = loadReport(renderReport(value, clientBundle), {
+        url: 'https://reports.example/r/report-id',
+      })
+      const doc = dom.document as unknown as Document
+      const dataScript = doc.querySelector<HTMLScriptElement>('#diffwalk-report-data')!
+      const dataBefore = dataScript.textContent
+      runReportClient()
+
+      const button = doc.querySelector<HTMLButtonElement>('[data-fold-all]')!
+      const folds = [...doc.querySelectorAll<HTMLDetailsElement>('details.section-fold')]
+      const label = () => button.querySelector('[data-fold-all-label]')?.textContent
+      const aria = () => button.getAttribute('aria-label')
+      expect(folds).toHaveLength(2)
+      expect(folds.every((fold) => fold.open)).toBe(true)
+      expect(label()).toBe('Fold all')
+      expect(aria()).toBe('Fold all review sections')
+
+      button.click()
+      expect(folds.every((fold) => !fold.open)).toBe(true)
+      expect(label()).toBe('Unfold all')
+      expect(aria()).toBe('Unfold all review sections')
+
+      button.click()
+      expect(folds.every((fold) => fold.open)).toBe(true)
+      expect(label()).toBe('Fold all')
+      expect(aria()).toBe('Fold all review sections')
+
+      expect(dataScript.textContent).toBe(dataBefore)
+
+      // Individual sections still fold and unfold natively after the global action,
+      // and their toggle drives the global label.
+      folds[0]!
+        .querySelector('summary')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event)
+      expect(folds[0]!.open).toBe(false)
+      expect(folds[1]!.open).toBe(true)
+      expect(label()).toBe('Fold all')
+
+      folds[1]!
+        .querySelector('summary')!
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event)
+      expect(folds.every((fold) => !fold.open)).toBe(true)
+      expect(label()).toBe('Unfold all')
+
+      button.click()
+      expect(folds.every((fold) => fold.open)).toBe(true)
+      expect(label()).toBe('Fold all')
+    },
+    120000,
+  )
+
+  test(
+    'folding all moves focus from a hidden child to the visible section row',
+    async () => {
+      const value = document([
+        {
+          title: 'First section',
+          steps: [{ text: 'First.', diff: simplePatch('one', 'one!'), changes: ['change-001'] }],
+        },
+        {
+          title: 'Second section',
+          steps: [{ text: 'Second.', diff: simplePatch('two', 'two!'), changes: ['change-002'] }],
+        },
+      ])
+      const dom = loadReport(renderReport(value, clientBundle), {
+        url: 'https://reports.example/r/report-id',
+      })
+      const doc = dom.document as unknown as Document
+      runReportClient()
+
+      const firstSection = doc.querySelector<HTMLElement>('.section')!
+      const focused = firstSection.querySelector<HTMLButtonElement>(
+        '.step [data-copy-fragment]',
+      )!
+      focused.focus()
+      expect(doc.activeElement).toBe(focused)
+
+      // Real browsers blur a focused descendant the moment its ancestor details
+      // closes; happy-dom keeps focus, so simulate that blur to prove the global
+      // action still restores focus on the surviving section row.
+      for (const fold of doc.querySelectorAll<HTMLDetailsElement>('details.section-fold')) {
+        fold.addEventListener('toggle', () => {
+          if (!fold.open && fold.contains(focused)) focused.blur()
+        })
+      }
+
+      doc.querySelector<HTMLButtonElement>('[data-fold-all]')!.click()
+
+      const folds = [...doc.querySelectorAll<HTMLDetailsElement>('details.section-fold')]
+      expect(folds.every((fold) => !fold.open)).toBe(true)
+      expect(firstSection.querySelector('details')?.open).toBe(false)
+      const summary = firstSection.querySelector<HTMLElement>('.section-fold > summary')!
+      expect(doc.activeElement).toBe(summary)
+    },
+    120000,
+  )
+
+  test(
+    'folding all moves focus off a closed nested file row onto the section row',
+    async () => {
+      const value = document([
+        section(simplePatch('one', 'one!'), 'First section'),
+        section(simplePatch('two', 'two!'), 'Second section'),
+      ])
+      const dom = loadReport(renderReport(value, clientBundle), {
+        url: 'https://reports.example/r/report-id',
+      })
+      const doc = dom.document as unknown as Document
+      runReportClient()
+
+      const firstSection = doc.querySelector<HTMLElement>('.section')!
+      const file = firstSection.querySelector<HTMLDetailsElement>('details.file')!
+      file.open = false
+      const fileSummary = file.querySelector<HTMLElement>(':scope > summary')!
+      fileSummary.focus()
+      expect(doc.activeElement).toBe(fileSummary)
+
+      for (const fold of doc.querySelectorAll<HTMLDetailsElement>('details.section-fold')) {
+        fold.addEventListener('toggle', () => {
+          if (!fold.open && fold.contains(fileSummary)) fileSummary.blur()
+        })
+      }
+
+      doc.querySelector<HTMLButtonElement>('[data-fold-all]')!.click()
+
+      const sectionSummary = firstSection.querySelector<HTMLElement>('.section-fold > summary')!
+      expect(doc.activeElement).toBe(sectionSummary)
+      expect(sectionSummary.closest('details')?.open).toBe(false)
+    },
+    120000,
+  )
+
+  test(
+    'a visible focused section row stays focused and mixed states fold then unfold',
+    async () => {
+      const value = document([
+        section(simplePatch('one', 'one!'), 'First section'),
+        section(simplePatch('two', 'two!'), 'Second section'),
+      ])
+      const dom = loadReport(renderReport(value, clientBundle), {
+        url: 'https://reports.example/r/report-id',
+      })
+      const doc = dom.document as unknown as Document
+      runReportClient()
+
+      const button = doc.querySelector<HTMLButtonElement>('[data-fold-all]')!
+      const folds = [...doc.querySelectorAll<HTMLDetailsElement>('details.section-fold')]
+      const label = () => button.querySelector('[data-fold-all-label]')?.textContent
+
+      // A section summary is never hidden by its own fold, so focus must not move.
+      const summary = folds[0]!.querySelector<HTMLElement>(':scope > summary')!
+      summary.focus()
+      button.click()
+      expect(doc.activeElement).toBe(summary)
+
+      // Mixed state: any open section means the global control folds all.
+      folds[1]!.open = true
+      expect(label()).toBe('Fold all')
+      button.click()
+      expect(folds.every((fold) => !fold.open)).toBe(true)
+      expect(label()).toBe('Unfold all')
+
+      button.click()
+      expect(folds.every((fold) => fold.open)).toBe(true)
+      expect(label()).toBe('Fold all')
+    },
+    120000,
+  )
 })
