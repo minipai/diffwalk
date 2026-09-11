@@ -197,7 +197,7 @@ function renderSection(
 
   const markup = `<section class="section" id="${target.fragment}" data-section-index="${index}" data-target-kind="section">
   <details class="section-fold" open>
-    <summary class="section-title"><span class="section-title-text">${escapeHtml(section.title)}</span>${renderCopyLink(target.fragment, `Copy link to section ${section.title}`)}</summary>
+    <summary class="section-title"><span class="section-title-index">${sectionIndex(index)}</span><span class="section-title-text">${escapeHtml(section.title)}</span>${renderCopyLink(target.fragment, `Copy link to section ${section.title}`)}</summary>
 ${steps.join('\n')}
   </details>
 </section>`
@@ -212,7 +212,7 @@ function renderReviewMap(
   const links = sections
     .map(
       (section, index) =>
-        `<li><a href="#${section.fragment}"><span class="review-map-index">${String(index + 1).padStart(2, '0')}</span><span class="review-map-title">${escapeHtml(section.title)}</span></a></li>`,
+        `<li><a href="#${section.fragment}"><span class="review-map-index">${sectionIndex(index)}</span><span class="review-map-title">${escapeHtml(section.title)}</span></a></li>`,
     )
     .join('\n')
   return `<nav class="review-map" aria-label="Review map">
@@ -234,6 +234,10 @@ function renderCopyLink(fragment: string, label: string, text = 'Link'): string 
 
 function pluralize(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
+function sectionIndex(index: number): string {
+  return String(index + 1).padStart(2, '0')
 }
 
 function renderSourceMetadata(source: ExplainDocument['source']): string {
@@ -403,11 +407,12 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   border-bottom: 1px solid transparent;
   color: #17271c;
   background: transparent;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
   list-style: none;
   user-select: none;
 }
+.section-title-index { flex: none; color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; font-weight: 600; }
 .section-title-text { min-width: 0; flex: 1; }
 .section-fold > summary::-webkit-details-marker { display: none; }
 .section-fold > summary::before { content: "▾ "; color: var(--accent); }
@@ -416,7 +421,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 .prose { color: #3c4d41; font-size: 14px; }
 .step { scroll-margin-top: 18px; }
 .step-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; padding: 8px 12px 0; }
-.step-text { max-width: 900px; padding: 8px 20px; }
+.step-text { max-width: 900px; padding: 8px 20px; font-size: 17px; }
 .copy-link {
   padding: 3px 7px;
   border: 1px solid #c4d1c6;
@@ -558,7 +563,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .report-cover h1 { font-size: 21px; }
   .layout-form label { padding: 4px 7px; font-size: 11px; }
   .fold-all { padding: 4px 7px; font-size: 11px; }
-  .section-fold > summary { font-size: 14px; }
+  .section-fold > summary { font-size: 17px; }
 }
 @media print {
   .layout-form, .copy-link { display: none; }
