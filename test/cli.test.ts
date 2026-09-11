@@ -248,6 +248,98 @@ describe('inspect', () => {
     expect(yaml).toContain('sections: []')
   })
 
+  test('captures a one-line edit in a CRLF checkout as one change block', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await git(['config', 'core.autocrlf', 'true'], repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\r\nWorld\r\nAgain\r\n')
+    await git(['add', 'greeting.ts'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\r\nUniverse\r\nAgain\r\n')
+
+    const inspect = await runCli(['inspect'], repo)
+    expect(inspect.exitCode).toBe(0)
+
+    const changes = await runCli(['changes', '--json'], repo)
+    expect(changes.exitCode).toBe(0)
+    const data = JSON.parse(changes.stdout) as {
+      changes: { before: string; after: string; oldStart: number; newStart: number }[]
+    }
+    expect(data.changes).toHaveLength(1)
+    expect(data.changes[0]).toMatchObject({
+      before: 'World\n',
+      after: 'Universe\n',
+      oldStart: 2,
+      newStart: 2,
+    })
+
+    const capture = await readCapture(repo)
+    expect(capture.files).toEqual([
+      {
+        path: 'greeting.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'Hello\nWorld\nAgain\n',
+        newContent: 'Hello\nUniverse\nAgain\n',
+      },
+    ])
+  })
+
+  test('captures a one-line LF edit in a CRLF checkout as one change block', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await git(['config', 'core.autocrlf', 'true'], repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\r\nWorld\r\nAgain\r\n')
+    await git(['add', 'greeting.ts'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\nUniverse\nAgain\n')
+
+    const inspect = await runCli(['inspect'], repo)
+    expect(inspect.exitCode).toBe(0)
+
+    const changes = await runCli(['changes', '--json'], repo)
+    expect(changes.exitCode).toBe(0)
+    const data = JSON.parse(changes.stdout) as {
+      changes: { before: string; after: string; oldStart: number; newStart: number }[]
+    }
+    expect(data.changes).toHaveLength(1)
+    expect(data.changes[0]).toMatchObject({
+      before: 'World\n',
+      after: 'Universe\n',
+      oldStart: 2,
+      newStart: 2,
+    })
+  })
+
+  test('captures a one-line edit in an LF checkout as one change block', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\nWorld\nAgain\n')
+    await git(['add', 'greeting.ts'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\nUniverse\nAgain\n')
+
+    const inspect = await runCli(['inspect'], repo)
+    expect(inspect.exitCode).toBe(0)
+
+    const changes = await runCli(['changes', '--json'], repo)
+    expect(changes.exitCode).toBe(0)
+    const data = JSON.parse(changes.stdout) as {
+      changes: { before: string; after: string; oldStart: number; newStart: number }[]
+    }
+    expect(data.changes).toHaveLength(1)
+    expect(data.changes[0]).toMatchObject({
+      before: 'World\n',
+      after: 'Universe\n',
+      oldStart: 2,
+      newStart: 2,
+    })
+  })
+
   test('never overwrites an authored explanations.yaml', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)

@@ -218,6 +218,221 @@ describe('captureGitChanges', () => {
     )
   })
 
+  test('normalizes a CRLF checkout to the committed content', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'core.autocrlf', 'true'], directory)
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\r\nWorld\r\nAgain\r\n')
+    await git(['add', 'greeting.ts'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\r\nUniverse\r\nAgain\r\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'greeting.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'Hello\nWorld\nAgain\n',
+        newContent: 'Hello\nUniverse\nAgain\n',
+      },
+    ])
+  })
+
+  test('normalizes a CRLF checkout that was edited with LF endings', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'core.autocrlf', 'true'], directory)
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\r\nWorld\r\nAgain\r\n')
+    await git(['add', 'greeting.ts'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\nUniverse\nAgain\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'greeting.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'Hello\nWorld\nAgain\n',
+        newContent: 'Hello\nUniverse\nAgain\n',
+      },
+    ])
+  })
+
+  test('captures renames, deletions, and untracked files in a CRLF checkout', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'core.autocrlf', 'true'], directory)
+    await writeFile(join(directory, 'old-name.ts'), 'one\r\ntwo\r\n')
+    await writeFile(join(directory, 'deleted.ts'), 'gone\r\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await rename(join(directory, 'old-name.ts'), join(directory, 'new-name.ts'))
+    await unlink(join(directory, 'deleted.ts'))
+    await git(['add', '-A'], directory)
+    await writeFile(join(directory, 'untracked.ts'), 'fresh\r\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'deleted.ts',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: 'gone\n',
+        newContent: '',
+      },
+      {
+        path: 'new-name.ts',
+        oldPath: 'old-name.ts',
+        status: 'renamed',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'one\ntwo\n',
+        newContent: 'one\ntwo\n',
+      },
+      {
+        path: 'untracked.ts',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100644',
+        oldContent: '',
+        newContent: 'fresh\n',
+      },
+    ])
+  })
+
+  test('keeps LF working-tree content unchanged when there is no conversion', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\nWorld\nAgain\n')
+    await git(['add', 'greeting.ts'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\nUniverse\nAgain\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'greeting.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'Hello\nWorld\nAgain\n',
+        newContent: 'Hello\nUniverse\nAgain\n',
+      },
+    ])
+  })
+
+  test('normalizes a CRLF checkout when an executable bit is added', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'core.autocrlf', 'true'], directory)
+    await writeFile(join(directory, 'script.sh'), '#!/bin/sh\r\necho old\r\n')
+    await git(['add', 'script.sh'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'script.sh'), '#!/bin/sh\r\necho new\r\n')
+    await chmod(join(directory, 'script.sh'), 0o755)
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'script.sh',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100755',
+        oldContent: '#!/bin/sh\necho old\n',
+        newContent: '#!/bin/sh\necho new\n',
+      },
+    ])
+  })
+
+  test('reads CRLF content from the working tree when the index differs', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'core.autocrlf', 'true'], directory)
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\r\nWorld\r\n')
+    await git(['add', 'greeting.ts'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\r\nStaged\r\n')
+    await git(['add', 'greeting.ts'], directory)
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\r\nWorktree\r\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'greeting.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'Hello\nWorld\n',
+        newContent: 'Hello\nWorktree\n',
+      },
+    ])
+  })
+
+  test('normalizes an added CRLF file staged in the index', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'core.autocrlf', 'true'], directory)
+    await writeFile(join(directory, 'tracked.ts'), 'tracked\n')
+    await git(['add', 'tracked.ts'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'added.ts'), 'first\r\nsecond\r\n')
+    await git(['add', 'added.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'added.ts',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100644',
+        oldContent: '',
+        newContent: 'first\nsecond\n',
+      },
+    ])
+  })
+
+  test('rejects a binary edit in a CRLF checkout', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'core.autocrlf', 'true'], directory)
+    await writeFile(join(directory, 'data.dat'), 'text\r\n')
+    await git(['add', 'data.dat'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'data.dat'), new Uint8Array([0, 1, 2]))
+
+    await expect(captureGitChanges('HEAD', directory)).rejects.toThrow(
+      'Binary files are not supported: data.dat',
+    )
+  })
+
   test('captures committed revisions without reading the working tree', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
     directories.push(directory)
