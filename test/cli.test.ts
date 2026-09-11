@@ -569,6 +569,101 @@ describe('inspect', () => {
     expect(result.stderr).toContain('root commit')
     expect(result.stderr).toContain('--from')
   })
+
+  test('--staged captures the index instead of the working tree and skips untracked files', async () => {
+    const repo = await fixtureRepo()
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\nIndexed\n')
+    await git(['add', 'greeting.ts'], repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\nWorking tree\n')
+
+    const result = await runCli(['inspect', '--staged'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files).toEqual([
+      {
+        path: 'greeting.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'Hello\nWorld\n',
+        newContent: 'Hello\nIndexed\n',
+      },
+    ])
+  })
+
+  test('limits a working-tree capture to the paths after --', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['inspect', '--', 'untracked.ts'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files.map((file) => file.path)).toEqual(['untracked.ts'])
+    expect(capture.changes.length).toBeGreaterThan(0)
+  })
+
+  test('captures multiple paths and treats an option-like path literally', async () => {
+    const repo = await fixtureRepo()
+
+    const multiple = await runCli(['inspect', '--', 'greeting.ts', 'untracked.ts'], repo)
+    expect(multiple.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual([
+      'greeting.ts',
+      'untracked.ts',
+    ])
+
+    await writeFile(join(repo, '--staged'), 'content\n')
+    const optionLike = await runCli(['inspect', '--', '--staged'], repo)
+    expect(optionLike.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['--staged'])
+  })
+
+  test('combines --staged with explicit paths', async () => {
+    const repo = await fixtureRepo()
+    await git(['add', 'greeting.ts'], repo)
+
+    const result = await runCli(['inspect', '--staged', '--', 'greeting.ts'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files.map((file) => file.path)).toEqual(['greeting.ts'])
+  })
+
+  test('a path-limited capture keeps a deterministic identity and passes check', async () => {
+    const repo = await fixtureRepo()
+
+    const first = await runCli(['inspect', '--', 'greeting.ts'], repo)
+    expect(first.exitCode).toBe(0)
+    const walk = await readCurrentWalkId(repo)
+    const capture = await readCapture(repo)
+
+    const second = await runCli(['inspect', '--', 'greeting.ts'], repo)
+    expect(second.exitCode).toBe(0)
+    expect(second.stdout).toContain('Working tree is unchanged; kept current walk')
+    expect(await readCurrentWalkId(repo)).toBe(walk)
+
+    await authorEveryChange(repo)
+    const check = await runCli(['check'], repo)
+    expect(check.exitCode).toBe(0)
+    expect(check.stdout).toContain(`capture ${capture.captureId.slice(0, 12)}`)
+  })
+
+  test('rejects path limiting and --staged outside working-tree captures', async () => {
+    const repo = await committedFixtureRepo()
+
+    for (const args of [
+      ['inspect', 'HEAD', '--', 'committed.ts'],
+      ['inspect', '--from', 'HEAD^1', '--to', 'HEAD', '--', 'committed.ts'],
+      ['inspect', '--staged', 'HEAD'],
+      ['inspect', '--staged', '--from', 'HEAD^1', '--to', 'HEAD'],
+      ['inspect', 'HEAD', 'extra'],
+    ]) {
+      const result = await runCli(args, repo)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr.length).toBeGreaterThan(0)
+    }
+  })
 })
 
 describe('changes', () => {

@@ -52,6 +52,19 @@ The walk contains two authoring files:
 - `explanations.yaml` — a small authoring skeleton on first use. This is the
   only file you edit.
 
+To capture only part of the working tree, add `--staged` to read the index instead of the
+working tree, or list the paths after `--` to limit the capture to them:
+
+```bash
+diffwalk inspect --staged            # only changes staged in the index
+diffwalk inspect -- src/a.ts src/b.ts  # only the named paths
+diffwalk inspect --staged -- src/a.ts  # both
+```
+
+Path limiting applies only to working-tree captures; committed revisions are always
+captured whole. The capture keeps the same content-derived identity and validation
+guarantees as a full working-tree capture.
+
 `.diffwalk/current` selects the default walk for later commands. An unchanged re-inspect
 reuses it; changed contents create a new walk without deleting the earlier pair. Ignore
 the entire local workspace when it should not enter version control:

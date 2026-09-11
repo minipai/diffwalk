@@ -15,6 +15,10 @@ explained.
    - Run `diffwalk inspect` for staged, unstaged, renamed, deleted, and untracked
      working-tree changes relative to `HEAD`. Use `--base <revision>` when the user
      names a different working-tree base.
+   - Add `--staged` to capture the index instead of the working tree, or list paths
+     after `--` to limit the capture to them, for example
+     `diffwalk inspect --staged -- src/a.ts`. Path limiting applies only to
+     working-tree captures.
    - Run `diffwalk inspect <commit>` for one commit relative to its first parent. A
      root commit has no first parent, so use an explicit range instead.
    - Run `diffwalk inspect --from <revision> --to <revision>` for a committed range.
@@ -160,7 +164,7 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
 ## Commands
 
 ```bash
-diffwalk inspect [revision] [--base <revision>] [--from <revision> --to <revision>] [--output <capture-path>] [--explanations <yaml-path>]
+diffwalk inspect [revision] [--staged] [--base <revision>] [--from <revision> --to <revision>] [--output <capture-path>] [--explanations <yaml-path>] [-- <path>...]
 diffwalk changes [--json] [--input <capture-path>]
 diffwalk change <id> [--input <capture-path>]
 diffwalk file <path> (--before | --after) [--input <capture-path>]
