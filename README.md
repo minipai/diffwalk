@@ -3,35 +3,19 @@
 diffwalk turns AI-generated Git changes into ordered browser walkthroughs, with every
 explanation attached to its exact diff.
 
-The CLI supports the maintained Node.js 22 and 24 LTS releases. Development commands
-below also require Bun 1.3 or newer and pnpm.
+## Requirements
+
+- Git.
+- Node.js 22 or 24.
+- A browser with JavaScript enabled to read reviews.
 
 ## Installation
-
-Install Diffwalk globally from npm:
 
 ```bash
 npm install --global diffwalk
 ```
 
-Or run it without a global installation:
-
-```bash
-npx diffwalk inspect
-```
-
-## Development
-
-Install the dependencies, build the executable, and run the test suite:
-
-```bash
-pnpm install
-pnpm build
-pnpm test
-```
-
-Pull requests targeting `main` run `pnpm check`. Passing same-repository branches are
-rebased automatically and deleted after merge.
+Or run commands without installing globally: `npx diffwalk inspect`.
 
 ## Quick start
 
@@ -39,265 +23,218 @@ Inside the Git working tree whose changes you want to explain:
 
 ```bash
 diffwalk inspect
+diffwalk changes
 ```
 
-This captures staged, unstaged, renamed, deleted, and untracked UTF-8 files relative to
-`HEAD` and creates a current walk such as
-`.diffwalk/20260831T063842Z-a7c9e4f2/`. The name combines the capture time in ISO 8601
-basic format with the first eight characters of the content-derived `captureId`.
-The walk contains two authoring files:
+`inspect` captures staged, unstaged, and untracked UTF-8 file changes relative to
+`HEAD`. It creates a walk under `.diffwalk/` containing:
 
-- `capture.json` — machine-owned capture data (source, full file snapshots,
-  change blocks, and a `captureId`). Never edit it by hand.
-- `explanations.yaml` — a small authoring skeleton on first use. This is the
-  only file you edit.
+- `capture.json` — generated capture data. Do not edit it.
+- `explanations.yaml` — the file you edit to explain and order the changes.
 
-To capture only part of the working tree, add `--staged` to read the index instead of the
-working tree, or list the paths after `--` to limit the capture to them:
+Edit `explanations.yaml`, keeping its generated `captureId` and using the change IDs
+from `diffwalk changes`:
+
+```yaml
+captureId: <keep the generated value>
+title: Simplify greetings
+summary: Make greetings shorter and add a farewell.
+metadata:
+  explainedBy: Claude Code
+sections:
+  - title: Shorten the greeting
+    steps:
+      - text: The extra phrase is no longer needed.
+        changes:
+          - change-001
+  - title: Add a farewell
+    steps:
+      - text: Give callers a matching way to say goodbye.
+        changes:
+          - change-002
+```
+
+`title` is required; `summary` and `metadata.explainedBy` are optional. Sections and
+steps appear in the order you write them. Each step can contain `text`, `changes`, or
+both. Include every captured change at least once; repeats are allowed.
+
+Validate and preview the review:
 
 ```bash
-diffwalk inspect --staged            # only changes staged in the index
-diffwalk inspect -- src/a.ts src/b.ts  # only the named paths
-diffwalk inspect --staged -- src/a.ts  # both
+diffwalk check
+diffwalk view
 ```
 
-Path limiting applies only to working-tree captures; committed revisions are always
-captured whole. The capture keeps the same content-derived identity and validation
-guarantees as a full working-tree capture.
+`view` opens a local browser preview. Press Ctrl+C to stop its temporary server.
+To share the review, export a standalone file or publish a link:
 
-`.diffwalk/current` selects the default walk for later commands. An unchanged re-inspect
-reuses it; changed contents create a new walk without deleting the earlier pair. Ignore
-the entire local workspace when it should not enter version control:
+```bash
+diffwalk export html
+diffwalk publish
+```
+
+Add the local workspace to `.gitignore`; it contains full captured file contents and
+publication tokens:
 
 ```gitignore
 .diffwalk/
 ```
 
-To explain committed changes without checking out either revision, pass one commit or an
-explicit range:
+## Capture options
+
+Capture selected working-tree changes:
 
 ```bash
-diffwalk inspect <commit>                 # commit relative to its first parent
-diffwalk inspect --from main --to feature # any two committed revisions
+diffwalk inspect --staged             # staged changes only
+diffwalk inspect -- src/a.ts src/b.ts # selected paths
+diffwalk inspect --staged -- src/a.ts  # both
+diffwalk inspect --base main          # working tree relative to main
 ```
 
-These forms read only committed Git objects, record both the revision labels and resolved
-commit hashes in the capture source, and ignore staged, unstaged, and untracked files.
-Single-commit inspection uses first-parent semantics. A root commit cannot be inspected in
-single-commit form because it has no first parent; use a range whose starting revision is a
-committed parent when one exists.
-
-Name the change set, then order the `sections` array. Each section is a title over an
-ordered list of `steps`, and a step carries `text`, `changes`, or both, so prose and
-diffs interleave in the order you write them:
-
-```yaml
-captureId: d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4
-title: Keep the greeting concise
-summary: |
-  Optional opening, shown above the review map.
-
-  <figure><svg viewBox="0 0 640 180" role="img">...</svg></figure>
-
-metadata:
-  explainedBy: Claude Code
-sections:
-  - title: Keep the greeting concise
-    steps:
-      - text: |
-          The extra phrase is no longer needed.
-        changes:
-          - change-001
-  - title: Add a farewell
-    steps:
-      - text: Why a farewell belongs here at all.
-      - text: A small module that says goodbye.
-        changes:
-          - change-002
-```
-
-`title` is required: it becomes the review heading and the browser tab, which is how two
-shared links tell themselves apart. `summary` is optional. `metadata.explainedBy` is an
-optional, self-reported author shown in every local view and export.
-
-Every change must be shown at least once. Showing one in more than one step is allowed
-and reported, because re-showing a hunk is how an argument gets built. Validate, then
-read or share:
+Or capture committed changes without checking out either revision:
 
 ```bash
-diffwalk check
-diffwalk view
-diffwalk export html
-diffwalk publish
+diffwalk inspect <commit>                # commit relative to its first parent
+diffwalk inspect --from main --to feature # compare two committed revisions
 ```
 
-The default workflow stays terse; every command also accepts explicit overrides:
+Revision captures ignore local changes and cannot be limited by path. Single-commit
+inspection requires a parent, so it does not support root commits.
+
+`.diffwalk/current` selects the walk used by later commands. Capturing the same source
+and contents reuses it; a different capture creates a new walk and preserves previous walks.
+`captureId` ties explanations to their captured contents, so `check` catches stale
+pairings.
+
+## Inspect captured changes
+
+Read captured data with:
 
 ```bash
-diffwalk inspect --base main
-diffwalk inspect abc1234
-diffwalk inspect --from main --to feature
-diffwalk check --input path/to/capture.json --explanations path/to/explanations.yaml
-diffwalk view --input path/to/capture.json --explanations path/to/explanations.yaml
-diffwalk export html --output review.html
-diffwalk export json --output document.json
-diffwalk publish --service https://review.example
+diffwalk changes                # summary of all change blocks
+diffwalk changes --json         # IDs, paths, coordinates, before and after blocks
+diffwalk change change-001      # one block with its contents
+diffwalk file src/a.ts --before # full captured old file
+diffwalk file src/a.ts --after  # full captured new file
 ```
 
-## Inspecting what was captured
-
-Capture data is machine-owned, so read it through focused commands instead of opening
-`capture.json`:
-
-```bash
-diffwalk changes             # concise human summary of every change block
-diffwalk changes --json      # structured IDs, paths, coordinates, before, after
-diffwalk change change-001   # one captured block with its contents
-diffwalk file src/a.ts --before   # the exact captured old side of a file
-diffwalk file src/a.ts --after    # the exact captured new side
-```
-
-`changes --json` never includes full captured file contents. `change` rejects unknown
-IDs and `file` rejects unknown paths or an invalid `--before`/`--after` selection.
-
-## How the authoring files pair
-
-`capture.json` holds a `captureId` that identifies the captured code contents, not the
-capture timestamp: identical captures pair consistently, and changed contents produce a
-different identity. `explanations.yaml` names the `captureId` it was authored against.
-`diffwalk inspect` never overwrites an authored `explanations.yaml`: unchanged contents
-reuse the current walk, while changed contents create a new timestamped walk and leave
-the earlier authoring pair intact.
+`changes --json` includes change blocks, not full file snapshots.
 
 ## Validation
 
-`diffwalk check` reads capture plus explanations and rejects stale `captureId`
-pairing, malformed YAML, unknown change IDs, changes left unexplained, and any change
-block that no longer materializes to an exact patch. On success it reports section,
-step, change, and file counts, and names any change shown in more than one place.
+`diffwalk check` rejects stale capture IDs, malformed YAML, unknown change IDs,
+unexplained changes, and blocks that cannot produce an exact patch. It reports
+section, step, change, and file counts, including repeated changes.
 
-The explanations file is parsed as strict safe YAML 1.2: custom tags, duplicate keys,
-and anchors or aliases are rejected, and YAML 1.1-style coercions (`yes`, `on`) stay
-plain strings.
+Explanations use YAML 1.2. Custom tags, duplicate keys, anchors, and aliases are not
+allowed; `yes` and `on` remain strings.
 
-## Local preview
-
-`diffwalk view` materializes the review, starts a temporary loopback-only server, and
-opens it in the default browser. It writes no HTML file. The server remains available
-until you press Ctrl+C.
-
-## HTML reviews
+## Export
 
 ```bash
-diffwalk export html
+diffwalk export html                    # writes diffwalk.html in the current walk
+diffwalk export html --output review.html
+diffwalk export json --output document.json
 ```
 
-writes `diffwalk.html` inside the current walk by default. The review is one portable file: it embeds
-the document data, the Markdown-rendered explanations, the `@pierre/diffs` runtime that
-parses and renders each exact diff, and all styles. It works offline as a local file
-with JavaScript enabled and requests no CDN or external assets.
+HTML reviews are standalone files that work offline with JavaScript enabled. JSON
+export produces an ExplainDocument (format version 1) for integrations or archiving;
+its default filename is `diffwalk.json` in the current walk.
 
-`text` and `summary` are rendered as Markdown, and inline HTML passes through, so a
-diagram can sit exactly where the argument needs it. That makes authored text trusted
-input: build reviews only from documents you or a trusted agent authored.
-
-Embed every image as an inline `<svg>` or a `data:` URI. A remote image URL renders in
-the local file but is blocked on the hosted review, so the same document would look
-different through a link.
+`text` and `summary` support Markdown and inline HTML. Use inline SVG or `data:` URIs
+for images; hosted reviews block remote image URLs. Authored HTML is not sanitized,
+so only preview, export, or publish explanations you or a trusted agent authored.
 
 ## Hosted reviews
 
 ```bash
-diffwalk publish
+diffwalk publish          # creates an unlisted link
+diffwalk publish --update # replaces the review at the existing link
 ```
 
-materializes the same document `export html` renders, uploads it to the review service, and
-prints an unlisted link. The service stores only that JSON and renders it with its own
-shared renderer, so no HTML file is uploaded and every review reuses one cached copy of
-the renderer instead of carrying its own.
+Publishing uploads the review document, which the service renders. Links are
+anonymous and unlisted: anyone with the link can read the review without signing in.
+Check captured code and explanations for sensitive data before sharing.
 
-Publishing is anonymous and unlisted, not private. The link cannot be guessed, but
-anyone holding it can read the review without signing in. Treat the link as the secret,
-and do not publish a document you would not hand to everyone who might receive it.
+Attribution can include:
 
-A hosted report can show attribution: `explainedBy` from the explanations, `publishedBy`
-from `git config user.name` when one is configured, and a `publishedAt` timestamp the
-service stamps when it accepts the upload. These names are self-reported attribution, not
-verified identity. Publishing adds them to the uploaded document only; it never rewrites
-`explanations.yaml` or `capture.json`, and a missing value is simply omitted.
+- `explainedBy` — from `metadata.explainedBy` in the explanations.
+- `publishedBy` — from `git config user.name`, if configured.
+- `publishedAt` — set by the service when it accepts the upload.
 
-Publishing retains the review ID, link, service, and revocation token in the current
-walk's `published.json` (or next to an explicit `--input`/`--explanations` pair). The
-file stays local and is never uploaded, but it holds the revocation token, so keep it
-out of version control.
+Names are self-reported, not verified identities. Publishing adds attribution to the
+uploaded document without changing the authoring files. Local previews and exports
+include only `explainedBy`.
 
-```bash
-diffwalk publish --update
-```
-
-replaces the content behind that same link. The review keeps its ID, URL, and revocation
-token, so a reader who already has the link sees the revised review instead of a new one.
+The local `published.json` stores the review ID, URL, service, and revocation token.
+Keep it out of version control. Use the token to remove a review:
 
 ```bash
 diffwalk unpublish <review-id> --token <revocation-token>
 ```
 
-A revocation token removes exactly one review and cannot touch another. Losing both the
-token and the local `published.json` means the review stays published. To keep the old
-link while revising, edit `explanations.yaml` and run `diffwalk publish --update`; to
-publish a revision at a separate link instead, run `diffwalk publish` again.
+Losing the token and `published.json` prevents revocation. Running `diffwalk publish`
+again creates a new link and replaces the saved publication details. Save the old
+token first if you need to revoke the earlier review later.
 
-The trusted-text boundary from `diffwalk export html` still applies: authored markup is served
-verbatim, so publish only what you or a trusted agent authored. The review origin is kept
-powerless on purpose — no cookies, no inline scripts, no outbound connections — but that
-contains bad markup rather than sanitizing it.
+Use `--service https://review.example` or `DIFFWALK_SERVICE_URL` to publish to another
+service.
 
-### Running the service
+## Explicit input files
 
-The service is one Cloudflare Worker with a private R2 bucket and its shared assets:
+Commands default to the current walk. To use another authoring pair:
 
 ```bash
-export CLOUDFLARE_API_TOKEN=...   # zone WAF and ruleset edit
-export CLOUDFLARE_ZONE_ID=...
-./infra/setup.sh                  # bucket, r2.dev off, WAF, rate limits
-pnpm deploy
+diffwalk check --input path/to/capture.json --explanations path/to/explanations.yaml
 ```
 
-`wrangler.jsonc` owns the Worker, its Static Assets, and its R2 binding. `infra/setup.sh`
-owns the zone-level settings wrangler does not manage, and re-running it is a no-op. Point
-the CLI at another deployment with `--service` or `DIFFWALK_SERVICE_URL`.
-
-## JSON export
-
-`diffwalk export json` materializes capture plus explanations and writes `diffwalk.json`
-inside the current walk by default. It is the portable ExplainDocument JSON (format
-version 1) for integrations or archiving. An authored `metadata.explainedBy` is
-preserved; a local export never claims a publisher or publication time. View, HTML
-export, and publish do not require it; they validate and materialize directly from the
-authoring files.
-
-## Captured data sensitivity
-
-`capture.json` contains full file contents from your working tree and base commit.
-Treat it as potentially sensitive and do not publish or send it without authorization.
+`view`, `export`, and `publish` accept the same options. With explicit input files,
+`publish` saves `published.json` alongside the authoring pair.
 
 ## Agent skill
 
-The repository includes an Agent Skill that teaches compatible coding agents how to
-capture changes, author ordered sections, and validate with Diffwalk without
-hand-writing patches. Its source lives at `skills/diffwalk/SKILL.md`.
-
-Install the skill for your project:
+Install the included skill to teach a compatible coding agent how to capture,
+explain, and validate changes:
 
 ```bash
 npx skills add minipai/diffwalk --skill diffwalk
 ```
 
-Add `-g` to install globally instead. From a local checkout of this repository:
+Add `-g` to install globally. From a local checkout, use:
 
 ```bash
 npx skills add ./skills/diffwalk --skill diffwalk
 ```
 
-Skill installation is separate from installing the CLI with `npm install --global diffwalk`.
-Start a new agent session after installing the skill so it can be discovered.
+The skill is separate from the CLI installation. Start a new agent session after
+installing it. Source: [skills/diffwalk/SKILL.md](skills/diffwalk/SKILL.md).
+
+## Development
+
+Additional dependencies:
+
+- Bun 1.3 or newer.
+- pnpm 11.20.0, as pinned in `package.json`.
+
+```bash
+pnpm install
+pnpm build
+pnpm check
+```
+
+`pnpm check` runs type checks and tests. Pull requests targeting `main` run the same
+check in CI.
+
+### Running the review service
+
+The service uses a Cloudflare Worker, a private R2 bucket, and shared static assets.
+
+```bash
+export CLOUDFLARE_API_TOKEN=...   # zone WAF and ruleset edit
+export CLOUDFLARE_ZONE_ID=...
+./infra/setup.sh                 # bucket, r2.dev off, WAF, rate limits
+pnpm deploy
+```
+
+`wrangler.jsonc` configures the Worker, static assets, and R2 binding.
+`infra/setup.sh` configures zone-level settings and is safe to rerun.
