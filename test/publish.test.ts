@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { ExplainDocument } from '../src/format'
-import { publishDocument, reportService, unpublishDocument } from '../src/publish'
+import { publishDocument, reportService, unpublishDocument, updateDocument } from '../src/publish'
 
 const originalFetch = globalThis.fetch
 const originalEnvironment = { ...process.env }
@@ -135,6 +135,38 @@ describe('publishDocument', () => {
     const published = await publishDocument(document, 'https://s.test')
 
     expect(published.url).toBe('https://s.test/r/abc')
+  })
+})
+
+describe('updateDocument', () => {
+  test('replaces the document at the same review with the revocation token', async () => {
+    const calls = stubFetch(() => json(200, { id: 'abc' }))
+
+    await updateDocument(document, 'abc', 'https://s.test', 'revoke-me')
+
+    expect(calls).toHaveLength(1)
+    const [call] = calls
+    expect(call!.url).toBe('https://s.test/api/reports/abc')
+    expect(call!.method).toBe('PUT')
+    expect(call!.headers.get('authorization')).toBe('Bearer revoke-me')
+    expect(call!.headers.get('content-type')).toBe('application/json')
+    expect(JSON.parse(call!.body)).toEqual(document)
+  })
+
+  test('a report ID is escaped rather than pasted into the path', async () => {
+    const calls = stubFetch(() => new Response(null, { status: 200 }))
+
+    await updateDocument(document, '../secret', 'https://s.test', 'revoke-me')
+
+    expect(calls[0]!.url).toBe('https://s.test/api/reports/..%2Fsecret')
+  })
+
+  test('a refused update surfaces the reason', async () => {
+    stubFetch(() => json(403, { error: 'That credential does not update this report' }))
+
+    await expect(updateDocument(document, 'abc', 'https://s.test', 'wrong')).rejects.toThrow(
+      'Could not update the review: 403 That credential does not update this report',
+    )
   })
 })
 

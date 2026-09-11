@@ -10,6 +10,7 @@ export interface WalkPaths {
   explanations: string
   html: string
   json: string
+  published: string
 }
 
 const walkIdPattern = /^\d{8}T\d{6}Z-[0-9a-f]{8}$/
@@ -29,6 +30,7 @@ export function walkPaths(id: string, root = diffwalkDirectory): WalkPaths {
     explanations: join(directory, 'explanations.yaml'),
     html: join(directory, 'diffwalk.html'),
     json: join(directory, 'diffwalk.json'),
+    published: join(directory, 'published.json'),
   }
 }
 

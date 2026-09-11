@@ -23,6 +23,7 @@ export interface AuthoringFiles {
   explanations: string
   html: string
   json: string
+  published: string
 }
 
 export interface MaterializedAuthoring {
@@ -65,6 +66,7 @@ export function authoringFiles(
     explanations: explanations ?? join(directory, 'explanations.yaml'),
     html: join(directory, 'diffwalk.html'),
     json: join(directory, 'diffwalk.json'),
+    published: join(directory, 'published.json'),
   }
 }
 

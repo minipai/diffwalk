@@ -1,4 +1,4 @@
-import { explainDocumentSchema } from '../src/format'
+import { explainDocumentSchema, type ExplainDocument } from '../src/format'
 import { faviconSvg } from '../src/report/favicon'
 import { renderHostedReport } from '../src/report/shell'
 import {
@@ -32,8 +32,8 @@ const contentSecurityPolicy = [
   "object-src 'none'",
 ].join('; ')
 
-// A published report never changes, but revoking one has to take effect quickly, so reads are
-// cached briefly rather than declared immutable.
+// A published report rarely changes, but replacing or revoking one has to take effect
+// quickly, so reads are cached briefly rather than declared immutable.
 const reportCacheControl = 'public, max-age=60'
 
 export default {
@@ -60,8 +60,9 @@ export default {
     if (apiReport) {
       const id = apiReport[1]!
       if (request.method === 'GET') return readReport(id, env)
+      if (request.method === 'PUT') return updateReport(id, request, env)
       if (request.method === 'DELETE') return revokeReport(id, request, env)
-      return methodNotAllowed('GET, DELETE')
+      return methodNotAllowed('GET, PUT, DELETE')
     }
 
     const reader = /^\/r\/([^/]+)$/.exec(path)
@@ -77,31 +78,12 @@ export default {
 }
 
 async function publishReport(request: Request, env: Env): Promise<Response> {
-  const contentType = request.headers.get('content-type') ?? ''
-  if (!contentType.toLowerCase().startsWith('application/json')) {
-    return problem(415, 'Send the document as application/json')
-  }
-
-  const body = await readBoundedBody(request)
-  if (body === null) {
-    return problem(413, `A report document may not exceed ${maxDocumentBytes} bytes`)
-  }
-
-  let value: unknown
-  try {
-    value = JSON.parse(body)
-  } catch {
-    return problem(400, 'The request body is not valid JSON')
-  }
-
-  const parsed = explainDocumentSchema.safeParse(value)
-  if (!parsed.success) {
-    return problem(400, 'The request body is not a version 1 ExplainDocument')
-  }
+  const parsed = await readReportDocument(request)
+  if (!parsed.ok) return parsed.response
 
   const id = createReportId()
   const revocationToken = createRevocationToken()
-  await env.REPORTS.put(reportKey(id), JSON.stringify(parsed.data), {
+  await env.REPORTS.put(reportKey(id), JSON.stringify(parsed.document), {
     httpMetadata: { contentType: 'application/json' },
     customMetadata: { revocation: await hashToken(revocationToken) },
   })
@@ -109,6 +91,66 @@ async function publishReport(request: Request, env: Env): Promise<Response> {
   // The link is built by the caller, which knows the origin it reached. Deriving it here would
   // mean trusting the request's Host header.
   return json(201, { id, revocationToken })
+}
+
+async function updateReport(id: string, request: Request, env: Env): Promise<Response> {
+  if (!isReportId(id)) return problem(404, 'No such report')
+  const token = bearerToken(request)
+  if (token === null) return problem(401, 'A revocation credential is required')
+
+  const object = await env.REPORTS.head(reportKey(id))
+  if (!object) return problem(404, 'No such report')
+
+  const expected = object.customMetadata?.['revocation']
+  if (expected === undefined || !secretsMatch(await hashToken(token), expected)) {
+    return problem(403, 'That credential does not update this report')
+  }
+
+  const parsed = await readReportDocument(request)
+  if (!parsed.ok) return parsed.response
+
+  // The ID and the revocation digest are the review's identity, so replacing the document
+  // leaves both untouched: the same link and the same credential keep working.
+  await env.REPORTS.put(reportKey(id), JSON.stringify(parsed.document), {
+    httpMetadata: { contentType: 'application/json' },
+    customMetadata: { revocation: expected },
+  })
+  return json(200, { id })
+}
+
+type ReportDocumentResult =
+  | { ok: true; document: ExplainDocument }
+  | { ok: false; response: Response }
+
+async function readReportDocument(request: Request): Promise<ReportDocumentResult> {
+  const contentType = request.headers.get('content-type') ?? ''
+  if (!contentType.toLowerCase().startsWith('application/json')) {
+    return { ok: false, response: problem(415, 'Send the document as application/json') }
+  }
+
+  const body = await readBoundedBody(request)
+  if (body === null) {
+    return {
+      ok: false,
+      response: problem(413, `A report document may not exceed ${maxDocumentBytes} bytes`),
+    }
+  }
+
+  let value: unknown
+  try {
+    value = JSON.parse(body)
+  } catch {
+    return { ok: false, response: problem(400, 'The request body is not valid JSON') }
+  }
+
+  const parsed = explainDocumentSchema.safeParse(value)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      response: problem(400, 'The request body is not a version 1 ExplainDocument'),
+    }
+  }
+  return { ok: true, document: parsed.data }
 }
 
 async function readReport(id: string, env: Env): Promise<Response> {

@@ -1,6 +1,6 @@
 ---
 name: diffwalk
-description: Use the Diffwalk CLI to capture working-tree or committed Git changes, author ordered explanations in the current `.diffwalk` walk, validate with check, and preview, export, publish, or remove the review. Trigger when the user asks to use Diffwalk or create/update its capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
+description: Use the Diffwalk CLI to capture working-tree or committed Git changes, author ordered explanations in the current `.diffwalk` walk, validate with check, and preview, export, publish, update, or remove the review. Trigger when the user asks to use Diffwalk or create/update its capture or explanations; do not trigger for ordinary code review that does not involve Diffwalk.
 ---
 
 # Diffwalk
@@ -68,8 +68,11 @@ explained.
 9. Run `diffwalk publish` only when the user explicitly asks to publish. Publishing is
    an external write: it uploads the materialized review to an unlisted, publicly
    readable URL. Return both the URL and the one-time revocation token without placing
-   the token in the review. Use `diffwalk unpublish <id> --token <token>` only when the
-   user asks to remove that exact review.
+   the token in the review. When the user has already published this walk and asks to
+   revise it, edit `explanations.yaml` and run `diffwalk publish --update`: it authenticates
+   with the retained revocation token, replaces the content behind the same link, and keeps
+   the review ID. Use `diffwalk unpublish <id> --token <token>` only when the user asks to
+   remove that exact review.
 
 ## Writing explanations
 
@@ -164,7 +167,7 @@ diffwalk file <path> (--before | --after) [--input <capture-path>]
 diffwalk check [--input <capture-path>] [--explanations <yaml-path>]
 diffwalk view [--input <capture-path>] [--explanations <yaml-path>]
 diffwalk export <html|json> [--input <capture-path>] [--explanations <yaml-path>] [--output <path>]
-diffwalk publish [--input <capture-path>] [--explanations <yaml-path>] [--service <url>]
+diffwalk publish [--input <capture-path>] [--explanations <yaml-path>] [--service <url>] [--update]
 diffwalk unpublish <id> --token <token> [--service <url>]
 ```
 

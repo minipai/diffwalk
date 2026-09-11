@@ -46,6 +46,25 @@ export async function publishDocument(
   }
 }
 
+export async function updateDocument(
+  document: ExplainDocument,
+  id: string,
+  service: string,
+  revocationToken: string,
+): Promise<void> {
+  const response = await fetch(`${service}/api/reports/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${revocationToken}`,
+    },
+    body: JSON.stringify(document),
+  })
+  if (!response.ok) {
+    throw new Error(`Could not update the review: ${await failureDetail(response)}`)
+  }
+}
+
 export async function unpublishDocument(
   id: string,
   service: string,

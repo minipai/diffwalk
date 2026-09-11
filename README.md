@@ -203,18 +203,26 @@ Publishing is anonymous and unlisted, not private. The link cannot be guessed, b
 anyone holding it can read the review without signing in. Treat the link as the secret,
 and do not publish a document you would not hand to everyone who might receive it.
 
-Publishing prints a revocation token once. Keep it: it is the only way to take that
-review down.
+Publishing retains the review ID, link, service, and revocation token in the current
+walk's `published.json` (or next to an explicit `--input`/`--explanations` pair). The
+file stays local and is never uploaded, but it holds the revocation token, so keep it
+out of version control.
+
+```bash
+diffwalk publish --update
+```
+
+replaces the content behind that same link. The review keeps its ID, URL, and revocation
+token, so a reader who already has the link sees the revised review instead of a new one.
 
 ```bash
 diffwalk unpublish <review-id> --token <revocation-token>
 ```
 
-A revocation token removes exactly one review and cannot touch another. Losing it means
-the review stays published.
-
-Reviews are immutable. Publishing a revision creates a separate review at a separate
-link, and the earlier link keeps serving the earlier review until it is revoked.
+A revocation token removes exactly one review and cannot touch another. Losing both the
+token and the local `published.json` means the review stays published. To keep the old
+link while revising, edit `explanations.yaml` and run `diffwalk publish --update`; to
+publish a revision at a separate link instead, run `diffwalk publish` again.
 
 The trusted-text boundary from `diffwalk export html` still applies: authored markup is served
 verbatim, so publish only what you or a trusted agent authored. The review origin is kept
