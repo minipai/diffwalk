@@ -15,6 +15,7 @@ import { UsageError } from '../usage'
 import { currentWalkIfPresent, setCurrentWalk, walkId, walkPaths } from '../../authoring/walk'
 
 export const inspectOptionsSchema = z.object({
+  staged: z.boolean().default(false),
   base: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
@@ -26,15 +27,22 @@ type InspectOptions = z.infer<typeof inspectOptionsSchema>
 export async function inspectCommand(
   revision: string | undefined,
   options: InspectOptions,
+  paths: string[] = [],
 ): Promise<void> {
   const capturedAt = new Date().toISOString()
-  const { base, from, to } = options
+  const { base, from, to, staged } = options
   if (from !== undefined || to !== undefined) {
     if (from === undefined || to === undefined) {
       throw new UsageError('Pass both --from and --to for a committed revision range')
     }
     if (base !== undefined || revision !== undefined) {
       throw new UsageError('Do not combine --from/--to with --base or a positional revision')
+    }
+    if (paths.length > 0) {
+      throw new UsageError('Path limiting applies only to working-tree captures')
+    }
+    if (staged) {
+      throw new UsageError('Do not combine --staged with --from/--to')
     }
     const git = await captureGitRevisionChanges(from, to)
     const capture = createExplainCapture(git.files, {
@@ -50,6 +58,12 @@ export async function inspectCommand(
     throw new UsageError('Do not combine a positional commit revision with --base')
   }
   if (revision !== undefined) {
+    if (paths.length > 0) {
+      throw new UsageError('Path limiting applies only to working-tree captures')
+    }
+    if (staged) {
+      throw new UsageError('Do not combine --staged with a positional commit revision')
+    }
     const commit = await commitForRevision(revision)
     const parent = await firstParent(commit)
     const git = await captureGitRevisionChanges(`${revision}^1`, revision)
@@ -63,7 +77,7 @@ export async function inspectCommand(
     return
   }
   const resolvedBase = base ?? 'HEAD'
-  const git = await captureGitChanges(resolvedBase)
+  const git = await captureGitChanges(resolvedBase, process.cwd(), { staged, paths })
   const capture = createExplainCapture(git.files, {
     kind: 'working-tree',
     from: { revision: resolvedBase, commit: git.baseCommit },

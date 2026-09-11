@@ -510,6 +510,208 @@ describe('captureGitChanges', () => {
   })
 })
 
+describe('captureGitChanges selection', () => {
+  test('captures only staged changes from the index, ignoring the working tree and untracked files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'tracked.ts'), 'old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'tracked.ts'), 'staged\n')
+    await git(['add', 'tracked.ts'], directory)
+    await writeFile(join(directory, 'tracked.ts'), 'working tree\n')
+    await writeFile(join(directory, 'untracked.ts'), 'untracked\n')
+
+    const capture = await captureGitChanges('HEAD', directory, { staged: true })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'tracked.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'old\n',
+        newContent: 'staged\n',
+      },
+    ])
+  })
+
+  test('captures staged additions and deletions from the index', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'deleted.ts'), 'delete me\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['rm', '-q', 'deleted.ts'], directory)
+    await writeFile(join(directory, 'added.ts'), 'added\n')
+    await git(['add', 'added.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, { staged: true })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'added.ts',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100644',
+        oldContent: '',
+        newContent: 'added\n',
+      },
+      {
+        path: 'deleted.ts',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: 'delete me\n',
+        newContent: '',
+      },
+    ])
+  })
+
+  test('normalizes a staged CRLF edit to the index content', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await git(['config', 'core.autocrlf', 'true'], directory)
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\r\nWorld\r\n')
+    await git(['add', 'greeting.ts'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'greeting.ts'), 'Hello\r\nUniverse\r\n')
+    await git(['add', 'greeting.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, { staged: true })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'greeting.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'Hello\nWorld\n',
+        newContent: 'Hello\nUniverse\n',
+      },
+    ])
+  })
+
+  test('limits a working-tree capture to the named paths, including untracked files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'tracked.ts'), 'old\n')
+    await writeFile(join(directory, 'keep.ts'), 'keep\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'tracked.ts'), 'new\n')
+    await writeFile(join(directory, 'keep.ts'), 'changed\n')
+    await writeFile(join(directory, 'untracked.ts'), 'untracked\n')
+    await writeFile(join(directory, 'other.ts'), 'other\n')
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      paths: ['tracked.ts', 'untracked.ts'],
+    })
+
+    expect(capture.files.map((file) => file.path)).toEqual(['tracked.ts', 'untracked.ts'])
+    expect(capture.files[0]).toMatchObject({ status: 'modified', newContent: 'new\n' })
+    expect(capture.files[1]).toMatchObject({ status: 'added', newContent: 'untracked\n' })
+  })
+
+  test('limits a staged capture to the named paths', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'first.ts'), 'first old\n')
+    await writeFile(join(directory, 'second.ts'), 'second old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'first.ts'), 'first new\n')
+    await writeFile(join(directory, 'second.ts'), 'second new\n')
+    await git(['add', '.'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      staged: true,
+      paths: ['first.ts'],
+    })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'first.ts',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'first old\n',
+        newContent: 'first new\n',
+      },
+    ])
+  })
+
+  test('treats -- paths literally instead of applying Git pathspec magic', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'greeting.ts'), 'greeting old\n')
+    await writeFile(join(directory, 'other.ts'), 'other old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'greeting.ts'), 'greeting new\n')
+    await writeFile(join(directory, 'other.ts'), 'other new\n')
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      paths: [':(exclude)greeting.ts'],
+    })
+
+    expect(capture.files).toEqual([])
+  })
+
+  test('captures a staged rename with both sides', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'old-name.ts'), 'same\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['mv', 'old-name.ts', 'new-name.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, { staged: true })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'new-name.ts',
+        oldPath: 'old-name.ts',
+        status: 'renamed',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'same\n',
+        newContent: 'same\n',
+      },
+    ])
+  })
+
+  test('rejects a staged mode-only change that has no representable block', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'script.sh'), '#!/bin/sh\n')
+    await git(['add', 'script.sh'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await chmod(join(directory, 'script.sh'), 0o755)
+    await git(['add', 'script.sh'], directory)
+
+    await expect(captureGitChanges('HEAD', directory, { staged: true })).rejects.toThrow(
+      'File mode changes are not supported: script.sh',
+    )
+  })
+})
+
 async function initializeRepository(directory: string) {
   await git(['init', '-q'], directory)
   await git(['config', 'user.name', 'Test'], directory)

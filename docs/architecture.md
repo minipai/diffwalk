@@ -95,7 +95,8 @@ exact corresponding diffs in a deliberate order.
 - `src/format.ts`: Zod schemas for the machine-owned capture and the author-edited
   explanations, plus the version 1 ExplainDocument.
 - `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked UTF-8
-  files from an immutable Git base commit.
+  files from an immutable Git base commit, optionally reading the index or limiting the
+  capture to named paths.
 - `src/authoring/capture.ts`: derives change blocks and the content `captureId`, and
   materializes exact section patches from capture plus explanations.
 - `src/authoring/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.

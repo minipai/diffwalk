@@ -12,6 +12,7 @@ import { publishCommand, publishOptionsSchema } from './cli/commands/publish'
 import { unpublishCommand, unpublishOptionsSchema } from './cli/commands/unpublish'
 import { viewCommand } from './cli/commands/view'
 import { withArgument, withOptions } from './cli/options'
+import { UsageError } from './cli/usage'
 import packageJson from '../package.json'
 
 await main()
@@ -35,12 +36,22 @@ function createCli(): Command {
   cli
     .command('inspect [revision]')
     .description('Capture working-tree changes or committed revisions')
+    .option('--staged', 'Capture only changes staged in the index')
     .option('--base <revision>', 'Git base to diff against')
     .option('--from <revision>', 'Committed revision range start')
     .option('--to <revision>', 'Committed revision range end')
     .option('--output <path>', 'Write capture to an explicit path')
     .option('--explanations <path>', 'Write or preserve authoring YAML at an explicit path')
-    .action(withArgument(inspectOptionsSchema, inspectCommand))
+    .allowExcessArguments(true)
+    .addHelpText('after', '\nLimit a working-tree capture with --staged or a `-- <path>...` list.')
+    .action((_revision: string | undefined, options: Record<string, unknown>, command: Command) => {
+      const positionals = inspectPositionals(command)
+      return inspectCommand(
+        positionals.revision,
+        inspectOptionsSchema.parse(options),
+        positionals.paths,
+      )
+    })
 
   cli
     .command('changes')
@@ -102,6 +113,22 @@ function createCli(): Command {
     .action(withArgument(unpublishOptionsSchema, unpublishCommand))
 
   return cli
+}
+
+function inspectPositionals(command: Command): { revision: string | undefined; paths: string[] } {
+  const operands = command.args
+  const separator = process.argv.indexOf('--', 2)
+  if (separator === -1) {
+    if (operands.length > 1) {
+      throw new UsageError('Pass at most one revision; separate paths from options with `--`')
+    }
+    return { revision: operands[0], paths: [] }
+  }
+  const paths = process.argv.slice(separator + 1)
+  if (operands.length - paths.length > 1) {
+    throw new UsageError('Pass at most one revision before `--`')
+  }
+  return { revision: operands.length > paths.length ? operands[0] : undefined, paths }
 }
 
 function reportError(error: unknown): void {

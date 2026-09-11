@@ -10,6 +10,11 @@ export interface GitCapture {
   files: DraftFile[]
 }
 
+export interface CaptureGitChangesOptions {
+  staged?: boolean
+  paths?: string[]
+}
+
 export interface GitRevisionCapture extends GitCapture {
   fromRevision: string
   toRevision: string
@@ -30,14 +35,24 @@ const supportedGitModes = new Set(['000000', '100644', '100755'])
 export async function captureGitChanges(
   base = 'HEAD',
   cwd = process.cwd(),
+  options: CaptureGitChangesOptions = {},
 ): Promise<GitCapture> {
+  const { staged = false, paths = [] } = options
   const root = (await gitText(['rev-parse', '--show-toplevel'], cwd)).trim()
   const baseCommit = (
     await gitText(['rev-parse', '--verify', '--end-of-options', `${base}^{commit}`], root)
   ).trim()
+  const pathEnvironment = paths.length > 0 ? { GIT_LITERAL_PATHSPECS: '1' } : {}
   const changes = parseGitChanges(
-    await gitBytes(['diff', '--raw', '-z', '--find-renames', baseCommit, '--'], root),
+    await gitBytes(
+      ['diff', '--raw', '-z', '--find-renames', ...(staged ? ['--cached'] : []), baseCommit, '--', ...paths],
+      root,
+      pathEnvironment,
+    ),
   )
+  const newContentFor = staged
+    ? (path: string) => indexFile(path, root)
+    : (path: string) => workingTreeFile(path, root)
   const files: DraftFile[] = []
 
   for (const change of changes) {
@@ -49,14 +64,14 @@ export async function captureGitChanges(
         oldMode: change.oldMode,
         newMode: change.newMode,
         oldContent: await gitFile(baseCommit, change.oldPath!, root),
-        newContent: await workingTreeFile(change.path, root),
+        newContent: await newContentFor(change.path),
       })
       continue
     }
 
     if (change.kind === 'M') {
       const oldContent = await gitFile(baseCommit, change.path, root)
-      const newContent = await workingTreeFile(change.path, root)
+      const newContent = await newContentFor(change.path)
       if (change.oldMode !== change.newMode && oldContent === newContent) {
         throw new Error(`File mode changes are not supported: ${change.path}`)
       }
@@ -75,7 +90,7 @@ export async function captureGitChanges(
         oldMode: change.oldMode,
         newMode: change.newMode,
         oldContent: '',
-        newContent: await workingTreeFile(change.path, root),
+        newContent: await newContentFor(change.path),
       })
     } else if (change.kind === 'D') {
       files.push({
@@ -92,41 +107,47 @@ export async function captureGitChanges(
   }
 
   const filesByPath = new Map(files.map((file) => [file.path, file]))
-  const untracked = splitNulls(
-    await gitBytes(['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z'], root),
-  )
-  for (const path of untracked) {
-    const existing = filesByPath.get(path)
-    if (existing !== undefined) {
-      if (existing.status !== 'deleted') continue
-      const newContent = await workingTreeFile(path, root)
-      const newMode = await workingTreeMode(path, root)
-      if (existing.oldMode !== newMode && existing.oldContent === newContent) {
-        throw new Error(`File mode changes are not supported: ${path}`)
+  if (!staged) {
+    const untracked = splitNulls(
+      await gitBytes(
+        ['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z', '--', ...paths],
+        root,
+        pathEnvironment,
+      ),
+    )
+    for (const path of untracked) {
+      const existing = filesByPath.get(path)
+      if (existing !== undefined) {
+        if (existing.status !== 'deleted') continue
+        const newContent = await workingTreeFile(path, root)
+        const newMode = await workingTreeMode(path, root)
+        if (existing.oldMode !== newMode && existing.oldContent === newContent) {
+          throw new Error(`File mode changes are not supported: ${path}`)
+        }
+        if (existing.oldContent === newContent) {
+          filesByPath.delete(path)
+        } else {
+          filesByPath.set(path, {
+            path,
+            status: 'modified',
+            oldMode: existing.oldMode,
+            newMode,
+            oldContent: existing.oldContent,
+            newContent,
+          })
+        }
+        continue
       }
-      if (existing.oldContent === newContent) {
-        filesByPath.delete(path)
-      } else {
-        filesByPath.set(path, {
-          path,
-          status: 'modified',
-          oldMode: existing.oldMode,
-          newMode,
-          oldContent: existing.oldContent,
-          newContent,
-        })
-      }
-      continue
-    }
 
-    filesByPath.set(path, {
-      path,
-      status: 'added',
-      oldMode: '000000',
-      newMode: await workingTreeMode(path, root),
-      oldContent: '',
-      newContent: await workingTreeFile(path, root),
-    })
+      filesByPath.set(path, {
+        path,
+        status: 'added',
+        oldMode: '000000',
+        newMode: await workingTreeMode(path, root),
+        oldContent: '',
+        newContent: await workingTreeFile(path, root),
+      })
+    }
   }
 
   return {
@@ -213,6 +234,10 @@ async function workingTreeMode(path: string, root: string): Promise<DraftFile['n
 
 async function gitFile(commit: string, path: string, root: string): Promise<string> {
   return decodeText(await gitBytes(['show', `${commit}:${path}`], root), path)
+}
+
+async function indexFile(path: string, root: string): Promise<string> {
+  return decodeText(await gitBytes(['show', `:${path}`], root), path)
 }
 
 async function gitText(
