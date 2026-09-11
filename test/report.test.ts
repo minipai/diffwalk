@@ -411,6 +411,59 @@ describe('renderReport shell', () => {
     expect(html).toContain('>1 file<')
   })
 
+  test('section title indexes match the review map exactly from one section order', () => {
+    const html = renderReport(
+      document([
+        section(simplePatch('a', 'b'), 'First section'),
+        section(simplePatch('c', 'd'), 'Second section'),
+        section(simplePatch('e', 'f'), 'Third section'),
+      ]),
+      stubClient,
+    )
+
+    const titleIndexes = [
+      ...html.matchAll(/<span class="section-title-index">([^<]*)<\/span>/g),
+    ].map((match) => match[1])
+    const mapIndexes = [...html.matchAll(/<span class="review-map-index">([^<]*)<\/span>/g)].map(
+      (match) => match[1],
+    )
+
+    expect(titleIndexes).toEqual(['01', '02', '03'])
+    expect(mapIndexes).toEqual(titleIndexes)
+  })
+
+  test('section indexes stay complete above 99', () => {
+    const sections = Array.from({ length: 101 }, (_, index) => ({
+      title: `Section ${index + 1}`,
+      steps: [{ text: `Step ${index + 1}.` }],
+    }))
+    const html = renderReport(document(sections), stubClient)
+
+    const titleIndexes = [
+      ...html.matchAll(/<span class="section-title-index">([^<]*)<\/span>/g),
+    ].map((match) => match[1])
+    const mapIndexes = [...html.matchAll(/<span class="review-map-index">([^<]*)<\/span>/g)].map(
+      (match) => match[1],
+    )
+
+    expect(titleIndexes).toHaveLength(101)
+    expect(titleIndexes[99]).toBe('100')
+    expect(titleIndexes[100]).toBe('101')
+    expect(mapIndexes).toEqual(titleIndexes)
+  })
+
+  test('the section index is a distinct label that keeps the fold control and copy action', () => {
+    const html = renderReport(document([section(simplePatch(), 'Distinct')]), stubClient)
+
+    expect(html).toContain(
+      '<summary class="section-title"><span class="section-title-index">01</span><span class="section-title-text">Distinct</span><button type="button" class="copy-link"',
+    )
+    expect(html).toContain('.section-fold > summary::before { content: "▾ "; color: var(--accent); }')
+    expect(html).toContain(
+      '.section-title-index { flex: none; color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; font-weight: 600; }',
+    )
+  })
+
   test('renders canonical copy actions without exposing renderer mounts as fragment IDs', () => {
     const value = document([
       {
@@ -454,6 +507,39 @@ describe('renderReport shell', () => {
 
     expect(html).toContain('.section-fold > summary {')
     expect(html).toContain('overflow-wrap: anywhere;')
+  })
+
+  test('section title and explanation prose use the exact scaled font sizes', () => {
+    const html = renderReport(document([section(simplePatch(), 'Scaled')]), stubClient)
+
+    const baseSummary = html.slice(
+      html.indexOf('.section-fold > summary {'),
+      html.indexOf('.section-fold > summary::-webkit-details-marker'),
+    )
+    expect(baseSummary).toContain('font-size: 18px;')
+
+    const narrowStart = html.indexOf('@media (max-width: 520px)')
+    const narrow = html.slice(narrowStart, html.indexOf('@media print', narrowStart))
+    expect(narrow).toContain('.section-fold > summary { font-size: 17px; }')
+
+    expect(html.match(/\.step-text \{/g)).toHaveLength(1)
+    expect(html).toContain('.step-text { max-width: 900px; padding: 8px 20px; font-size: 17px; }')
+  })
+
+  test('report-cover and diff typography keep their original font sizes', () => {
+    const html = renderReport(
+      document([section(simplePatch(), 'Unchanged')], { summary: 'Cover text stays put.' }),
+      stubClient,
+    )
+
+    expect(html).toContain('<div class="cover-summary prose">')
+    expect(html).toContain('<div class="step-text prose">')
+    expect(html).toContain('.prose { color: #3c4d41; font-size: 14px; }')
+    expect(html).toContain('font-size: 27px;')
+    expect(html).toContain('font-size: 21px;')
+    expect(html).toContain(
+      'font-family: ui-monospace, SFMono-Regular, Menlo, monospace;\n  font-size: 13px;',
+    )
   })
 
   test('print output hides review map and layout controls and keeps source metadata', () => {
