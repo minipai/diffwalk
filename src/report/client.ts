@@ -222,7 +222,9 @@ function revealFragment(final: boolean) {
   }
 
   if (!final) return
-  target.scrollIntoView?.({ block: 'center' })
+  // Align the target's leading edge (its title or marker). Centering a target
+  // taller than the viewport would push that edge far off-screen.
+  target.scrollIntoView?.({ block: 'start' })
   const targets = new Set(generatedTargets())
   const focusTarget = [...document.querySelectorAll<HTMLButtonElement>('[data-copy-fragment]')]
     .find((button) => {
@@ -239,7 +241,7 @@ const feedbackTimers = new WeakMap<HTMLButtonElement, ReturnType<typeof setTimeo
 
 function showCopyFeedback(button: HTMLButtonElement, success: boolean) {
   const label = button.querySelector<HTMLElement>('[data-copy-label]')
-  const original = label?.dataset.originalLabel ?? label?.textContent ?? 'Link'
+  const original = label?.dataset.originalLabel ?? label?.textContent ?? 'Copy'
   if (label) {
     label.dataset.originalLabel = original
     label.textContent = success ? 'Copied' : 'Failed'
@@ -319,7 +321,12 @@ function wireFragments(initialRender: Promise<void>) {
     if (!(origin instanceof Element)) return
 
     const link = origin.closest<HTMLAnchorElement>('a[href^="#"]')
-    if (link && new URL(link.href).hash === window.location.hash) navigate()
+    if (link && new URL(link.href).hash === window.location.hash) {
+      // A section permalink lives inside its <summary>; the browser's default
+      // action can toggle that fold after the click dispatch. Let it settle, then
+      // reopen ancestors and realign the title on the next task.
+      setTimeout(navigate, 0)
+    }
   })
   navigate()
   void initialRender.then(() => {

@@ -154,11 +154,11 @@ function renderSection(
       .filter((change) => change.canonical)
       .map(
         (change) =>
-          `<span class="change-target" id="${change.fragment}" data-target-kind="change">${renderCopyLink(change.fragment, `Copy link to change ${change.id}`, change.id)}</span>`,
+          `<span class="change-target" id="${change.fragment}" data-target-kind="change">${renderPermalink(change.fragment, `Permalink to change ${change.id}`, change.id)}${renderCopyLink(change.fragment, `Copy link to change ${change.id}`)}</span>`,
       )
       .join('')
     const actions = `<div class="step-actions">
-    ${renderCopyLink(stepTarget.fragment, `Copy link to step ${stepIndex + 1} in ${section.title}`)}${changeTargets}
+    ${renderPermalink(stepTarget.fragment, `Permalink to step ${stepIndex + 1} in ${section.title}`, 'Link')}${renderCopyLink(stepTarget.fragment, `Copy link to step ${stepIndex + 1} in ${section.title}`)}${changeTargets}
   </div>`
     if (step.diff === undefined) {
       return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}</div>`
@@ -198,7 +198,7 @@ function renderSection(
 
   const markup = `<section class="section" id="${target.fragment}" data-section-index="${index}" data-target-kind="section">
   <details class="section-fold" open>
-    <summary class="section-title"><span class="section-title-index">${sectionIndex(index)}</span><span class="section-title-text">${escapeHtml(section.title)}</span>${renderCopyLink(target.fragment, `Copy link to section ${section.title}`)}</summary>
+    <summary class="section-title"><span class="section-title-index">${sectionIndex(index)}</span><span class="section-title-text">${escapeHtml(section.title)}</span>${renderPermalink(target.fragment, `Permalink to section ${section.title}`, 'Link')}${renderCopyLink(target.fragment, `Copy link to section ${section.title}`)}</summary>
 ${steps.join('\n')}
   </details>
 </section>`
@@ -229,7 +229,11 @@ ${links}
 </nav>`
 }
 
-function renderCopyLink(fragment: string, label: string, text = 'Link'): string {
+function renderPermalink(fragment: string, label: string, text: string): string {
+  return `<a class="permalink" href="#${fragment}" aria-label="${escapeHtml(label)}">${escapeHtml(text)}</a>`
+}
+
+function renderCopyLink(fragment: string, label: string, text = 'Copy'): string {
   return `<button type="button" class="copy-link" data-copy-fragment="${fragment}" aria-label="${escapeHtml(label)}"><span data-copy-label>${escapeHtml(text)}</span></button>`
 }
 
@@ -456,7 +460,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 .step { scroll-margin-top: 18px; }
 .step-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; padding: 8px 12px 0; }
 .step-text { max-width: 900px; padding: 8px 20px; font-size: 17px; }
-.copy-link {
+.copy-link, .permalink {
   padding: 3px 7px;
   border: 1px solid #c4d1c6;
   border-radius: 5px;
@@ -465,11 +469,12 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   font: 600 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
   cursor: pointer;
 }
-.copy-link:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
-.copy-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.permalink { text-decoration: none; }
+.copy-link:hover, .permalink:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
+.copy-link:focus-visible, .permalink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .copy-link[data-copy-state="success"] { color: var(--accent); border-color: #8eaa95; }
 .copy-link[data-copy-state="failure"] { color: #a1262f; border-color: #d7a4a8; }
-.change-target { scroll-margin-top: 18px; }
+.change-target { display: inline-flex; align-items: center; gap: 5px; scroll-margin-top: 18px; }
 .copy-status {
   position: fixed;
   width: 1px;
@@ -590,6 +595,9 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .review-controls { display: flex; gap: 6px; justify-content: flex-end; margin: 0; }
   .layout-form { flex: 1 1 auto; max-width: 220px; margin: 0 0 0 auto; }
   .fold-all { flex: none; padding: 5px 9px; font-size: 12px; }
+  /* The aligned fragment target must clear the sticky strip, so push its
+     scroll-margin past the strip plus breathing room. */
+  .section, .step, .change-target { scroll-margin-top: 64px; }
   main { padding: 14px 10px 50px; }
 }
 @media (max-width: 520px) {
@@ -600,7 +608,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .section-fold > summary { font-size: 17px; }
 }
 @media print {
-  .layout-form, .copy-link { display: none; }
+  .layout-form, .copy-link, .permalink { display: none; }
   .review-map { display: none; }
   .review-workspace { display: block; }
   .report-cover { box-shadow: none; break-inside: avoid; }

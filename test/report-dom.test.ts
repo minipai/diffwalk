@@ -372,6 +372,189 @@ describe('report browser client', () => {
     expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment="change-001"]'))
   })
 
+  test('a direct load aligns a viewport-taller section title instead of centering the section', async () => {
+    const value = document([section(simplePatch(), 'Long section')])
+    const fragment = reportTargets(value)[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const sectionTarget = doc.getElementById(fragment) as HTMLElement
+
+    // Model the browser scroll: the section starts far down the document and is
+    // taller than the viewport, exactly the shape reported in the ticket.
+    const viewportHeight = 577
+    const sectionTop = 124_086
+    const sectionHeight = 58_144
+    const optionsSeen: ScrollIntoViewOptions[] = []
+    let scrollTop = 0
+    sectionTarget.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
+      optionsSeen.push(options ?? {})
+      const block = options?.block ?? 'start'
+      scrollTop =
+        block === 'center'
+          ? sectionTop + sectionHeight / 2 - viewportHeight / 2
+          : block === 'end'
+            ? sectionTop + sectionHeight - viewportHeight
+            : sectionTop
+    }) as typeof sectionTarget.scrollIntoView
+
+    runReportClient()
+    await waitFor(() => optionsSeen.length > 0)
+
+    expect(optionsSeen).toEqual([{ block: 'start' }])
+    // The section title is the section's leading edge; after alignment it sits at
+    // the top of the viewport instead of thousands of pixels above it.
+    const titleTopInViewport = sectionTop - scrollTop
+    expect(titleTopInViewport).toBeGreaterThanOrEqual(0)
+    expect(titleTopInViewport).toBeLessThan(viewportHeight)
+  })
+
+  test('clicking a permalink for the current fragment repositions it without centering', async () => {
+    const value = document([section(simplePatch(), 'Reveal me')])
+    const fragment = reportTargets(value)[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const sectionTarget = doc.getElementById(fragment) as HTMLElement
+    const sectionFold = sectionTarget.querySelector<HTMLDetailsElement>('.section-fold')!
+    const calls: ScrollIntoViewOptions[] = []
+    sectionTarget.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
+      calls.push(options ?? {})
+    }) as typeof sectionTarget.scrollIntoView
+
+    runReportClient()
+    await waitFor(() => calls.length === 1)
+
+    const anchor = doc.querySelector<HTMLAnchorElement>(`a.permalink[href="#${fragment}"]`)
+    expect(anchor).not.toBeNull()
+    expect(anchor!.tagName).toBe('A')
+    expect(anchor!.getAttribute('href')).toBe(`#${fragment}`)
+
+    // Simulate the settled result of any summary toggle before the correction.
+    sectionFold.open = false
+    calls.length = 0
+    anchor!.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
+    )
+    await waitFor(() => calls.length === 1)
+
+    expect(sectionFold.open).toBe(true)
+    expect(calls[0]).toEqual({ block: 'start' })
+  })
+
+  test('clicking a folded step permalink opens its ancestors and aligns the step', async () => {
+    const value = document([
+      {
+        title: 'Navigate by link',
+        steps: [{ text: 'Target this step.', diff: simplePatch() }],
+      },
+    ])
+    const fragment = reportTargets(value)[0]!.steps[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: 'https://reports.example/r/report-id',
+    })
+    const doc = dom.document as unknown as Document
+    runReportClient()
+    const step = doc.getElementById(fragment) as HTMLElement
+    const sectionFold = step.closest<HTMLDetailsElement>('.section-fold')!
+    const fileFold = step.querySelector<HTMLDetailsElement>('details.file')!
+    sectionFold.open = false
+    fileFold.open = false
+    const calls: ScrollIntoViewOptions[] = []
+    step.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
+      calls.push(options ?? {})
+    }) as typeof step.scrollIntoView
+
+    const anchor = doc.querySelector<HTMLAnchorElement>(`a.permalink[href="#${fragment}"]`)!
+    expect(anchor.tagName).toBe('A')
+    anchor.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
+    )
+
+    await waitFor(() => calls.length === 1)
+    expect(sectionFold.open).toBe(true)
+    expect(fileFold.open).toBe(true)
+    expect(step.scrollIntoView).toBeDefined()
+    expect(calls[0]).toEqual({ block: 'start' })
+  })
+
+  test('a target after a large async diff is aligned only after every render settles', async () => {
+    const large = Array.from({ length: 400 }, (_, index) => `-line ${index}\n+LINE ${index}`).join(
+      '\n',
+    )
+    const bigPatch = [
+      'diff --git a/big.ts b/big.ts',
+      '--- a/big.ts',
+      '+++ b/big.ts',
+      '@@ -1,400 +1,400 @@',
+      large,
+      '',
+    ].join('\n')
+    const value = document([
+      section(bigPatch, 'Large first section'),
+      { title: 'Later target', steps: [{ text: 'The real target.', diff: simplePatch() }] },
+    ])
+    const targets = reportTargets(value)
+    const fragment = targets[1]!.steps[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const first = doc.getElementById(targets[0]!.fragment) as HTMLElement
+    const second = doc.getElementById(fragment) as HTMLElement
+    const calls: { element: Element; options: ScrollIntoViewOptions }[] = []
+    first.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
+      calls.push({ element: first, options: options ?? {} })
+    }) as typeof first.scrollIntoView
+    second.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
+      calls.push({ element: second, options: options ?? {} })
+    }) as typeof second.scrollIntoView
+
+    runReportClient()
+    await waitFor(() => calls.length > 0)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.element).toBe(second)
+    expect(calls[0]!.options).toEqual({ block: 'start' })
+  })
+
+  test('focusing either title action leaves the corrected target position alone', async () => {
+    const value = document([section(simplePatch(), 'Focus target')])
+    const fragment = reportTargets(value)[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const sectionTarget = doc.getElementById(fragment) as HTMLElement
+    const calls: ScrollIntoViewOptions[] = []
+    sectionTarget.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
+      calls.push(options ?? {})
+    }) as typeof sectionTarget.scrollIntoView
+
+    const button = doc.querySelector<HTMLButtonElement>(`[data-copy-fragment="${fragment}"]`)!
+    const focusOptions: (FocusOptions | undefined)[] = []
+    const originalFocus = button.focus.bind(button)
+    button.focus = ((options?: FocusOptions) => {
+      focusOptions.push(options)
+      originalFocus(options)
+    }) as typeof button.focus
+
+    runReportClient()
+    await waitFor(() => calls.length === 1)
+
+    // The client's own correction focuses the copy action without scrolling.
+    expect(focusOptions).toEqual([{ preventScroll: true }])
+    expect(doc.activeElement).toBe(button)
+
+    // Focusing the native permalink must not add a competing scroll either.
+    const anchor = doc.querySelector<HTMLAnchorElement>(`a.permalink[href="#${fragment}"]`)!
+    anchor.focus()
+    expect(doc.activeElement).toBe(anchor)
+    expect(calls).toHaveLength(1)
+  })
+
   test('waits for every initial render and honors a hashchange while mounting', async () => {
     const value = document([
       section(simplePatch('one', 'one!'), 'Delayed first'),
