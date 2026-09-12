@@ -279,7 +279,7 @@ describe('report browser client', () => {
     await waitFor(() => scrollCount === 1)
     expect(scrollCount).toBe(1)
     expect(doc.activeElement).toBe(
-      doc.querySelector(`[data-copy-fragment="${fragment}"]`),
+      target.closest('.step')!.querySelector('.step-actions > a'),
     )
   })
 
@@ -311,7 +311,7 @@ describe('report browser client', () => {
     await waitFor(() => scrollCount > 0)
     expect(scrollCount).toBeGreaterThan(0)
     expect(doc.activeElement).toBe(
-      doc.querySelector(`[data-copy-fragment="${fragment}"]`),
+      doc.querySelector(`:is(a.section-title-text, a.permalink)[href="#${fragment}"]`),
     )
     expect(doc.querySelector('.section-fold > summary')).not.toBeNull()
     expect(doc.querySelector('.file > summary')).not.toBeNull()
@@ -342,7 +342,7 @@ describe('report browser client', () => {
     await waitFor(() => scrolled)
     expect(scrolled).toBe(true)
     expect(doc.activeElement).toBe(
-      doc.querySelector(`[data-copy-fragment="${fragment}"]`),
+      doc.querySelector(`:is(a.section-title-text, a.permalink)[href="#${fragment}"]`),
     )
   })
 
@@ -381,7 +381,7 @@ describe('report browser client', () => {
     expect([...doc.querySelectorAll('[id="change-001"]')]).toEqual([target])
     const ids = [...doc.querySelectorAll<HTMLElement>('[id]')].map((element) => element.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment="change-001"]'))
+    expect(doc.activeElement).toBe(target.closest('.step')!.querySelector('.step-actions > a'))
   })
 
   test('a direct load aligns a viewport-taller section title instead of centering the section', async () => {
@@ -439,7 +439,7 @@ describe('report browser client', () => {
     runReportClient()
     await waitFor(() => calls.length === 1)
 
-    const anchor = doc.querySelector<HTMLAnchorElement>(`a.permalink[href="#${fragment}"]`)
+    const anchor = doc.querySelector<HTMLAnchorElement>(`:is(a.section-title-text, a.permalink)[href="#${fragment}"]`)
     expect(anchor).not.toBeNull()
     expect(anchor!.tagName).toBe('A')
     expect(anchor!.getAttribute('href')).toBe(`#${fragment}`)
@@ -479,7 +479,7 @@ describe('report browser client', () => {
       calls.push(options ?? {})
     }) as typeof step.scrollIntoView
 
-    const anchor = doc.querySelector<HTMLAnchorElement>(`a.permalink[href="#${fragment}"]`)!
+    const anchor = doc.querySelector<HTMLAnchorElement>(`:is(a.section-title-text, a.permalink)[href="#${fragment}"]`)!
     expect(anchor.tagName).toBe('A')
     anchor.dispatchEvent(
       new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
@@ -532,7 +532,7 @@ describe('report browser client', () => {
     expect(calls[0]!.options).toEqual({ block: 'start' })
   })
 
-  test('focusing either title action leaves the corrected target position alone', async () => {
+  test('focusing the title link leaves the corrected target position alone', async () => {
     const value = document([section(simplePatch(), 'Focus target')])
     const fragment = reportTargets(value)[0]!.fragment
     const dom = loadReport(renderReport(value, clientBundle), {
@@ -540,31 +540,23 @@ describe('report browser client', () => {
     })
     const doc = dom.document as unknown as Document
     const sectionTarget = doc.getElementById(fragment) as HTMLElement
-    const calls: ScrollIntoViewOptions[] = []
-    sectionTarget.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
-      calls.push(options ?? {})
-    }) as typeof sectionTarget.scrollIntoView
-
-    const button = doc.querySelector<HTMLButtonElement>(`[data-copy-fragment="${fragment}"]`)!
+    let scrolls = 0
+    sectionTarget.scrollIntoView = () => { scrolls++ }
+    const anchor = sectionTarget.querySelector<HTMLAnchorElement>('.section-title-text')!
     const focusOptions: (FocusOptions | undefined)[] = []
-    const originalFocus = button.focus.bind(button)
-    button.focus = ((options?: FocusOptions) => {
+    const originalFocus = anchor.focus.bind(anchor)
+    anchor.focus = (options?: FocusOptions) => {
       focusOptions.push(options)
       originalFocus(options)
-    }) as typeof button.focus
+    }
 
     runReportClient()
-    await waitFor(() => calls.length === 1)
+    await waitFor(() => scrolls === 1)
 
-    // The client's own correction focuses the copy action without scrolling.
     expect(focusOptions).toEqual([{ preventScroll: true }])
-    expect(doc.activeElement).toBe(button)
-
-    // Focusing the native permalink must not add a competing scroll either.
-    const anchor = doc.querySelector<HTMLAnchorElement>(`a.permalink[href="#${fragment}"]`)!
-    anchor.focus()
     expect(doc.activeElement).toBe(anchor)
-    expect(calls).toHaveLength(1)
+    anchor.focus()
+    expect(scrolls).toBe(1)
   })
 
   test('waits for every initial render and honors a hashchange while mounting', async () => {
@@ -659,7 +651,7 @@ describe('report browser client', () => {
       expect(firstScrolls).toBe(0)
       expect(secondScrolls).toBe(1)
       expect(doc.activeElement).toBe(
-        second.querySelector(`[data-copy-fragment="${secondFragment}"]`),
+        second.querySelector(`a[href="#${secondFragment}"]`),
       )
     } finally {
       globalThis.setTimeout = previousSetTimeout
@@ -729,7 +721,7 @@ describe('report browser client', () => {
 
       frames[0]!(Date.now())
       expect(scrolled).toBe(true)
-      expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment]'))
+      expect(doc.activeElement).toBe(target.querySelector('.step-actions > a'))
     } finally {
       globalThis.setTimeout = previousSetTimeout
       globalThis.clearTimeout = previousClearTimeout
@@ -753,7 +745,7 @@ describe('report browser client', () => {
     runReportClient()
     await waitFor(() => scrolled)
 
-    expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment]'))
+    expect(doc.activeElement).toBe(target.querySelector('.step-actions > a'))
   })
 
   test('finalizes hash navigation when an initial renderer throws', async () => {
@@ -775,133 +767,59 @@ describe('report browser client', () => {
     await waitFor(() => scrolled)
 
     expect(doc.querySelector('.diff-error')?.textContent).toContain('renderer failed')
-    expect(doc.activeElement).toBe(target.querySelector('[data-copy-fragment]'))
+    expect(doc.activeElement).toBe(target.querySelector('.step-actions > a'))
   })
 
-  test('copy actions are keyboard-accessible and report clipboard success without folding', async () => {
-    const value = document([
-      {
-        title: 'Copy target',
-        steps: [{ text: 'Copy this change.', diff: simplePatch(), changes: ['change-001'] }],
-      },
-    ])
-    const dom = loadReport(renderReport(value, clientBundle), {
-      url: 'https://reports.example/r/report-id?layout=split',
-    })
-    const doc = dom.document as unknown as Document
-    const copied: string[] = []
-    Object.defineProperty(dom.window.navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: async (value: string) => copied.push(value) },
-    })
-    runReportClient()
-
-    const buttons = [...doc.querySelectorAll<HTMLButtonElement>('[data-copy-fragment]')]
-    expect(buttons).toHaveLength(3)
-    for (const button of buttons) {
-      expect(button.type).toBe('button')
-      expect(button.tabIndex).toBe(0)
-      expect(button.getAttribute('aria-label')).toMatch(/^Copy link to /)
-    }
-
-    const sectionButton = buttons[0]!
-    const sectionFold = doc.querySelector<HTMLDetailsElement>('.section-fold')!
-    sectionButton.focus()
-    expect(doc.activeElement).toBe(sectionButton)
-    sectionButton.click()
-    await waitFor(() => sectionButton.dataset.copyState === 'success')
-
-    const fragment = sectionButton.dataset.copyFragment!
-    expect(copied).toEqual([
-      `https://reports.example/r/report-id?layout=split#${fragment}`,
-    ])
-    expect(sectionFold.open).toBe(true)
-    expect(sectionButton.textContent).toBe('Copied')
-    expect(doc.querySelector('[data-copy-status]')?.textContent).toBe(
-      'Link copied to clipboard.',
-    )
-  })
-
-  test('a rejected clipboard write falls back to textarea copying', async () => {
-    const value = document([section(simplePatch(), 'Copy fallback')])
+  test('only the section fold button toggles, while title and step links remain native', async () => {
+    const value = document([{
+      title: 'Linked title',
+      steps: [{ text: 'Target step.', diff: simplePatch(), changes: ['change-001'] }],
+    }])
     const dom = loadReport(renderReport(value, clientBundle), {
       url: 'https://reports.example/r/report-id',
     })
     const doc = dom.document as unknown as Document
-    let clipboardAttempts = 0
-    let fallbackValue = ''
-    Object.defineProperty(dom.window.navigator, 'clipboard', {
-      configurable: true,
-      value: {
-        writeText: async () => {
-          clipboardAttempts++
-          throw new Error('denied')
-        },
-      },
-    })
-    ;(doc as Document & { execCommand(command: string): boolean }).execCommand = () => {
-      fallbackValue = doc.querySelector('textarea')?.value ?? ''
-      return true
-    }
     runReportClient()
+    const fold = doc.querySelector<HTMLDetailsElement>('.section-fold')!
+    const summary = fold.querySelector<HTMLElement>('summary')!
+    const button = summary.querySelector<HTMLButtonElement>('.section-toggle')!
+    const title = summary.querySelector<HTMLAnchorElement>('.section-title-text')!
+    const stepLink = fold.querySelector<HTMLAnchorElement>('.step-actions > a')!
 
-    const button = doc.querySelector<HTMLButtonElement>('.step [data-copy-fragment]')!
+    expect(summary.tabIndex).toBe(-1)
+    expect(button.type).toBe('button')
+    expect(button.tabIndex).toBe(0)
+    expect(button.textContent).toContain('01')
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(doc.getElementById(button.getAttribute('aria-controls')!)).not.toBeNull()
+    expect(title.tagName).toBe('A')
+    expect(title.textContent).toBe('Linked title')
+    expect(title.tabIndex).toBe(0)
+    expect(stepLink.textContent).toBe('LINK')
+    expect(stepLink.tabIndex).toBe(0)
+    expect(doc.querySelector('[data-copy-fragment]')).toBeNull()
+    expect(doc.querySelector('a[href="#change-001"]')).toBeNull()
+
+    summary.click()
+    expect(fold.open).toBe(true)
+    const click = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })
+    title.dispatchEvent(click as unknown as Event)
+    expect(click.defaultPrevented).toBe(false)
+    // happy-dom also applies summary activation to an interactive anchor;
+    // navigation restores the fold when its native hashchange settles.
+    await waitFor(() => fold.open)
+    expect(fold.open).toBe(true)
     button.click()
-    await waitFor(() => button.dataset.copyState === 'success')
-
-    expect(clipboardAttempts).toBe(1)
-    expect(fallbackValue).toBe(
-      `https://reports.example/r/report-id#${button.dataset.copyFragment}`,
-    )
-    expect(button.textContent).toBe('Copied')
-  })
-
-  test('double clipboard failures are exposed visually and through live status', async () => {
-    const value = document([section(simplePatch(), 'Copy failure')])
-    const dom = loadReport(renderReport(value, clientBundle), {
-      url: 'https://reports.example/r/report-id',
-    })
-    const doc = dom.document as unknown as Document
-    Object.defineProperty(dom.window.navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: async () => Promise.reject(new Error('denied')) },
-    })
-    ;(doc as Document & { execCommand(command: string): boolean }).execCommand = () => false
-    runReportClient()
-
-    const button = doc.querySelector<HTMLButtonElement>('.step [data-copy-fragment]')!
+    expect(fold.open).toBe(false)
+    expect(button.getAttribute('aria-expanded')).toBe('false')
     button.click()
-    await waitFor(() => button.dataset.copyState === 'failure')
+    expect(fold.open).toBe(true)
+    expect(button.getAttribute('aria-expanded')).toBe('true')
 
-    expect(button.textContent).toBe('Failed')
-    expect(doc.querySelector('[data-copy-status]')?.getAttribute('role')).toBe('status')
-    expect(doc.querySelector('[data-copy-status]')?.textContent).toBe('Could not copy link.')
-  })
-
-  test('file reports use the clipboard fallback and restore keyboard focus', async () => {
-    const value = document([section(simplePatch(), 'Offline copy')])
-    const dom = loadReport(renderReport(value, clientBundle))
-    const doc = dom.document as unknown as Document
-    Object.defineProperty(dom.window.navigator, 'clipboard', {
-      configurable: true,
-      value: undefined,
-    })
-    let copied = ''
-    ;(doc as Document & { execCommand(command: string): boolean }).execCommand = (command) => {
-      expect(command).toBe('copy')
-      copied = doc.querySelector('textarea')?.value ?? ''
-      return true
-    }
-    runReportClient()
-
-    const button = doc.querySelector<HTMLButtonElement>('.step [data-copy-fragment]')!
-    button.focus()
-    button.click()
-    await waitFor(() => button.dataset.copyState === 'success')
-
-    expect(copied).toBe(`file:///tmp/diffwalk-report.html#${button.dataset.copyFragment}`)
-    expect(doc.querySelector('textarea')).toBeNull()
-    expect(doc.activeElement).toBe(button)
+    fold.open = false
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    fold.open = true
+    expect(button.getAttribute('aria-expanded')).toBe('true')
   })
 
   test(
@@ -1140,17 +1058,17 @@ describe('report browser client', () => {
 
       expect(dataScript.textContent).toBe(dataBefore)
 
-      // Individual sections still fold and unfold natively after the global action,
+      // Individual section buttons still fold and unfold after the global action,
       // and their toggle drives the global label.
       folds[0]!
-        .querySelector('summary')!
+        .querySelector('.section-toggle')!
         .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event)
       expect(folds[0]!.open).toBe(false)
       expect(folds[1]!.open).toBe(true)
       expect(label()).toBe('Fold all')
 
       folds[1]!
-        .querySelector('summary')!
+        .querySelector('.section-toggle')!
         .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event)
       expect(folds.every((fold) => !fold.open)).toBe(true)
       expect(label()).toBe('Unfold all')
@@ -1182,8 +1100,8 @@ describe('report browser client', () => {
       runReportClient()
 
       const firstSection = doc.querySelector<HTMLElement>('.section')!
-      const focused = firstSection.querySelector<HTMLButtonElement>(
-        '.step [data-copy-fragment]',
+      const focused = firstSection.querySelector<HTMLAnchorElement>(
+        '.step-actions > a',
       )!
       focused.focus()
       expect(doc.activeElement).toBe(focused)
@@ -1202,7 +1120,7 @@ describe('report browser client', () => {
       const folds = [...doc.querySelectorAll<HTMLDetailsElement>('details.section-fold')]
       expect(folds.every((fold) => !fold.open)).toBe(true)
       expect(firstSection.querySelector('details')?.open).toBe(false)
-      const summary = firstSection.querySelector<HTMLElement>('.section-fold > summary')!
+      const summary = firstSection.querySelector<HTMLElement>('.section-toggle')!
       expect(doc.activeElement).toBe(summary)
     },
     120000,
@@ -1236,7 +1154,7 @@ describe('report browser client', () => {
 
       doc.querySelector<HTMLButtonElement>('[data-fold-all]')!.click()
 
-      const sectionSummary = firstSection.querySelector<HTMLElement>('.section-fold > summary')!
+      const sectionSummary = firstSection.querySelector<HTMLElement>('.section-toggle')!
       expect(doc.activeElement).toBe(sectionSummary)
       expect(sectionSummary.closest('details')?.open).toBe(false)
     },

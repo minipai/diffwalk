@@ -79,7 +79,6 @@ ${reviewMap}
 </section>
 ${sections.map((section) => section.markup).join('\n')}
 </main>
-<div class="copy-status" data-copy-status role="status" aria-live="polite"></div>
 </div>`
   return {
     title,
@@ -154,11 +153,11 @@ function renderSection(
       .filter((change) => change.canonical)
       .map(
         (change) =>
-          `<span class="change-target" id="${change.fragment}" data-target-kind="change">${renderPermalink(change.fragment, `Permalink to change ${change.id}`, change.id)}${renderCopyLink(change.fragment, `Copy link to change ${change.id}`)}</span>`,
+          `<span class="change-target" id="${change.fragment}" data-target-kind="change"></span>`,
       )
       .join('')
     const actions = `<div class="step-actions">
-    ${renderPermalink(stepTarget.fragment, `Permalink to step ${stepIndex + 1} in ${section.title}`, 'Link')}${renderCopyLink(stepTarget.fragment, `Copy link to step ${stepIndex + 1} in ${section.title}`)}${changeTargets}
+    ${renderPermalink(stepTarget.fragment, `Permalink to step ${stepIndex + 1} in ${section.title}`, 'LINK')}${changeTargets}
   </div>`
     if (step.diff === undefined) {
       return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}</div>`
@@ -198,7 +197,7 @@ function renderSection(
 
   const markup = `<section class="section" id="${target.fragment}" data-section-index="${index}" data-target-kind="section">
   <details class="section-fold" open>
-    <summary class="section-title"><span class="section-title-index">${sectionIndex(index)}</span><span class="section-title-text">${escapeHtml(section.title)}</span>${renderPermalink(target.fragment, `Permalink to section ${section.title}`, 'Link')}${renderCopyLink(target.fragment, `Copy link to section ${section.title}`)}</summary>
+    <summary class="section-title" tabindex="-1"><button type="button" class="section-toggle" aria-expanded="true" aria-controls="${target.fragment}" aria-label="Toggle section ${sectionIndex(index)}: ${escapeHtml(section.title)}"><span class="section-toggle-arrow" aria-hidden="true">▾</span> <span class="section-title-index">${sectionIndex(index)}</span></button><a class="section-title-text" href="#${target.fragment}">${escapeHtml(section.title)}</a></summary>
 ${steps.join('\n')}
   </details>
 </section>`
@@ -231,10 +230,6 @@ ${links}
 
 function renderPermalink(fragment: string, label: string, text: string): string {
   return `<a class="permalink" href="#${fragment}" aria-label="${escapeHtml(label)}">${escapeHtml(text)}</a>`
-}
-
-function renderCopyLink(fragment: string, label: string, text = 'Copy'): string {
-  return `<button type="button" class="copy-link" data-copy-fragment="${fragment}" aria-label="${escapeHtml(label)}"><span data-copy-label>${escapeHtml(text)}</span></button>`
 }
 
 function pluralize(count: number, noun: string): string {
@@ -335,12 +330,12 @@ body {
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 0 8px;
   margin: 0;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.5;
 }
-.source-metadata dt { color: #7e8d82; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
+.source-metadata dt { color: #7e8d82; font-weight: 500; }
 .source-metadata dd { margin: 0; min-width: 0; overflow: hidden; color: #4e5d53; text-overflow: ellipsis; white-space: nowrap; }
-.source-metadata code { color: #263a2d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.source-metadata code { font: inherit; }
 .attribution-metadata {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -437,55 +432,33 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 }
 .section-fold > summary {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
+  align-items: baseline;
+  gap: 12px;
   overflow-wrap: anywhere;
   padding: 12px 16px;
   border-bottom: 1px solid transparent;
   color: #17271c;
-  background: transparent;
   font-size: 18px;
   font-weight: 600;
   list-style: none;
-  user-select: none;
+  user-select: text;
+  -webkit-user-select: text;
 }
-.section-title-index { flex: none; color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; font-weight: 600; }
-.section-title-text { min-width: 0; flex: 1; }
+.section-toggle { flex: none; border: 0; padding: 4px 0; background: transparent; color: var(--accent); font: inherit; cursor: pointer; user-select: none; }
+.section-title-index { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; }
+.section-title-text { min-width: 0; color: inherit; text-decoration: none; }
+.section-title-text:hover { text-decoration: underline; }
+.section-toggle:focus-visible, .section-title-text:focus-visible, .permalink:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .section-fold > summary::-webkit-details-marker { display: none; }
-.section-fold > summary::before { content: "▾ "; color: var(--accent); }
-.section-fold:not([open]) > summary::before { content: "▸ "; }
 .section-fold[open] > summary { border-bottom-color: var(--border); }
 .prose { color: #3c4d41; font-size: 14px; }
-.step { scroll-margin-top: 18px; }
-.step-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; padding: 8px 12px 0; }
-.step-text { max-width: 900px; padding: 8px 20px; font-size: 17px; }
-.copy-link, .permalink {
-  padding: 3px 7px;
-  border: 1px solid #c4d1c6;
-  border-radius: 5px;
-  color: #53665a;
-  background: #f8faf8;
-  font: 600 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
-  cursor: pointer;
-}
-.permalink { text-decoration: none; }
-.copy-link:hover, .permalink:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
-.copy-link:focus-visible, .permalink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.copy-link[data-copy-state="success"] { color: var(--accent); border-color: #8eaa95; }
-.copy-link[data-copy-state="failure"] { color: #a1262f; border-color: #d7a4a8; }
-.change-target { display: inline-flex; align-items: center; gap: 5px; scroll-margin-top: 18px; }
-.copy-status {
-  position: fixed;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
+.step { position: relative; scroll-margin-top: 18px; }
+.step-actions { position: absolute; top: 8px; right: 12px; z-index: 2; }
+.step-text { max-width: 900px; padding: 8px 68px 8px 20px; font-size: 17px; }
+.permalink { display: block; padding: 2px 3px; color: #98a29c; font: 600 10px/20px ui-monospace, SFMono-Regular, Menlo, monospace; text-decoration: none; }
+.permalink:hover, .permalink:focus-visible { color: var(--accent); }
+.change-target { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; scroll-margin-top: 18px; }
+.step:not(:has(.step-text)) .step-files { padding-right: 68px; }
 .prose strong { color: #142c1d; }
 .step-files { padding: 12px; display: grid; gap: 9px; }
 .step + .step { border-top: 1px solid #e3ebe5; }
@@ -509,7 +482,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 }
 .report-cover .source-metadata { max-width: 640px; }
 .report-cover .source-metadata dd { white-space: normal; overflow: visible; }
-.cover-summary { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.cover-summary { font-size: 17px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .cover-summary > :first-child { margin-top: 0; }
 /* The card is as wide as a section so a diagram has room, but prose is capped at the
    same measure as a step's text: a 1400px line is not readable. */
@@ -608,7 +581,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .section-fold > summary { font-size: 17px; }
 }
 @media print {
-  .layout-form, .copy-link, .permalink { display: none; }
+  .layout-form, .permalink { display: none; }
   .review-map { display: none; }
   .review-workspace { display: block; }
   .report-cover { box-shadow: none; break-inside: avoid; }

@@ -6,7 +6,7 @@ import type { ExplainDocument } from '../src/format'
 import { renderMarkdown } from '../src/report/markdown'
 import { fileDiffStats, parseSectionPatch } from '../src/report/patches'
 import { loadReportClient, renderHostedReport, renderReport, writeReport } from '../src/report'
-import { sectionIndex } from '../src/report/shell'
+import { sectionIndex } from '../src/report/render'
 import { reportTargets } from '../src/report/targets'
 
 const directories: string[] = []
@@ -407,17 +407,19 @@ describe('renderReport shell', () => {
     expect(sectionIndex(100)).toBe('101')
   })
 
-  test('the section index stays a distinct label beside the fold control and copy action', () => {
-    const html = renderReport(document([section(simplePatch(), 'Distinct')]), stubClient)
+  test('the section index belongs to its fold button and the title is a native link', () => {
+    const value = document([section(simplePatch(), 'Distinct')])
+    const target = reportTargets(value)[0]!
+    const html = renderReport(value, stubClient)
 
-    const summary = html.slice(html.indexOf('<summary'), html.indexOf('</summary>'))
-    expect(summary).toContain('>01<')
-    expect(summary).toContain('>Distinct<')
-    expect(summary).toContain('aria-label="Permalink to section Distinct"')
-    expect(summary).toContain('aria-label="Copy link to section Distinct"')
+    expect(html).toContain('<summary class="section-title" tabindex="-1">')
+    expect(html).toContain('class="section-toggle"')
+    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('<span class="section-title-index">01</span>')
+    expect(html).toContain(`<a class="section-title-text" href="#${target.fragment}">Distinct</a>`)
   })
 
-  test('renders canonical copy actions without exposing renderer mounts as fragment IDs', () => {
+  test('preserves canonical targets without exposing renderer mounts as fragment IDs', () => {
     const value = document([
       {
         title: 'Linkable',
@@ -436,48 +438,25 @@ describe('renderReport shell', () => {
     expect(html).toContain(`id="${target.fragment}" data-section-index="0"`)
     expect(html).toContain(`id="${target.steps[0]!.fragment}" data-step-index="0"`)
     expect(html).toContain('id="change-001" data-target-kind="change"')
-    expect(html).toContain('aria-label="Copy link to section Linkable"')
-    expect(html).toContain('aria-label="Copy link to step 1 in Linkable"')
-    expect(html).toContain('aria-label="Copy link to change change-001"')
     expect(html).toContain('data-diff-mount="0-0-0"')
     expect(html).not.toContain('id="section-0-step-0-file-0"')
   })
 
-  test('section, step, and change titles carry native permalinks beside distinct copy buttons', () => {
-    const value = document([
-      {
-        title: 'Linkable',
-        steps: [
-          {
-            text: 'A linkable step.',
-            diff: simplePatch(),
-            changes: ['change-001'],
-          },
-        ],
-      },
-    ])
+  test('section titles and step markers are links while change targets stay empty', () => {
+    const value = document([{
+      title: 'Linkable',
+      steps: [{ text: 'A linkable step.', diff: simplePatch(), changes: ['change-001'] }],
+    }])
     const target = reportTargets(value)[0]!
     const html = renderReport(value, stubClient)
 
-    // Native same-document anchors point at the target's stable id.
+    expect(html).toContain(`<a class="section-title-text" href="#${target.fragment}">Linkable</a>`)
     expect(html).toContain(
-      `<a class="permalink" href="#${target.fragment}" aria-label="Permalink to section Linkable">Link</a>`,
+      `<a class="permalink" href="#${target.steps[0]!.fragment}" aria-label="Permalink to step 1 in Linkable">LINK</a>`,
     )
-    expect(html).toContain(
-      `<a class="permalink" href="#${target.steps[0]!.fragment}" aria-label="Permalink to step 1 in Linkable">Link</a>`,
-    )
-    // A change's id is its title, so the anchor itself carries that marker.
-    expect(html).toContain(
-      `<a class="permalink" href="#change-001" aria-label="Permalink to change change-001">change-001</a>`,
-    )
-
-    // Copying stays a separate button with an explicit action, not a navigation.
-    expect(html).toContain(
-      `<button type="button" class="copy-link" data-copy-fragment="${target.fragment}" aria-label="Copy link to section Linkable"><span data-copy-label>Copy</span></button>`,
-    )
-    expect(html).toContain('aria-label="Copy link to step 1 in Linkable"')
-    expect(html).toContain('aria-label="Copy link to change change-001"')
-    expect(html).not.toContain('<a class="permalink" data-copy-fragment')
+    expect(html).toContain('id="change-001" data-target-kind="change"></span>')
+    expect(html).not.toContain('href="#change-001"')
+    expect(html).not.toContain('data-copy-fragment')
   })
 
   test('hosted and exported reports share identical main content', () => {
@@ -503,7 +482,9 @@ describe('renderReport shell', () => {
     }
     const hostedMain = main(hosted)
     expect(hostedMain).toBe(main(exported))
-    expect(hostedMain).toContain('data-copy-fragment')
+    expect(hostedMain).toContain('<a class="permalink"')
+    expect(hostedMain).toContain('href="#')
+    expect(hostedMain).not.toContain('data-copy-fragment')
     expect(hosted).toContain('<link rel="stylesheet" href="/report.css">')
     expect(exported).toContain('<style>')
   })

@@ -293,9 +293,10 @@ describe('reading a report', () => {
     expect(html).toContain('<link rel="stylesheet" href="/report.css">')
     expect(html).toContain('<link rel="icon" href="data:image/svg+xml,')
     expect(html).toContain('<script src="/report-client.js" defer></script>')
-    expect(html).toContain('data-copy-fragment="change-001"')
+    expect(html).toContain('id="change-001" data-target-kind="change"')
+    expect(html).not.toContain('data-copy-fragment')
     expect(html).toContain('<a class="permalink" href="#')
-    expect(html).toMatch(/<a class="permalink" href="#[^"]+" aria-label="Permalink to section /)
+    expect(html).toMatch(/<a class="section-title-text" href="#[^"]+">First section<\/a>/)
     expect(html).not.toContain('<style>')
   })
 
