@@ -6,3 +6,5 @@ worker/public/
 .igniter/dispatch.log
 .igniter/runtime/
 plan.md
+test-results/
+playwright-report/

@@ -31,4 +31,8 @@ jobs:
         with:
           bun-version: 1.4.1
       - run: pnpm install --frozen-lockfile
+      - name: Install the visual-test browser and fonts
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core
       - run: pnpm check
