@@ -76,15 +76,43 @@ test.describe('report visuals', () => {
     await expect(page.locator('main .section').first()).toHaveScreenshot('section.png')
   })
 
-  // The anchored targets must clear the sticky strip when the rail collapses,
-  // which a screenshot cannot measure. This checks the applied offset instead.
-  test('narrow anchor offset clears the sticky strip', async ({ page }) => {
+  // The anchored targets must clear the sticky strip when the rail collapses.
+  // Reading the computed scroll-margin only proves the rule exists, not that the
+  // anchored layout works, so navigate a real target and measure where it lands.
+  // The last section has filler beneath it, giving the browser room to align the
+  // target to the top edge; without the offset it would sit under the strip, and
+  // a target left far down the page would otherwise pass the lower bound only.
+  test('narrow section anchor clears the sticky review map', async ({ page }) => {
     test.skip((page.viewportSize()?.width ?? 0) > 900, 'only meaningful below the 900px breakpoint')
-    const offset = await page
+    const viewportHeight = page.viewportSize()!.height
+
+    const targetId = await page
       .locator('main .section')
-      .first()
-      .evaluate((element) => getComputedStyle(element).scrollMarginTop)
-    expect(Number.parseFloat(offset)).toBeGreaterThanOrEqual(64)
+      .last()
+      .evaluate((element) => element.id)
+    await page.evaluate(() => {
+      const filler = document.createElement('div')
+      filler.style.height = '200vh'
+      document.body.appendChild(filler)
+    })
+    await page.evaluate((id) => {
+      document.getElementById(id)?.scrollIntoView({ block: 'start' })
+    }, targetId)
+
+    const { targetTop, stripBottom } = await page.evaluate((id) => {
+      const target = document.getElementById(id) as HTMLElement
+      const strip = document.querySelector('nav.review-map') as HTMLElement
+      return {
+        targetTop: target.getBoundingClientRect().top,
+        stripBottom: strip.getBoundingClientRect().bottom,
+      }
+    }, targetId)
+
+    // The strip only counts as an obstacle while it is pinned to the viewport,
+    // and the target must land just below it near the top rather than far down.
+    expect(stripBottom).toBeGreaterThan(0)
+    expect(targetTop).toBeGreaterThanOrEqual(stripBottom)
+    expect(targetTop).toBeLessThan(viewportHeight / 4)
   })
 
   test('print report', async ({ page }) => {
