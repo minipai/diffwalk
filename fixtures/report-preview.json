@@ -1,0 +1,85 @@
+{
+  "formatVersion": 1,
+  "title": "A clearer report review experience",
+  "source": {
+    "kind": "working-tree",
+    "capturedAt": "2026-09-12T00:00:00.000Z",
+    "from": {
+      "revision": "HEAD",
+      "commit": "0123456789abcdef"
+    }
+  },
+  "sections": [
+    {
+      "title": "Make navigation part of the content",
+      "steps": [
+        {
+          "text": "### Keep the explanation in focus\n\nReaders should be able to follow a change without sorting through a toolbar of identifiers. The section title provides a stable destination, while each step has a light gray LINK on the right.\n\nSelect a few words in this paragraph, then try the LINK on its right. The link should be easy to find without competing with the explanation.",
+          "changes": [
+            "change-037",
+            "change-040"
+          ],
+          "diff": "diff --git a/src/report/navigation.ts b/src/report/navigation.ts\n--- a/src/report/navigation.ts\n+++ b/src/report/navigation.ts\n@@ -1,12 +1,12 @@\n-export const option1 = \"previous value 1\"\n-export const option2 = \"previous value 2\"\n-export const option3 = \"previous value 3\"\n-export const option4 = \"previous value 4\"\n-export const option5 = \"previous value 5\"\n-export const option6 = \"previous value 6\"\n-export const option7 = \"previous value 7\"\n-export const option8 = \"previous value 8\"\n-export const option9 = \"previous value 9\"\n-export const option10 = \"previous value 10\"\n-export const option11 = \"previous value 11\"\n-export const option12 = \"previous value 12\"\n+export const option1 = \"updated value 1\"\n+export const option2 = \"updated value 2\"\n+export const option3 = \"updated value 3\"\n+export const option4 = \"updated value 4\"\n+export const option5 = \"updated value 5\"\n+export const option6 = \"updated value 6\"\n+export const option7 = \"updated value 7\"\n+export const option8 = \"updated value 8\"\n+export const option9 = \"updated value 9\"\n+export const option10 = \"updated value 10\"\n+export const option11 = \"updated value 11\"\n+export const option12 = \"updated value 12\"\n"
+        },
+        {
+          "text": "### Separate folding from navigation\n\nUse the arrow and number to collapse this section. Clicking its title should navigate instead. These actions need different hit areas so a reader can copy a title or follow a link without accidentally hiding the report.\n\n- Section title: navigate to this section.\n- Arrow and number: expand or collapse.\n- Paragraph anchor: share one step.\n\nTry all three after scrolling down and returning to this section."
+        },
+        {
+          "text": "The same placement should work across multiple files. Compare the two file headers below and check that the explanation still feels connected to its code.",
+          "diff": "diff --git a/src/report/actions.ts b/src/report/actions.ts\n--- a/src/report/actions.ts\n+++ b/src/report/actions.ts\n@@ -1,10 +1,10 @@\n-export const option1 = \"previous value 1\"\n-export const option2 = \"previous value 2\"\n-export const option3 = \"previous value 3\"\n-export const option4 = \"previous value 4\"\n-export const option5 = \"previous value 5\"\n-export const option6 = \"previous value 6\"\n-export const option7 = \"previous value 7\"\n-export const option8 = \"previous value 8\"\n-export const option9 = \"previous value 9\"\n-export const option10 = \"previous value 10\"\n+export const option1 = \"updated value 1\"\n+export const option2 = \"updated value 2\"\n+export const option3 = \"updated value 3\"\n+export const option4 = \"updated value 4\"\n+export const option5 = \"updated value 5\"\n+export const option6 = \"updated value 6\"\n+export const option7 = \"updated value 7\"\n+export const option8 = \"updated value 8\"\n+export const option9 = \"updated value 9\"\n+export const option10 = \"updated value 10\"\ndiff --git a/src/report/selection.ts b/src/report/selection.ts\n--- a/src/report/selection.ts\n+++ b/src/report/selection.ts\n@@ -1,8 +1,8 @@\n-export const option1 = \"previous value 1\"\n-export const option2 = \"previous value 2\"\n-export const option3 = \"previous value 3\"\n-export const option4 = \"previous value 4\"\n-export const option5 = \"previous value 5\"\n-export const option6 = \"previous value 6\"\n-export const option7 = \"previous value 7\"\n-export const option8 = \"previous value 8\"\n+export const option1 = \"updated value 1\"\n+export const option2 = \"updated value 2\"\n+export const option3 = \"updated value 3\"\n+export const option4 = \"updated value 4\"\n+export const option5 = \"updated value 5\"\n+export const option6 = \"updated value 6\"\n+export const option7 = \"updated value 7\"\n+export const option8 = \"updated value 8\"\n",
+          "changes": [
+            "change-042",
+            "change-043"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Keep longer explanations readable on narrow screens",
+      "steps": [
+        {
+          "text": "A report often needs more than one sentence to explain why a change matters. Long paragraphs are useful here because they reveal whether the anchor steals space, whether text wraps cleanly, and whether the content starts at a consistent position.\n\nThe layout should remain readable when a desktop window is narrowed to phone width. Inline code such as `resolveProjectConfiguration(workspaceRoot)` can be wider than ordinary words, and should not push the controls outside the viewport.\n\n> This blockquote is another content shape to review. It should keep its own indentation while the step anchor remains aligned with the beginning of the step.\n\nA final paragraph gives us enough content to check spacing before the next code block."
+        },
+        {
+          "text": "This intentionally longer diff lets you test navigation after scrolling well below the section heading.",
+          "diff": "diff --git a/src/config/resolve-project-configuration.ts b/src/config/resolve-project-configuration.ts\n--- a/src/config/resolve-project-configuration.ts\n+++ b/src/config/resolve-project-configuration.ts\n@@ -1,42 +1,42 @@\n-export const option1 = \"previous value 1\"\n-export const option2 = \"previous value 2\"\n-export const option3 = \"previous value 3\"\n-export const option4 = \"previous value 4\"\n-export const option5 = \"previous value 5\"\n-export const option6 = \"previous value 6\"\n-export const option7 = \"previous value 7\"\n-export const option8 = \"previous value 8\"\n-export const option9 = \"previous value 9\"\n-export const option10 = \"previous value 10\"\n-export const option11 = \"previous value 11\"\n-export const option12 = \"previous value 12\"\n-export const option13 = \"previous value 13\"\n-export const option14 = \"previous value 14\"\n-export const option15 = \"previous value 15\"\n-export const option16 = \"previous value 16\"\n-export const option17 = \"previous value 17\"\n-export const option18 = \"previous value 18\"\n-export const option19 = \"previous value 19\"\n-export const option20 = \"previous value 20\"\n-export const option21 = \"previous value 21\"\n-export const option22 = \"previous value 22\"\n-export const option23 = \"previous value 23\"\n-export const option24 = \"previous value 24\"\n-export const option25 = \"previous value 25\"\n-export const option26 = \"previous value 26\"\n-export const option27 = \"previous value 27\"\n-export const option28 = \"previous value 28\"\n-export const option29 = \"previous value 29\"\n-export const option30 = \"previous value 30\"\n-export const option31 = \"previous value 31\"\n-export const option32 = \"previous value 32\"\n-export const option33 = \"previous value 33\"\n-export const option34 = \"previous value 34\"\n-export const option35 = \"previous value 35\"\n-export const option36 = \"previous value 36\"\n-export const option37 = \"previous value 37\"\n-export const option38 = \"previous value 38\"\n-export const option39 = \"previous value 39\"\n-export const option40 = \"previous value 40\"\n-export const option41 = \"previous value 41\"\n-export const option42 = \"previous value 42\"\n+export const option1 = \"updated value 1\"\n+export const option2 = \"updated value 2\"\n+export const option3 = \"updated value 3\"\n+export const option4 = \"updated value 4\"\n+export const option5 = \"updated value 5\"\n+export const option6 = \"updated value 6\"\n+export const option7 = \"updated value 7\"\n+export const option8 = \"updated value 8\"\n+export const option9 = \"updated value 9\"\n+export const option10 = \"updated value 10\"\n+export const option11 = \"updated value 11\"\n+export const option12 = \"updated value 12\"\n+export const option13 = \"updated value 13\"\n+export const option14 = \"updated value 14\"\n+export const option15 = \"updated value 15\"\n+export const option16 = \"updated value 16\"\n+export const option17 = \"updated value 17\"\n+export const option18 = \"updated value 18\"\n+export const option19 = \"updated value 19\"\n+export const option20 = \"updated value 20\"\n+export const option21 = \"updated value 21\"\n+export const option22 = \"updated value 22\"\n+export const option23 = \"updated value 23\"\n+export const option24 = \"updated value 24\"\n+export const option25 = \"updated value 25\"\n+export const option26 = \"updated value 26\"\n+export const option27 = \"updated value 27\"\n+export const option28 = \"updated value 28\"\n+export const option29 = \"updated value 29\"\n+export const option30 = \"updated value 30\"\n+export const option31 = \"updated value 31\"\n+export const option32 = \"updated value 32\"\n+export const option33 = \"updated value 33\"\n+export const option34 = \"updated value 34\"\n+export const option35 = \"updated value 35\"\n+export const option36 = \"updated value 36\"\n+export const option37 = \"updated value 37\"\n+export const option38 = \"updated value 38\"\n+export const option39 = \"updated value 39\"\n+export const option40 = \"updated value 40\"\n+export const option41 = \"updated value 41\"\n+export const option42 = \"updated value 42\"\n",
+          "changes": [
+            "change-045"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Review a code-only step without an explanation heading",
+      "steps": [
+        {
+          "text": "",
+          "diff": "diff --git a/src/report/anchors.ts b/src/report/anchors.ts\n--- a/src/report/anchors.ts\n+++ b/src/report/anchors.ts\n@@ -1,24 +1,24 @@\n-export const option1 = \"previous value 1\"\n-export const option2 = \"previous value 2\"\n-export const option3 = \"previous value 3\"\n-export const option4 = \"previous value 4\"\n-export const option5 = \"previous value 5\"\n-export const option6 = \"previous value 6\"\n-export const option7 = \"previous value 7\"\n-export const option8 = \"previous value 8\"\n-export const option9 = \"previous value 9\"\n-export const option10 = \"previous value 10\"\n-export const option11 = \"previous value 11\"\n-export const option12 = \"previous value 12\"\n-export const option13 = \"previous value 13\"\n-export const option14 = \"previous value 14\"\n-export const option15 = \"previous value 15\"\n-export const option16 = \"previous value 16\"\n-export const option17 = \"previous value 17\"\n-export const option18 = \"previous value 18\"\n-export const option19 = \"previous value 19\"\n-export const option20 = \"previous value 20\"\n-export const option21 = \"previous value 21\"\n-export const option22 = \"previous value 22\"\n-export const option23 = \"previous value 23\"\n-export const option24 = \"previous value 24\"\n+export const option1 = \"updated value 1\"\n+export const option2 = \"updated value 2\"\n+export const option3 = \"updated value 3\"\n+export const option4 = \"updated value 4\"\n+export const option5 = \"updated value 5\"\n+export const option6 = \"updated value 6\"\n+export const option7 = \"updated value 7\"\n+export const option8 = \"updated value 8\"\n+export const option9 = \"updated value 9\"\n+export const option10 = \"updated value 10\"\n+export const option11 = \"updated value 11\"\n+export const option12 = \"updated value 12\"\n+export const option13 = \"updated value 13\"\n+export const option14 = \"updated value 14\"\n+export const option15 = \"updated value 15\"\n+export const option16 = \"updated value 16\"\n+export const option17 = \"updated value 17\"\n+export const option18 = \"updated value 18\"\n+export const option19 = \"updated value 19\"\n+export const option20 = \"updated value 20\"\n+export const option21 = \"updated value 21\"\n+export const option22 = \"updated value 22\"\n+export const option23 = \"updated value 23\"\n+export const option24 = \"updated value 24\"\n",
+          "changes": [
+            "change-046"
+          ]
+        },
+        {
+          "text": "The previous step has no prose. Its anchor should still have an obvious position and should not cover a filename, line number, or changed line.\n\nAfter following its link, collapse this section and open the same URL again to check that the destination becomes visible."
+        }
+      ]
+    },
+    {
+      "title": "Handle long section titles without crowding the fold control or making the entire heading behave like a toggle",
+      "steps": [
+        {
+          "text": "### Final review\n\nThis final section is deliberately far from the top. Use it to test a copied link in a new tab, browser Back and Forward, and the sticky navigation while scrolling.\n\n1. Select and copy part of this title.\n2. Open a step anchor in a new tab.\n3. Collapse and expand using only the arrow and number.\n4. Resize the viewport and check the same controls again.",
+          "diff": "diff --git a/src/report/final-review.ts b/src/report/final-review.ts\n--- a/src/report/final-review.ts\n+++ b/src/report/final-review.ts\n@@ -1,16 +1,16 @@\n-export const option1 = \"previous value 1\"\n-export const option2 = \"previous value 2\"\n-export const option3 = \"previous value 3\"\n-export const option4 = \"previous value 4\"\n-export const option5 = \"previous value 5\"\n-export const option6 = \"previous value 6\"\n-export const option7 = \"previous value 7\"\n-export const option8 = \"previous value 8\"\n-export const option9 = \"previous value 9\"\n-export const option10 = \"previous value 10\"\n-export const option11 = \"previous value 11\"\n-export const option12 = \"previous value 12\"\n-export const option13 = \"previous value 13\"\n-export const option14 = \"previous value 14\"\n-export const option15 = \"previous value 15\"\n-export const option16 = \"previous value 16\"\n+export const option1 = \"updated value 1\"\n+export const option2 = \"updated value 2\"\n+export const option3 = \"updated value 3\"\n+export const option4 = \"updated value 4\"\n+export const option5 = \"updated value 5\"\n+export const option6 = \"updated value 6\"\n+export const option7 = \"updated value 7\"\n+export const option8 = \"updated value 8\"\n+export const option9 = \"updated value 9\"\n+export const option10 = \"updated value 10\"\n+export const option11 = \"updated value 11\"\n+export const option12 = \"updated value 12\"\n+export const option13 = \"updated value 13\"\n+export const option14 = \"updated value 14\"\n+export const option15 = \"updated value 15\"\n+export const option16 = \"updated value 16\"\n",
+          "changes": [
+            "change-048",
+            "change-049"
+          ]
+        },
+        {
+          "text": "End of the sample. There should be enough content above to judge vertical rhythm, navigation, and the difference between a short step and a long one. No publication is needed to try another layout."
+        }
+      ]
+    }
+  ],
+  "summary": "A longer sample for reviewing navigation, readable explanations, and code changes before release. Scroll through multiple sections and try the section titles and step anchors.\n\nThis is sample content for layout review, not a description of shipped changes."
+}

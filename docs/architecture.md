@@ -134,7 +134,7 @@ exact corresponding diffs in a deliberate order.
   client, and tests.
 - `src/report/markdown.ts`: Markdown rendering with inline HTML passed through.
 - `src/report.ts`: atomic report writes and client-bundle loading.
-- `src/report/shell.ts`: the one report shell, embedded-data escaping, and shell styles,
+- `src/report/render.ts`: the one report shell, embedded-data escaping, and shell styles,
   rendered with inlined assets for the offline file or linked assets for the hosted page.
 - `src/publish.ts`: review service origin checks, publish credential lookup, the
   publish, update, and unpublish requests, and adding the Git user name as

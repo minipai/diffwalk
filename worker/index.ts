@@ -1,6 +1,6 @@
 import { explainDocumentSchema, type ExplainDocument } from '../src/format'
 import { faviconSvg } from '../src/report/favicon'
-import { renderHostedReport } from '../src/report/shell'
+import { renderHostedReport } from '../src/report/render'
 import {
   bearerToken,
   createReportId,

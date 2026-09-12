@@ -1092,7 +1092,8 @@ describe('view', () => {
       expect(response.headers.get('cache-control')).toBe('no-store')
       const html = await response.text()
       expect(html).toContain('<title>A change set</title>')
-      expect(html).toContain('data-copy-fragment="change-001"')
+      expect(html).toContain('id="change-001" data-target-kind="change"')
+      expect(html).not.toContain('data-copy-fragment')
       expect((await fetch(`${previewUrl}/other`)).status).toBe(404)
       expect(await readdir(await currentWalkDir(repo))).not.toContain('diffwalk.html')
 

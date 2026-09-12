@@ -206,7 +206,7 @@ function fragmentTarget(): { fragment: string; target: HTMLElement } | null {
 function revealFragment(final: boolean) {
   const resolved = fragmentTarget()
   if (resolved === null) return
-  const { fragment, target } = resolved
+  const { target } = resolved
 
   for (let parent = target.parentElement; parent; parent = parent.parentElement) {
     if (parent.matches('details')) (parent as HTMLDetailsElement).open = true
@@ -225,66 +225,31 @@ function revealFragment(final: boolean) {
   // Align the target's leading edge (its title or marker). Centering a target
   // taller than the viewport would push that edge far off-screen.
   target.scrollIntoView?.({ block: 'start' })
-  const targets = new Set(generatedTargets())
-  const focusTarget = [...document.querySelectorAll<HTMLButtonElement>('[data-copy-fragment]')]
-    .find((button) => {
-      if (button.dataset.copyFragment !== fragment) return false
-      for (let owner = button.parentElement; owner; owner = owner.parentElement) {
-        if (targets.has(owner)) return owner === target
-      }
-      return false
+  const owner = target.matches('[data-target-kind="change"]') ? target.closest('.step') : target
+  const link = owner?.querySelector<HTMLAnchorElement>('a.section-title-text, a.permalink')
+  link?.focus({ preventScroll: true })
+}
+
+function wireSectionFolds() {
+  for (const fold of sectionFolds()) {
+    const summary = fold.querySelector<HTMLElement>(':scope > summary')!
+    const button = summary.querySelector<HTMLButtonElement>('.section-toggle')!
+    const arrow = button.querySelector<HTMLElement>('.section-toggle-arrow')!
+    const sync = () => {
+      button.setAttribute('aria-expanded', String(fold.open))
+      arrow.textContent = fold.open ? '▾' : '▸'
+    }
+    summary.addEventListener('click', (event) => {
+      if (!(event.target as Element).closest('a')) event.preventDefault()
     })
-  focusTarget?.focus({ preventScroll: true })
-}
-
-const feedbackTimers = new WeakMap<HTMLButtonElement, ReturnType<typeof setTimeout>>()
-
-function showCopyFeedback(button: HTMLButtonElement, success: boolean) {
-  const label = button.querySelector<HTMLElement>('[data-copy-label]')
-  const original = label?.dataset.originalLabel ?? label?.textContent ?? 'Copy'
-  if (label) {
-    label.dataset.originalLabel = original
-    label.textContent = success ? 'Copied' : 'Failed'
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      fold.open = !fold.open
+      sync()
+    })
+    fold.addEventListener('toggle', sync)
+    sync()
   }
-  button.dataset.copyState = success ? 'success' : 'failure'
-  const status = document.querySelector<HTMLElement>('[data-copy-status]')
-  if (status) status.textContent = success ? 'Link copied to clipboard.' : 'Could not copy link.'
-
-  const previous = feedbackTimers.get(button)
-  if (previous !== undefined) clearTimeout(previous)
-  feedbackTimers.set(
-    button,
-    setTimeout(() => {
-      if (label) label.textContent = original
-      delete button.dataset.copyState
-    }, 2000),
-  )
-}
-
-async function copyText(value: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(value)
-      return
-    } catch {}
-  }
-
-  const field = document.createElement('textarea')
-  const active = document.activeElement
-  field.value = value
-  field.style.position = 'fixed'
-  field.style.opacity = '0'
-  document.body.appendChild(field)
-  let copied = false
-  try {
-    field.focus()
-    field.select()
-    copied = document.execCommand?.('copy') ?? false
-  } finally {
-    field.remove()
-    if (active instanceof HTMLElement) active.focus({ preventScroll: true })
-  }
-  if (!copied) throw new Error('Clipboard access is unavailable')
 }
 
 function wireFragments(initialRender: Promise<void>) {
@@ -304,18 +269,6 @@ function wireFragments(initialRender: Promise<void>) {
   }
 
   window.addEventListener('hashchange', navigate)
-  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy-fragment]')) {
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      const url = new URL(window.location.href)
-      url.hash = button.dataset.copyFragment!
-      void copyText(url.href).then(
-        () => showCopyFeedback(button, true),
-        () => showCopyFeedback(button, false),
-      )
-    })
-  }
   document.addEventListener('click', (event) => {
     const origin = event.target
     if (!(origin instanceof Element)) return
@@ -399,7 +352,7 @@ function wireGlobalFolds() {
     for (const fold of folds) fold.open = unfold
     if (active instanceof HTMLElement && hiddenByClosedFold(active)) {
       const section = active.closest('details.section-fold')
-      const summary = section?.querySelector<HTMLElement>(':scope > summary')
+      const summary = section?.querySelector<HTMLElement>('.section-toggle')
       ;(summary ?? button).focus({ preventScroll: true })
     }
     sync()
@@ -429,6 +382,7 @@ export function mountReport(
   }
   let finishInitialRender!: () => void
   const initialRender = new Promise<void>((resolve) => (finishInitialRender = resolve))
+  wireSectionFolds()
   wireFragments(initialRender)
   const mountedDiffs = mountDiffs(data, layout, createFileDiff)
   void mountedDiffs.initialRender.then(finishInitialRender)

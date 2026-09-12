@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { shellStyles } from '../src/report/shell'
+import { shellStyles } from '../src/report/render'
 
 const root = resolve(import.meta.dir, '..')
 const publicDirectory = join(root, 'worker', 'public')

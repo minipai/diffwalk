@@ -261,6 +261,15 @@ installing it. Source: [skills/diffwalk/SKILL.md](skills/diffwalk/SKILL.md).
 
 ## Development
 
+Run `pnpm dev:report` to preview the report at `http://localhost:4399/`
+(from another device on this LAN: `http://192.168.88.8:4399/`).
+The server binds to `0.0.0.0`; use `PORT=4400 pnpm dev:report` for another port.
+Edit `fixtures/report-preview.json` for sample content and `scripts/dev-report.ts`
+for the preview server. Report layout and interactions come directly from
+`src/report/render.ts` and `src/report/client.ts`. Source and sample edits are watched;
+refresh the browser to see changes, including rebuilt browser-client code.
+Stop with Ctrl+C. This preview does not publish or change saved walks.
+
 Additional dependencies:
 
 - Bun 1.3 or newer.
