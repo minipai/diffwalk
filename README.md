@@ -191,8 +191,44 @@ Losing the token and `published.json` prevents revocation. Running `diffwalk pub
 again creates a new link and replaces the saved publication details. Save the old
 token first if you need to revoke the earlier review later.
 
-Use `--service https://review.example` or `DIFFWALK_SERVICE_URL` to publish to another
-service.
+### Choosing the review service
+
+`https://review.diffwalk.dev` is the default hosted service. Self-hosting it is optional;
+the `Development` section below describes running your own. To point a project at another
+service without passing `--service` every time, add `.diffwalk/config.json` beside the
+walks:
+
+```json
+{
+  "service": "https://review.example.com"
+}
+```
+
+`.diffwalk/` also holds captured file contents and publication tokens and is kept out of
+version control, so this config is local to the project and separate from every walk's
+`capture.json`, `explanations.yaml`, and `published.json`.
+
+For a new publication or `diffwalk unpublish`, the service is resolved in this order:
+
+1. `--service <url>`.
+2. `DIFFWALK_SERVICE_URL`.
+3. `.diffwalk/config.json`.
+4. `https://review.diffwalk.dev`.
+
+The config is the `.diffwalk/config.json` at the root of the Git work tree, so commands
+work from any project subdirectory. A config above the work tree is not part of the
+project and is ignored. `--input` and `--explanations` do not move the lookup: the config
+is never read from the input files' directory. Outside a Git work tree there is no
+project config, so the flag, the environment, and the default still apply.
+
+The configured value is validated and normalized like `--service`: only the origin is
+kept, plaintext HTTP is refused except for `localhost` and `127.0.0.1`, and a malformed
+config or invalid URL stops the command instead of quietly falling back to the default.
+
+`publish --update` ignores this resolution. It always uses the service retained in the
+walk's `published.json` and refuses an explicit `--service` that differs, so changing
+project config or the environment cannot redirect an existing review or send its
+revocation token to another service.
 
 ## Explicit input files
 

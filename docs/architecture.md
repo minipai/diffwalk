@@ -98,6 +98,15 @@ exact corresponding diffs in a deliberate order.
   the stored document while keeping the ID, the link, and the revocation digest, so the
   reader's URL and the author's credential both keep working.
 
+- The review service is a project-level setting in `.diffwalk/config.json`, separate from
+  each walk's capture and publication credentials. New publications and `unpublish`
+  resolve it as `--service`, then `DIFFWALK_SERVICE_URL`, then the project config, then
+  `https://review.diffwalk.dev`. The config is `<work-tree-root>/.diffwalk/config.json`, so
+  the lookup works from a subdirectory while a config above the work tree is ignored;
+  outside a Git work tree there is no project config, and explicit `--input`/`--explanations`
+  never redirect it. `publish --update` uses only the retained service, so changing the
+  config or environment cannot move an existing review or expose its token to another host.
+
 ## Source map
 
 - `src/format.ts`: Zod schemas for the machine-owned capture and the author-edited
@@ -113,6 +122,8 @@ exact corresponding diffs in a deliberate order.
   validation, and persistence.
 - `src/authoring/walk.ts`: timestamped walk IDs, per-walk paths, listing and deleting
   walks, and the current-walk pointer.
+- `src/authoring/config.ts`: the optional project-level `.diffwalk/config.json` lookup and
+  schema for the review service origin.
 - `src/authoring/published.ts`: the locally retained published review (ID, URL, service,
   and revocation token), written by `publish` and read by `publish --update`.
 - `src/cli.ts`: executable entry point for `inspect`, `walks`, `use`, `delete`,

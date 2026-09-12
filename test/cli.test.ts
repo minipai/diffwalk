@@ -1488,6 +1488,197 @@ describe('publish', () => {
       service.stop()
     }
   })
+
+  test('publishes from a project subdirectory using the configured service', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const walkDirectory = await currentWalkDir(repo)
+    const service = startFakeService()
+
+    try {
+      await writeFile(
+        join(repo, '.diffwalk', 'config.json'),
+        JSON.stringify({ service: service.origin }),
+      )
+      const nested = join(repo, 'packages', 'app')
+      await mkdir(nested, { recursive: true })
+
+      const result = await runCli(
+        [
+          'publish',
+          '--input',
+          join(walkDirectory, 'capture.json'),
+          '--explanations',
+          join(walkDirectory, 'explanations.yaml'),
+        ],
+        nested,
+      )
+
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain(`${service.origin}/r/${reportId}`)
+      expect(service.published).toHaveLength(1)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('an explicit service overrides the configured project service', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const configured = startFakeService()
+    const explicit = startFakeService()
+
+    try {
+      await writeFile(
+        join(repo, '.diffwalk', 'config.json'),
+        JSON.stringify({ service: configured.origin }),
+      )
+
+      const result = await runCli(['publish', '--service', explicit.origin], repo)
+
+      expect(result.exitCode).toBe(0)
+      expect(explicit.published).toHaveLength(1)
+      expect(configured.published).toHaveLength(0)
+    } finally {
+      configured.stop()
+      explicit.stop()
+    }
+  })
+
+  test('a malformed project config stops a publish instead of using the default', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      await writeFile(join(repo, '.diffwalk', 'config.json'), '{not json')
+
+      const result = await runCli(['publish'], repo)
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('Invalid JSON')
+      expect(result.stderr).toContain(join('.diffwalk', 'config.json'))
+      expect(service.published).toHaveLength(0)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('an invalid configured service URL is refused before upload', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    await writeFile(
+      join(repo, '.diffwalk', 'config.json'),
+      JSON.stringify({ service: 'http://reports.example.test' }),
+    )
+
+    const result = await runCli(['publish'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('over HTTPS')
+  })
+
+  test('publish --update keeps the retained service when config and environment change', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const retained = startFakeService()
+    const other = startFakeService()
+
+    try {
+      const published = await runCli(['publish', '--service', retained.origin], repo)
+      expect(published.exitCode).toBe(0)
+
+      await writeFile(
+        join(repo, '.diffwalk', 'config.json'),
+        JSON.stringify({ service: other.origin }),
+      )
+
+      const update = await runCli(['publish', '--update'], repo, {
+        DIFFWALK_SERVICE_URL: other.origin,
+      })
+
+      expect(update.exitCode).toBe(0)
+      expect(update.stdout).toContain(retained.origin)
+      expect(retained.updated).toHaveLength(1)
+      expect(other.published).toHaveLength(0)
+      expect(other.updated).toHaveLength(0)
+    } finally {
+      retained.stop()
+      other.stop()
+    }
+  })
+
+  test('the environment overrides the configured project service', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const configured = startFakeService()
+    const environment = startFakeService()
+
+    try {
+      await writeFile(
+        join(repo, '.diffwalk', 'config.json'),
+        JSON.stringify({ service: configured.origin }),
+      )
+
+      const result = await runCli(['publish'], repo, {
+        DIFFWALK_SERVICE_URL: environment.origin,
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(environment.published).toHaveLength(1)
+      expect(configured.published).toHaveLength(0)
+    } finally {
+      configured.stop()
+      environment.stop()
+    }
+  })
+
+  test('the config comes from the working project, not the input files', async () => {
+    const projectA = await fixtureRepo()
+    await runCli(['inspect'], projectA)
+    await authorEveryChange(projectA)
+    const projectB = await fixtureRepo()
+    await runCli(['inspect'], projectB)
+    await authorEveryChange(projectB)
+    const serviceA = startFakeService()
+    const serviceB = startFakeService()
+
+    try {
+      await writeFile(
+        join(projectA, '.diffwalk', 'config.json'),
+        JSON.stringify({ service: serviceA.origin }),
+      )
+      await writeFile(
+        join(projectB, '.diffwalk', 'config.json'),
+        JSON.stringify({ service: serviceB.origin }),
+      )
+      const walkB = await currentWalkDir(projectB)
+
+      const result = await runCli(
+        [
+          'publish',
+          '--input',
+          join(walkB, 'capture.json'),
+          '--explanations',
+          join(walkB, 'explanations.yaml'),
+        ],
+        projectA,
+      )
+
+      expect(result.exitCode).toBe(0)
+      expect(serviceA.published).toHaveLength(1)
+      expect(serviceB.published).toHaveLength(0)
+    } finally {
+      serviceA.stop()
+      serviceB.stop()
+    }
+  })
 })
 
 describe('unpublish', () => {
@@ -1538,6 +1729,26 @@ describe('unpublish', () => {
     const noId = await runCli(['unpublish', '--token', revocationToken], repo)
     expect(noId.exitCode).not.toBe(0)
     expect(noId.stderr).toContain("missing required argument 'id'")
+  })
+
+  test('resolves the configured project service without a flag', async () => {
+    const repo = await fixtureRepo()
+    const service = startFakeService()
+
+    try {
+      await mkdir(join(repo, '.diffwalk'), { recursive: true })
+      await writeFile(
+        join(repo, '.diffwalk', 'config.json'),
+        JSON.stringify({ service: service.origin }),
+      )
+
+      const result = await runCli(['unpublish', reportId, '--token', revocationToken], repo)
+
+      expect(result.exitCode).toBe(0)
+      expect(service.revoked).toEqual([{ id: reportId, token: revocationToken }])
+    } finally {
+      service.stop()
+    }
   })
 })
 
