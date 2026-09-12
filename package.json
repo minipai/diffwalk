@@ -41,7 +41,9 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "test": "bun test",
     "pretest": "pnpm build",
-    "check": "pnpm typecheck && pnpm test",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
+    "check": "pnpm typecheck && pnpm test && pnpm test:visual",
     "prepack": "pnpm build"
   },
   "dependencies": {
@@ -55,6 +57,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260828.1",
+    "@playwright/test": "1.55.0",
     "@types/bun": "1.4.0",
     "@types/react": "19.2.18",
     "happy-dom": "20.11.12",

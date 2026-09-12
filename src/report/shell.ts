@@ -241,7 +241,7 @@ function pluralize(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
 
-function sectionIndex(index: number): string {
+export function sectionIndex(index: number): string {
   return String(index + 1).padStart(2, '0')
 }
 

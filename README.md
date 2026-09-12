@@ -236,8 +236,32 @@ pnpm build
 pnpm check
 ```
 
-`pnpm check` runs type checks and tests. Pull requests targeting `main` run the same
-check in CI.
+`pnpm check` runs type checks, unit tests, and the visual regression tests. Pull
+requests targeting `main` run the same check in CI.
+
+### Visual regression tests
+
+The report's presentation is covered by pixel snapshots rather than assertions
+about CSS class names or stylesheet text. The suite renders the real report in
+Chromium at desktop, narrow, and phone widths, plus a print layout:
+
+```bash
+pnpm exec playwright install chromium   # once per machine
+pnpm test:visual                        # compare against committed baselines
+pnpm test:visual:update                 # rewrite baselines after an intentional change
+```
+
+Snapshots live in `test/visual/__screenshots__`, one directory per breakpoint.
+They are deterministic because the fixtures are fixed, the viewport and device
+scale are pinned in `playwright.config.ts`, and the suite forces the bundled
+`DejaVu Sans` family (install `fonts-dejavu-core` on Debian/Ubuntu if it is
+missing). CI installs the browser with `playwright install --with-deps chromium`
+before running `pnpm check`.
+
+When a visual change is intentional, run `pnpm test:visual:update`, open every
+changed PNG and confirm it shows the intended look, then commit the images with
+the code. A failed comparison writes the mismatched pixels to a `*-diff.png`
+beside the baseline.
 
 ### Running the review service
 

@@ -6,6 +6,7 @@ import type { ExplainDocument } from '../src/format'
 import { renderMarkdown } from '../src/report/markdown'
 import { fileDiffStats, parseSectionPatch } from '../src/report/patches'
 import { loadReportClient, renderHostedReport, renderReport, writeReport } from '../src/report'
+import { sectionIndex } from '../src/report/shell'
 import { reportTargets } from '../src/report/targets'
 
 const directories: string[] = []
@@ -161,7 +162,6 @@ describe('renderReport shell', () => {
     expect(html).toContain('Renamed · content unchanged')
     expect(html).not.toContain('+0 −0')
     expect(html).not.toContain('data-diff-mount="0-0-0"')
-    expect(html).toContain('<div class="file file-static">')
     expect(html).not.toContain('<details class="file"')
   })
 
@@ -208,7 +208,7 @@ describe('renderReport shell', () => {
     )
 
     expect(html).toContain('data-diff-mount="0-0-0"')
-    expect(html).not.toContain('class="step-text prose"')
+    // The semantic absence of the prose block is verified in report-dom.test.ts.
   })
 
   test('the document title becomes the heading and the page title', () => {
@@ -233,32 +233,31 @@ describe('renderReport shell', () => {
       stubClient,
     )
     const main = withSummary.indexOf('<main>')
-    const cover = withSummary.indexOf('<section class="report-cover">')
     const heading = withSummary.indexOf('<h1>Share reports by link</h1>')
-    const provenance = withSummary.indexOf('<dl class="source-metadata">')
-    const summary = withSummary.indexOf('<div class="cover-summary prose">')
+    const provenance = withSummary.indexOf('<dt>Source</dt>')
+    const summary = withSummary.indexOf('The shape of it.')
     const firstSection = withSummary.indexOf('data-section-index="0"')
 
     expect(main).toBeGreaterThan(-1)
-    expect(cover).toBeGreaterThan(main)
-    expect(heading).toBeGreaterThan(cover)
+    expect(heading).toBeGreaterThan(main)
     expect(provenance).toBeGreaterThan(heading)
     expect(summary).toBeGreaterThan(provenance)
     expect(firstSection).toBeGreaterThan(summary)
     expect(withSummary).toContain('<svg viewBox="0 0 10 10"></svg>')
 
     const withoutSummary = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
-    expect(withoutSummary).toContain('<section class="report-cover">')
-    expect(withoutSummary).not.toContain('class="cover-summary')
+    expect(withoutSummary).toContain('<h1>A change set</h1>')
+    expect(withoutSummary).not.toContain('The shape of it.')
   })
 
   test('there is no page header: the layout toggle opens the review map', () => {
     const html = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
-    const map = html.indexOf('<nav class="review-map"')
-    const form = html.indexOf('<form class="layout-form"')
-    const label = html.indexOf('<p class="review-map-label">')
+    const map = html.indexOf('aria-label="Review map"')
+    const form = html.indexOf('data-layout-form')
+    const label = html.indexOf('>Review map<')
 
-    expect(html).not.toContain('class="report-header"')
+    expect(html).not.toContain('<header')
+    expect(map).toBeGreaterThan(-1)
     expect(form).toBeGreaterThan(map)
     expect(label).toBeGreaterThan(form)
   })
@@ -322,27 +321,6 @@ describe('renderReport shell', () => {
     expect(html).toContain('<dt>Captured at</dt><dd>2026-08-28T00:00:00.000Z</dd>')
   })
 
-  test('source metadata compacts to one ellipsized line per row in the sticky header', () => {
-    const html = renderReport(
-      {
-        formatVersion: 1,
-        title: 'A change set',
-        summary: '',
-        source: {
-          kind: 'working-tree',
-          capturedAt: '2026-08-28T00:00:00.000Z',
-          from: { revision: 'HEAD', commit: '0123456789abcdef' },
-        },
-        sections: [section(simplePatch(), 'Narrow')],
-      },
-      stubClient,
-    )
-
-    expect(html).toContain('grid-template-columns: max-content minmax(0, 1fr);')
-    expect(html).toContain('.source-metadata dd { margin: 0; min-width: 0;')
-    expect(html).toContain('text-overflow: ellipsis; white-space: nowrap;')
-  })
-
   test('layout radio defaults to split without an apply step', () => {
     const html = renderReport(document([section(simplePatch(), 'Layout')]), stubClient)
 
@@ -362,17 +340,15 @@ describe('renderReport shell', () => {
 
   test('the review map carries one global fold control after the layout toggle', () => {
     const html = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
-    const form = html.indexOf('<form class="layout-form"')
+    const form = html.indexOf('data-layout-form')
     const fold = html.indexOf('data-fold-all')
-    const label = html.indexOf('<p class="review-map-label">')
+    const label = html.indexOf('>Review map<')
 
     expect(fold).toBeGreaterThan(form)
     expect(label).toBeGreaterThan(fold)
-    expect(html).toContain('<button type="button" class="fold-all" data-fold-all')
+    expect(html).toContain('class="fold-all" data-fold-all')
     expect(html).toContain('aria-label="Fold all review sections"')
     expect(html).toContain('data-fold-all-label>Fold all<')
-    expect(html).toContain('.review-controls {')
-    expect(html).toContain('.fold-all:focus-visible')
   })
 
   test('review map lists every section in document order with zero-padded anchors and counts', () => {
@@ -383,7 +359,7 @@ describe('renderReport shell', () => {
     const html = renderReport(value, stubClient)
     const targets = reportTargets(value)
 
-    const mapStart = html.indexOf('class="review-map"')
+    const mapStart = html.indexOf('aria-label="Review map"')
     const first = html.indexOf('First section', mapStart)
     const second = html.indexOf('Second section', mapStart)
     expect(mapStart).toBeGreaterThan(-1)
@@ -391,77 +367,55 @@ describe('renderReport shell', () => {
     expect(second).toBeGreaterThan(first)
     expect(html).toContain(`href="#${targets[0]!.fragment}"`)
     expect(html).toContain(`href="#${targets[1]!.fragment}"`)
-    expect(html).toContain('class="review-map-index">01<')
-    expect(html).toContain('class="review-map-index">02<')
+    expect(html).toContain('>01<')
+    expect(html).toContain('>02<')
     expect(html).toContain(`id="${targets[0]!.fragment}"`)
     expect(html).toContain(`id="${targets[1]!.fragment}"`)
     expect(html).not.toContain('href="#section-0"')
     expect(html).toContain('>2 sections<')
     expect(html).toContain('>3 files<')
-    expect(html).toContain(
-      '.review-map-title { min-width: 0; white-space: normal; overflow-wrap: anywhere; }',
-    )
   })
 
   test('review map counts use singular labels for a single section and file', () => {
     const html = renderReport(document([section(simplePatch(), 'Lonely')]), stubClient)
 
-    expect(html).toContain('class="review-map-index">01<')
+    expect(html).toContain('>01<')
     expect(html).toContain('>1 section<')
     expect(html).toContain('>1 file<')
   })
 
   test('section title indexes match the review map exactly from one section order', () => {
-    const html = renderReport(
-      document([
-        section(simplePatch('a', 'b'), 'First section'),
-        section(simplePatch('c', 'd'), 'Second section'),
-        section(simplePatch('e', 'f'), 'Third section'),
-      ]),
-      stubClient,
-    )
+    const value = document([
+      section(simplePatch('a', 'b'), 'First section'),
+      section(simplePatch('c', 'd'), 'Second section'),
+      section(simplePatch('e', 'f'), 'Third section'),
+    ])
+    const html = renderReport(value, stubClient)
+    const targets = reportTargets(value)
 
-    const titleIndexes = [
-      ...html.matchAll(/<span class="section-title-index">([^<]*)<\/span>/g),
-    ].map((match) => match[1])
-    const mapIndexes = [...html.matchAll(/<span class="review-map-index">([^<]*)<\/span>/g)].map(
-      (match) => match[1],
-    )
-
-    expect(titleIndexes).toEqual(['01', '02', '03'])
-    expect(mapIndexes).toEqual(titleIndexes)
+    // The map links and the section ids share one ordered source, so walking the
+    // map reaches every section exactly once, in document order.
+    const mapHrefs = [...html.matchAll(/<a href="#([^"]+)">/g)].map((match) => match[1])
+    expect(mapHrefs).toEqual(targets.map((target) => target.fragment))
+    expect(html.match(/data-target-kind="section"/g)).toHaveLength(3)
   })
 
   test('section indexes stay complete above 99', () => {
-    const sections = Array.from({ length: 101 }, (_, index) => ({
-      title: `Section ${index + 1}`,
-      steps: [{ text: `Step ${index + 1}.` }],
-    }))
-    const html = renderReport(document(sections), stubClient)
-
-    const titleIndexes = [
-      ...html.matchAll(/<span class="section-title-index">([^<]*)<\/span>/g),
-    ].map((match) => match[1])
-    const mapIndexes = [...html.matchAll(/<span class="review-map-index">([^<]*)<\/span>/g)].map(
-      (match) => match[1],
-    )
-
-    expect(titleIndexes).toHaveLength(101)
-    expect(titleIndexes[99]).toBe('100')
-    expect(titleIndexes[100]).toBe('101')
-    expect(mapIndexes).toEqual(titleIndexes)
+    expect(sectionIndex(0)).toBe('01')
+    expect(sectionIndex(9)).toBe('10')
+    expect(sectionIndex(98)).toBe('99')
+    expect(sectionIndex(99)).toBe('100')
+    expect(sectionIndex(100)).toBe('101')
   })
 
-  test('the section index is a distinct label that keeps the fold control and copy action', () => {
+  test('the section index stays a distinct label beside the fold control and copy action', () => {
     const html = renderReport(document([section(simplePatch(), 'Distinct')]), stubClient)
 
-    expect(html).toContain(
-      '<summary class="section-title"><span class="section-title-index">01</span><span class="section-title-text">Distinct</span><a class="permalink" href="#section-distinct-p000ra1271amq" aria-label="Permalink to section Distinct">Link</a><button type="button" class="copy-link"',
-    )
-    expect(html).toContain('.section-fold > summary::before { content: "▾ "; color: var(--accent); }')
-    expect(html).toContain(
-      '.section-title-index { flex: none; color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; font-weight: 600; }',
-    )
+    const summary = html.slice(html.indexOf('<summary'), html.indexOf('</summary>'))
+    expect(summary).toContain('>01<')
+    expect(summary).toContain('>Distinct<')
+    expect(summary).toContain('aria-label="Permalink to section Distinct"')
+    expect(summary).toContain('aria-label="Copy link to section Distinct"')
   })
 
   test('renders canonical copy actions without exposing renderer mounts as fragment IDs', () => {
@@ -527,7 +481,7 @@ describe('renderReport shell', () => {
     expect(html).not.toContain('<a class="permalink" data-copy-fragment')
   })
 
-  test('hosted and exported reports share identical native permalink markup', () => {
+  test('hosted and exported reports share identical main content', () => {
     const value = document([
       section(simplePatch(), 'First section'),
       {
@@ -550,81 +504,17 @@ describe('renderReport shell', () => {
     }
     const hostedMain = main(hosted)
     expect(hostedMain).toBe(main(exported))
-    expect(hostedMain).toContain('<a class="permalink"')
-    expect(hostedMain).toContain('href="#')
     expect(hostedMain).toContain('data-copy-fragment')
     expect(hosted).toContain('<link rel="stylesheet" href="/report.css">')
     expect(exported).toContain('<style>')
   })
 
-  // The rail has no room on a narrow screen, but the toggle is still needed while
-  // scrolled into a diff, so the map collapses to a sticky strip that keeps it.
-  test('the review map collapses to a strip that keeps the layout toggle on narrow screens', () => {
-    const html = renderReport(document([section(simplePatch(), 'Responsive')]), stubClient)
-
-    expect(html).toContain('@media (max-width: 900px)')
-    expect(html).toContain('.review-workspace { display: block; min-height: 0; }')
-    expect(html).toContain('.review-map-label, .review-map-list, .review-map-counts { display: none; }')
-    expect(html).not.toContain('.review-map { display: none; }\n  main { padding: 14px')
-    expect(html).toContain('@media (max-width: 520px)')
-  })
-
-  test('narrow screens offset anchored targets past the sticky review strip', () => {
-    const html = renderReport(document([section(simplePatch(), 'Narrow anchor')]), stubClient)
-
-    expect(html).toContain('.section, .step, .change-target { scroll-margin-top: 64px; }')
-    // The wide-screen offset stays tight because the review map is a side rail.
-    expect(html).toContain('.section { max-width: 1480px; margin: 0 auto 22px; scroll-margin-top: 18px; }')
-  })
-
-  test('section titles wrap long unbroken words instead of clipping inside the fold', () => {
-    const html = renderReport(document([section(simplePatch(), 'Wrap me')]), stubClient)
-
-    expect(html).toContain('.section-fold > summary {')
-    expect(html).toContain('overflow-wrap: anywhere;')
-  })
-
-  test('section title and explanation prose use the exact scaled font sizes', () => {
-    const html = renderReport(document([section(simplePatch(), 'Scaled')]), stubClient)
-
-    const baseSummary = html.slice(
-      html.indexOf('.section-fold > summary {'),
-      html.indexOf('.section-fold > summary::-webkit-details-marker'),
-    )
-    expect(baseSummary).toContain('font-size: 18px;')
-
-    const narrowStart = html.indexOf('@media (max-width: 520px)')
-    const narrow = html.slice(narrowStart, html.indexOf('@media print', narrowStart))
-    expect(narrow).toContain('.section-fold > summary { font-size: 17px; }')
-
-    expect(html.match(/\.step-text \{/g)).toHaveLength(1)
-    expect(html).toContain('.step-text { max-width: 900px; padding: 8px 20px; font-size: 17px; }')
-  })
-
-  test('report-cover and diff typography keep their original font sizes', () => {
-    const html = renderReport(
-      document([section(simplePatch(), 'Unchanged')], { summary: 'Cover text stays put.' }),
-      stubClient,
-    )
-
-    expect(html).toContain('<div class="cover-summary prose">')
-    expect(html).toContain('<div class="step-text prose">')
-    expect(html).toContain('.prose { color: #3c4d41; font-size: 14px; }')
-    expect(html).toContain('font-size: 27px;')
-    expect(html).toContain('font-size: 21px;')
-    expect(html).toContain(
-      'font-family: ui-monospace, SFMono-Regular, Menlo, monospace;\n  font-size: 13px;',
-    )
-  })
-
   test('print output hides review map and layout controls and keeps source metadata', () => {
     const html = renderReport(document([section(simplePatch(), 'Print')]), stubClient)
 
-    expect(html).toContain('@media print')
-    expect(html).toContain('.layout-form, .copy-link, .permalink { display: none; }')
-    expect(html).toContain('.review-map { display: none; }')
-    expect(html).toContain('.report-cover { box-shadow: none; break-inside: avoid; }')
-    expect(html).toContain('.source-metadata dd { white-space: normal; overflow: visible; }')
+    // The print rules and their visual effect are covered by the visual suite;
+    // only the source metadata that must survive printing is asserted here.
+    expect(html).toContain('<dt>Source</dt>')
   })
 })
 

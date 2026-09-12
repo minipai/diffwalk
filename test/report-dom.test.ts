@@ -212,6 +212,18 @@ describe('report browser client', () => {
     )
   })
 
+  test('a step without text has no prose block and still exposes its files', () => {
+    const html = renderReport(
+      document([{ title: 'Diff only', steps: [{ text: '', diff: simplePatch() }] }]),
+      clientBundle,
+    )
+    const dom = loadReport(html)
+    const doc = dom.document as unknown as Document
+
+    expect(doc.querySelector('.step')?.querySelector('.step-text')).toBeNull()
+    expect(doc.querySelector('div[data-diff-mount="0-0-0"]')).not.toBeNull()
+  })
+
   test('review map anchors resolve to section ids in document order with counts', () => {
     const value = document([
       section(simplePatch('a', 'b'), 'First section'),
