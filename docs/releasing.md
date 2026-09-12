@@ -6,10 +6,6 @@ stable version in `package.json`, runs `pnpm check`, and publishes through OIDC.
 The existing `prepack` script builds the package before publishing. There is no
 manual npm approval step; pushing a branch or creating a local tag does not publish.
 
-Before the first release, configure an npm Trusted Publisher for GitHub user
-`minipai`, repository `diffwalk`, and workflow `publish.yml`. Leave the environment
-blank and allow direct publishing. No `NPM_TOKEN` is needed.
-
 To release:
 
 1. Update `package.json` to the next stable version and merge the change through
