@@ -85,27 +85,25 @@ function json(status: number, value: unknown): Response {
 }
 
 describe('reportService', () => {
-  test('falls back to the hosted service, then the environment, then the flag', async () => {
+  test('prefers the flag, then the project config, then the hosted default', async () => {
     const directory = await temporaryProject()
-    delete process.env['DIFFWALK_SERVICE_URL']
     expect(reportService(undefined, directory)).toBe('https://review.diffwalk.dev')
 
-    process.env['DIFFWALK_SERVICE_URL'] = 'https://reports.example.test'
-    expect(reportService(undefined, directory)).toBe('https://reports.example.test')
+    await writeProjectService(directory, 'https://configured.example.test')
+    expect(reportService(undefined, directory)).toBe('https://configured.example.test')
     expect(reportService('https://explicit.example.test', directory)).toBe(
       'https://explicit.example.test',
     )
   })
 
-  test('uses the project config between the environment and the default', async () => {
+  test('ignores DIFFWALK_SERVICE_URL', async () => {
     const directory = await temporaryProject()
-    await writeProjectService(directory, 'https://configured.example.test')
-    delete process.env['DIFFWALK_SERVICE_URL']
-
-    expect(reportService(undefined, directory)).toBe('https://configured.example.test')
-
     process.env['DIFFWALK_SERVICE_URL'] = 'https://environment.example.test'
-    expect(reportService(undefined, directory)).toBe('https://environment.example.test')
+
+    expect(reportService(undefined, directory)).toBe('https://review.diffwalk.dev')
+
+    await writeProjectService(directory, 'https://configured.example.test')
+    expect(reportService(undefined, directory)).toBe('https://configured.example.test')
     expect(reportService('https://explicit.example.test', directory)).toBe(
       'https://explicit.example.test',
     )
@@ -116,7 +114,6 @@ describe('reportService', () => {
     await writeProjectService(directory, 'https://configured.example.test')
     const nested = join(directory, 'packages', 'app')
     await mkdir(nested, { recursive: true })
-    delete process.env['DIFFWALK_SERVICE_URL']
 
     expect(reportService(undefined, nested)).toBe('https://configured.example.test')
   })
@@ -124,7 +121,6 @@ describe('reportService', () => {
   test('normalizes the configured URL like the flag', async () => {
     const directory = await temporaryProject()
     await writeProjectService(directory, 'https://configured.example.test/some/path?x=1')
-    delete process.env['DIFFWALK_SERVICE_URL']
 
     expect(reportService(undefined, directory)).toBe('https://configured.example.test')
   })
@@ -132,31 +128,26 @@ describe('reportService', () => {
   test('rejects an invalid configured URL instead of falling back', async () => {
     const directory = await temporaryProject()
     await writeProjectService(directory, 'http://configured.example.test')
-    delete process.env['DIFFWALK_SERVICE_URL']
 
     expect(() => reportService(undefined, directory)).toThrow('over HTTPS')
   })
 
-  test('a malformed config is ignored when the flag or environment is selected', async () => {
+  test('a malformed config is ignored when the flag is selected', async () => {
     const directory = await temporaryProject()
     await mkdir(join(directory, '.diffwalk'), { recursive: true })
     await writeFile(join(directory, '.diffwalk', 'config.json'), '{not json')
-    delete process.env['DIFFWALK_SERVICE_URL']
 
     expect(reportService('https://explicit.example.test', directory)).toBe(
       'https://explicit.example.test',
     )
-
-    process.env['DIFFWALK_SERVICE_URL'] = 'https://environment.example.test'
-    expect(reportService(undefined, directory)).toBe('https://environment.example.test')
   })
 
-  test('a malformed config fails only when it is the selected setting', async () => {
+  test('a malformed config fails rather than falling through', async () => {
     const directory = await temporaryProject()
     const path = join(directory, '.diffwalk', 'config.json')
     await mkdir(join(directory, '.diffwalk'), { recursive: true })
     await writeFile(path, '{not json')
-    delete process.env['DIFFWALK_SERVICE_URL']
+    process.env['DIFFWALK_SERVICE_URL'] = 'https://environment.example.test'
 
     expect(() => reportService(undefined, directory)).toThrow(path)
   })
