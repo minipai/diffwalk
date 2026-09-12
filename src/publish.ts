@@ -20,15 +20,12 @@ export function withPublisher(
 const defaultService = 'https://review.diffwalk.dev'
 
 // New publications and revocations resolve the service in order: the explicit flag, the
-// environment, the project config, then the hosted default. `publish --update`
-// passes the retained service as `explicit`, so a changed config or environment can never
-// redirect an existing review or send its token elsewhere.
+// project config, then the hosted default. The environment is deliberately not consulted,
+// so a stray DIFFWALK_SERVICE_URL cannot redirect a review or its token. `publish --update`
+// passes the retained service as `explicit`, so a changed config can never redirect an
+// existing review or send its token elsewhere.
 export function reportService(explicit: string | undefined, directory = process.cwd()): string {
-  const value =
-    explicit ??
-    process.env['DIFFWALK_SERVICE_URL'] ??
-    configuredService(directory) ??
-    defaultService
+  const value = explicit ?? configuredService(directory) ?? defaultService
   let url: URL
   try {
     url = new URL(value)

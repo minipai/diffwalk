@@ -1582,7 +1582,7 @@ describe('publish', () => {
     expect(result.stderr).toContain('over HTTPS')
   })
 
-  test('publish --update keeps the retained service when config and environment change', async () => {
+  test('publish --update keeps the retained service when the project config and environment change', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
@@ -1613,7 +1613,7 @@ describe('publish', () => {
     }
   })
 
-  test('the environment overrides the configured project service', async () => {
+  test('ignores DIFFWALK_SERVICE_URL in favour of the configured project service', async () => {
     const repo = await fixtureRepo()
     await runCli(['inspect'], repo)
     await authorEveryChange(repo)
@@ -1631,8 +1631,8 @@ describe('publish', () => {
       })
 
       expect(result.exitCode).toBe(0)
-      expect(environment.published).toHaveLength(1)
-      expect(configured.published).toHaveLength(0)
+      expect(configured.published).toHaveLength(1)
+      expect(environment.published).toHaveLength(0)
     } finally {
       configured.stop()
       environment.stop()
@@ -1748,6 +1748,31 @@ describe('unpublish', () => {
       expect(service.revoked).toEqual([{ id: reportId, token: revocationToken }])
     } finally {
       service.stop()
+    }
+  })
+
+  test('ignores DIFFWALK_SERVICE_URL for unpublish', async () => {
+    const repo = await fixtureRepo()
+    const configured = startFakeService()
+    const environment = startFakeService()
+
+    try {
+      await mkdir(join(repo, '.diffwalk'), { recursive: true })
+      await writeFile(
+        join(repo, '.diffwalk', 'config.json'),
+        JSON.stringify({ service: configured.origin }),
+      )
+
+      const result = await runCli(['unpublish', reportId, '--token', revocationToken], repo, {
+        DIFFWALK_SERVICE_URL: environment.origin,
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(configured.revoked).toEqual([{ id: reportId, token: revocationToken }])
+      expect(environment.revoked).toHaveLength(0)
+    } finally {
+      configured.stop()
+      environment.stop()
     }
   })
 })
