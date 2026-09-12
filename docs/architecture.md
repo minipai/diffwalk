@@ -110,22 +110,24 @@ exact corresponding diffs in a deliberate order.
 
 ## Source map
 
-- `src/format.ts`: Zod schemas for the machine-owned capture and the author-edited
+- `src/format/types.ts`: independent TypeScript types used by internal logic.
+- `src/format/schema.ts`: boundary-only Zod schemas for the machine-owned capture and the author-edited
   explanations, plus the version 1 ExplainDocument and its optional attribution metadata.
 - `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked UTF-8
   files from an immutable Git base commit, optionally reading the index or limiting the
   capture to named paths.
 - `src/authoring/capture.ts`: derives change blocks and the content `captureId`, and
   materializes exact section patches from capture plus explanations.
-- `src/authoring/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.
-- `src/cli/commands/`: one typed handler module per CLI command.
-- `src/authoring/input.ts`: shared capture and explanations path resolution, schemas,
+- `src/cli/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.
+- `src/cli/commands/`: each command owns its option schema and validates inputs before
+  calling internal logic. `cli.ts` registers commands and forwards their arguments.
+- `src/cli/input.ts`: shared capture and explanations path resolution, schemas,
   validation, and persistence.
 - `src/authoring/walk.ts`: timestamped walk IDs, per-walk paths, listing and deleting
   walks, and the current-walk pointer.
-- `src/authoring/config.ts`: the optional project-level `.diffwalk/config.json` lookup and
+- `src/cli/config.ts`: the optional project-level `.diffwalk/config.json` lookup and
   schema for the review service origin.
-- `src/authoring/published.ts`: the locally retained published review (ID, URL, service,
+- `src/cli/published.ts`: the locally retained published review (ID, URL, service,
   and revocation token), written by `publish` and read by `publish --update`.
 - `src/cli.ts`: executable entry point for `inspect`, `walks`, `use`, `delete`,
   `changes`, `change`, `file`, `check`, `view`, `export`, `publish`, and `unpublish`.
@@ -133,11 +135,11 @@ exact corresponding diffs in a deliberate order.
 - `src/report/patches.ts`: shared Pierre parse seam used by the generator, the browser
   client, and tests.
 - `src/report/markdown.ts`: Markdown rendering with inline HTML passed through.
-- `src/report.ts`: atomic report writes and client-bundle loading.
+- `src/report/index.ts`: atomic report writes and client-bundle loading.
 - `src/report/render.ts`: the one report shell, embedded-data escaping, and shell styles,
   rendered with inlined assets for the offline file or linked assets for the hosted page.
-- `src/publish.ts`: review service origin checks, publish credential lookup, the
-  publish, update, and unpublish requests, and adding the Git user name as
+- `src/cli/service.ts`: review service configuration and origin checks.
+- `src/publish/client.ts`: publish, update, and unpublish requests, and adding the Git user name as
   `metadata.publishedBy` without mutating the authoring files.
 - `src/report/client.ts`: browser entry that mounts a `FileDiff` per file and switches
   unified/split through `setOptions`.

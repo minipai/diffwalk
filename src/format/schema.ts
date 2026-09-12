@@ -1,17 +1,10 @@
 import { z } from 'zod'
+import type { ExplainCapture, ExplainDocument, Explanations } from './types'
 
 const gitModeSchema = z.enum(['000000', '100644', '100755'])
 
 export const draftFileSchema = z.preprocess(
-  (value) => {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
-    const file = value as Record<string, unknown>
-    return {
-      ...file,
-      oldMode: file.oldMode ?? (file.status === 'added' ? '000000' : '100644'),
-      newMode: file.newMode ?? (file.status === 'deleted' ? '000000' : '100644'),
-    }
-  },
+  normalizeFileModes,
   z.object({
     path: z.string().min(1),
     oldPath: z.string().min(1).optional(),
@@ -92,7 +85,7 @@ export const captureSchema = z
     files: z.array(draftFileSchema),
     changes: z.array(changeBlockSchema),
   })
-  .strict()
+  .strict() satisfies z.ZodType<ExplainCapture>
 
 export const explanationStepSchema = z
   .object({
@@ -125,7 +118,7 @@ export const explanationsSchema = z
     metadata: explanationMetadataSchema.optional(),
     sections: z.array(explanationSectionSchema),
   })
-  .strict()
+  .strict() satisfies z.ZodType<Explanations>
 
 export const documentStepSchema = z
   .object({
@@ -167,13 +160,14 @@ export const explainDocumentSchema = z
       )
       .min(1),
   })
-  .strict()
+  .strict() satisfies z.ZodType<ExplainDocument>
 
-export type DraftFile = z.infer<typeof draftFileSchema>
-export type ChangeBlock = z.infer<typeof changeBlockSchema>
-export type CaptureSource = z.infer<typeof captureSourceSchema>
-export type ExplainCapture = z.infer<typeof captureSchema>
-export type ExplanationStep = z.infer<typeof explanationStepSchema>
-export type Explanations = z.infer<typeof explanationsSchema>
-export type DocumentStep = z.infer<typeof documentStepSchema>
-export type ExplainDocument = z.infer<typeof explainDocumentSchema>
+function normalizeFileModes(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const file = value as Record<string, unknown>
+  return {
+    ...file,
+    oldMode: file.oldMode ?? (file.status === 'added' ? '000000' : '100644'),
+    newMode: file.newMode ?? (file.status === 'deleted' ? '000000' : '100644'),
+  }
+}

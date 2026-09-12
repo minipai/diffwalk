@@ -1,4 +1,5 @@
-import { explainDocumentSchema, type ExplainDocument } from '../src/format'
+import { explainDocumentSchema } from '../src/format/schema'
+import type { ExplainDocument } from '../src/format/types'
 import { faviconSvg } from '../src/report/favicon'
 import { renderHostedReport } from '../src/report/render'
 import {
@@ -40,16 +41,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = new URL(request.url).pathname
 
-    if (path === '/favicon.svg') {
-      if (request.method !== 'GET' && request.method !== 'HEAD') return methodNotAllowed('GET, HEAD')
-      return new Response(request.method === 'HEAD' ? null : faviconSvg, {
-        headers: {
-          'content-type': 'image/svg+xml',
-          'cache-control': 'public, max-age=86400',
-          'x-content-type-options': 'nosniff',
-        },
-      })
-    }
+    if (path === '/favicon.svg') return showFavicon(request)
 
     if (path === '/api/reports') {
       if (request.method !== 'POST') return methodNotAllowed('POST')
@@ -57,13 +49,7 @@ export default {
     }
 
     const apiReport = /^\/api\/reports\/([^/]+)$/.exec(path)
-    if (apiReport) {
-      const id = apiReport[1]!
-      if (request.method === 'GET') return readReport(id, env)
-      if (request.method === 'PUT') return updateReport(id, request, env)
-      if (request.method === 'DELETE') return revokeReport(id, request, env)
-      return methodNotAllowed('GET, PUT, DELETE')
-    }
+    if (apiReport) return handleReportRequest(apiReport[1]!, request, env)
 
     const reader = /^\/r\/([^/]+)$/.exec(path)
     if (reader) {
@@ -77,35 +63,50 @@ export default {
   },
 }
 
+function showFavicon(request: Request): Response {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return methodNotAllowed('GET, HEAD')
+  return new Response(request.method === 'HEAD' ? null : faviconSvg, {
+    headers: {
+      'content-type': 'image/svg+xml',
+      'cache-control': 'public, max-age=86400',
+      'x-content-type-options': 'nosniff',
+    },
+  })
+}
+
+function handleReportRequest(reportId: string, request: Request, env: Env): Promise<Response> | Response {
+  switch (request.method) {
+    case 'GET':
+      return readReport(reportId, env)
+    case 'PUT':
+      return updateReport(reportId, request, env)
+    case 'DELETE':
+      return revokeReport(reportId, request, env)
+    default:
+      return methodNotAllowed('GET, PUT, DELETE')
+  }
+}
+
 async function publishReport(request: Request, env: Env): Promise<Response> {
   const parsed = await readReportDocument(request)
   if (!parsed.ok) return parsed.response
 
   const document = withPublishedAt(parsed.document)
-  const id = createReportId()
+  const reportId = createReportId()
   const revocationToken = createRevocationToken()
-  await env.REPORTS.put(reportKey(id), JSON.stringify(document), {
+  await env.REPORTS.put(reportKey(reportId), JSON.stringify(document), {
     httpMetadata: { contentType: 'application/json' },
     customMetadata: { revocation: await hashToken(revocationToken) },
   })
 
   // The link is built by the caller, which knows the origin it reached. Deriving it here would
   // mean trusting the request's Host header.
-  return json(201, { id, revocationToken })
+  return json(201, { id: reportId, revocationToken })
 }
 
-async function updateReport(id: string, request: Request, env: Env): Promise<Response> {
-  if (!isReportId(id)) return problem(404, 'No such report')
-  const token = bearerToken(request)
-  if (token === null) return problem(401, 'A revocation credential is required')
-
-  const object = await env.REPORTS.head(reportKey(id))
-  if (!object) return problem(404, 'No such report')
-
-  const expected = object.customMetadata?.['revocation']
-  if (expected === undefined || !secretsMatch(await hashToken(token), expected)) {
-    return problem(403, 'That credential does not update this report')
-  }
+async function updateReport(reportId: string, request: Request, env: Env): Promise<Response> {
+  const authorization = await authorizeReport(reportId, request, env, 'update')
+  if (!authorization.ok) return authorization.response
 
   const parsed = await readReportDocument(request)
   if (!parsed.ok) return parsed.response
@@ -113,11 +114,11 @@ async function updateReport(id: string, request: Request, env: Env): Promise<Res
   const document = withPublishedAt(parsed.document)
   // The ID and the revocation digest are the review's identity, so replacing the document
   // leaves both untouched: the same link and the same credential keep working.
-  await env.REPORTS.put(reportKey(id), JSON.stringify(document), {
+  await env.REPORTS.put(reportKey(reportId), JSON.stringify(document), {
     httpMetadata: { contentType: 'application/json' },
-    customMetadata: { revocation: expected },
+    customMetadata: { revocation: authorization.revocationHash },
   })
-  return json(200, { id })
+  return json(200, { id: reportId })
 }
 
 // The service stamps its own publication time so a client cannot claim one. The explained
@@ -164,9 +165,9 @@ async function readReportDocument(request: Request): Promise<ReportDocumentResul
   return { ok: true, document: parsed.data }
 }
 
-async function readReport(id: string, env: Env): Promise<Response> {
-  if (!isReportId(id)) return problem(404, 'No such report')
-  const object = await env.REPORTS.get(reportKey(id))
+async function readReport(reportId: string, env: Env): Promise<Response> {
+  if (!isReportId(reportId)) return problem(404, 'No such report')
+  const object = await env.REPORTS.get(reportKey(reportId))
   if (!object) return problem(404, 'No such report')
   return new Response(object.body, {
     headers: {
@@ -178,29 +179,46 @@ async function readReport(id: string, env: Env): Promise<Response> {
   })
 }
 
-async function revokeReport(id: string, request: Request, env: Env): Promise<Response> {
-  if (!isReportId(id)) return problem(404, 'No such report')
-  const token = bearerToken(request)
-  if (token === null) return problem(401, 'A revocation credential is required')
+async function revokeReport(reportId: string, request: Request, env: Env): Promise<Response> {
+  const authorization = await authorizeReport(reportId, request, env, 'revoke')
+  if (!authorization.ok) return authorization.response
 
-  const object = await env.REPORTS.head(reportKey(id))
-  if (!object) return problem(404, 'No such report')
-
-  const expected = object.customMetadata?.['revocation']
-  if (expected === undefined || !secretsMatch(await hashToken(token), expected)) {
-    return problem(403, 'That credential does not revoke this report')
-  }
-
-  await env.REPORTS.delete(reportKey(id))
+  await env.REPORTS.delete(reportKey(reportId))
   return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
 }
 
-async function showReport(id: string, env: Env): Promise<Response> {
-  if (!isReportId(id)) return errorPage(404, 'No such report', 'This link does not name a report.')
+type ReportAuthorization =
+  | { ok: true; revocationHash: string }
+  | { ok: false; response: Response }
+
+async function authorizeReport(
+  reportId: string,
+  request: Request,
+  env: Env,
+  operation: 'update' | 'revoke',
+): Promise<ReportAuthorization> {
+  if (!isReportId(reportId)) return { ok: false, response: problem(404, 'No such report') }
+  const token = bearerToken(request)
+  if (token === null) {
+    return { ok: false, response: problem(401, 'A revocation credential is required') }
+  }
+
+  const object = await env.REPORTS.head(reportKey(reportId))
+  if (!object) return { ok: false, response: problem(404, 'No such report') }
+
+  const revocationHash = object.customMetadata?.['revocation']
+  if (revocationHash === undefined || !secretsMatch(await hashToken(token), revocationHash)) {
+    return { ok: false, response: problem(403, `That credential does not ${operation} this report`) }
+  }
+  return { ok: true, revocationHash }
+}
+
+async function showReport(reportId: string, env: Env): Promise<Response> {
+  if (!isReportId(reportId)) return errorPage(404, 'No such report', 'This link does not name a report.')
 
   let object: R2ObjectBody | null
   try {
-    object = await env.REPORTS.get(reportKey(id))
+    object = await env.REPORTS.get(reportKey(reportId))
   } catch {
     return errorPage(
       503,

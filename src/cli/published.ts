@@ -13,7 +13,12 @@ export const publishedReviewSchema = z
     revocationToken: z.string().min(1),
   })
   .strict()
-export type PublishedReview = z.infer<typeof publishedReviewSchema>
+export interface PublishedReview {
+  id: string
+  url: string
+  service: string
+  revocationToken: string
+}
 
 export async function readPublishedReview(path: string): Promise<PublishedReview | null> {
   let text: string

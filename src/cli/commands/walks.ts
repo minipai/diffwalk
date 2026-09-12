@@ -1,12 +1,13 @@
 import { currentWalkIdIfPresent, listWalkIds } from '../../authoring/walk'
 
-export async function walksCommand(): Promise<void> {
-  const ids = await listWalkIds()
-  if (ids.length === 0) {
+export async function printWalks(): Promise<void> {
+  const walkIds = await listWalkIds()
+  if (walkIds.length === 0) {
     console.log('No Diffwalk walks. Run `diffwalk inspect` first.')
     return
   }
-  const current = await currentWalkIdIfPresent()
-  console.log(`${ids.length} ${ids.length === 1 ? 'walk' : 'walks'}`)
-  for (const id of ids) console.log(`${id}${id === current ? '  (current)' : ''}`)
+  const currentWalkId = await currentWalkIdIfPresent()
+  const heading = `${walkIds.length} ${walkIds.length === 1 ? 'walk' : 'walks'}`
+  const lines = walkIds.map((walkId) => `${walkId}${walkId === currentWalkId ? '  (current)' : ''}`)
+  console.log([heading, ...lines].join('\n'))
 }

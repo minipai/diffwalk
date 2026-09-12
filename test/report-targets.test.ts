@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ExplainDocument } from '../src/format'
+import type { ExplainDocument } from '../src/format/types'
 import { reportTargets } from '../src/report/targets'
 
 function document(sections: ExplainDocument['sections']): ExplainDocument {

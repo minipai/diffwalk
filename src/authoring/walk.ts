@@ -20,11 +20,11 @@ export function walkId(capturedAt: string, captureId: string): string {
   return `${timestamp}-${captureId.slice(0, 8)}`
 }
 
-export function walkPaths(id: string, root = diffwalkDirectory): WalkPaths {
-  if (!walkIdPattern.test(id)) throw new Error(`Invalid Diffwalk walk ID: ${id}`)
-  const directory = join(root, id)
+export function walkPaths(walkId: string, root = diffwalkDirectory): WalkPaths {
+  validateWalkId(walkId)
+  const directory = join(root, walkId)
   return {
-    id,
+    id: walkId,
     directory,
     capture: join(directory, 'capture.json'),
     explanations: join(directory, 'explanations.yaml'),
@@ -43,8 +43,8 @@ export async function currentWalk(root = diffwalkDirectory): Promise<WalkPaths> 
 }
 
 export async function currentWalkIfPresent(root = diffwalkDirectory): Promise<WalkPaths | null> {
-  const id = await currentWalkIdIfPresent(root)
-  return id === null ? null : walkPaths(id, root)
+  const currentWalkId = await currentWalkIdIfPresent(root)
+  return currentWalkId === null ? null : walkPaths(currentWalkId, root)
 }
 
 export async function currentWalkIdIfPresent(root = diffwalkDirectory): Promise<string | null> {
@@ -57,10 +57,10 @@ export async function currentWalkIdIfPresent(root = diffwalkDirectory): Promise<
   }
 }
 
-export async function setCurrentWalk(id: string, root = diffwalkDirectory): Promise<void> {
-  walkPaths(id, root)
+export async function setCurrentWalk(walkId: string, root = diffwalkDirectory): Promise<void> {
+  validateWalkId(walkId)
   await mkdir(root, { recursive: true })
-  await writeFile(join(root, 'current'), `${id}\n`)
+  await writeFile(join(root, 'current'), `${walkId}\n`)
 }
 
 export async function listWalkIds(root = diffwalkDirectory): Promise<string[]> {
@@ -78,8 +78,8 @@ export async function listWalkIds(root = diffwalkDirectory): Promise<string[]> {
     .reverse()
 }
 
-export async function walkExists(id: string, root = diffwalkDirectory): Promise<boolean> {
-  const paths = walkPaths(id, root)
+export async function walkExists(walkId: string, root = diffwalkDirectory): Promise<boolean> {
+  const paths = walkPaths(walkId, root)
   try {
     return (await lstat(paths.directory)).isDirectory()
   } catch (error) {
@@ -88,14 +88,18 @@ export async function walkExists(id: string, root = diffwalkDirectory): Promise<
   }
 }
 
-export async function deleteWalk(id: string, root = diffwalkDirectory): Promise<boolean> {
-  const paths = walkPaths(id, root)
-  const wasCurrent = (await currentWalkIdIfPresent(root)) === id
-  if (await walkExists(id, root)) {
+export async function deleteWalk(walkId: string, root = diffwalkDirectory): Promise<boolean> {
+  const paths = walkPaths(walkId, root)
+  const wasCurrent = (await currentWalkIdIfPresent(root)) === walkId
+  if (await walkExists(walkId, root)) {
     await rm(paths.directory, { recursive: true })
   } else if (!wasCurrent) {
-    throw new Error(`No Diffwalk walk ${id} to delete.`)
+    throw new Error(`No Diffwalk walk ${walkId} to delete.`)
   }
   if (wasCurrent) await rm(join(root, 'current'), { force: true })
   return wasCurrent
+}
+
+function validateWalkId(walkId: string): void {
+  if (!walkIdPattern.test(walkId)) throw new Error(`Invalid Diffwalk walk ID: ${walkId}`)
 }

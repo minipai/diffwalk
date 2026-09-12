@@ -1,21 +1,19 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { z } from 'zod'
-import { materializeExplainDocument } from './capture'
+import { materializeExplainDocument } from '../authoring/capture'
 import { parseExplanations } from './explanations'
-import { captureSchema, type ExplainCapture, type ExplainDocument, type Explanations } from '../format'
-import { currentWalk } from './walk'
+import { captureSchema } from '../format/schema'
+import type { ExplainCapture, ExplainDocument, Explanations } from '../format/types'
+import { currentWalk } from '../authoring/walk'
 
-export const captureOptionsSchema = z.object({
-  input: z.string().optional(),
-})
-export type CaptureOptions = z.infer<typeof captureOptionsSchema>
+export interface CaptureOptions {
+  input?: string
+}
 
-export const authoringOptionsSchema = captureOptionsSchema.extend({
-  explanations: z.string().optional(),
-})
-export type AuthoringOptions = z.infer<typeof authoringOptionsSchema>
+export interface AuthoringOptions extends CaptureOptions {
+  explanations?: string
+}
 
 export interface AuthoringFiles {
   directory: string
@@ -84,30 +82,6 @@ export async function readCapture(path: string): Promise<ExplainCapture> {
   return captureSchema.parse(JSON.parse(await readInput(path, 'capture.json', true)))
 }
 
-async function readExplanations(path: string): Promise<Explanations> {
-  const text = await readInput(path, 'explanations.yaml', false)
-  try {
-    return parseExplanations(text)
-  } catch (error) {
-    throw new Error(`${(error as Error).message} (in ${path})`)
-  }
-}
-
-async function readInput(path: string, label: string, isCapture: boolean): Promise<string> {
-  const absolutePath = resolve(path)
-  try {
-    return await readFile(absolutePath, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      const hint = isCapture
-        ? `No capture at ${path}. Run \`diffwalk inspect\` first, or pass --input.`
-        : `No explanations at ${path}. Run \`diffwalk inspect\` first, or pass --explanations.`
-      throw new Error(hint)
-    }
-    throw new Error(`Could not read ${label}: ${(error as Error).message}`)
-  }
-}
-
 export function explanationsSkeleton(captureId: string): string {
   return `captureId: ${captureId}
 title: Name this change set
@@ -131,4 +105,28 @@ export async function writeText(path: string, text: string): Promise<void> {
   const absolutePath = resolve(path)
   await mkdir(dirname(absolutePath), { recursive: true })
   await writeFile(absolutePath, text)
+}
+
+async function readExplanations(path: string): Promise<Explanations> {
+  const text = await readInput(path, 'explanations.yaml', false)
+  try {
+    return parseExplanations(text)
+  } catch (error) {
+    throw new Error(`${(error as Error).message} (in ${path})`)
+  }
+}
+
+async function readInput(path: string, label: string, isCapture: boolean): Promise<string> {
+  const absolutePath = resolve(path)
+  try {
+    return await readFile(absolutePath, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      const hint = isCapture
+        ? `No capture at ${path}. Run \`diffwalk inspect\` first, or pass --input.`
+        : `No explanations at ${path}. Run \`diffwalk inspect\` first, or pass --explanations.`
+      throw new Error(hint)
+    }
+    throw new Error(`Could not read ${label}: ${(error as Error).message}`)
+  }
 }

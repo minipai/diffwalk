@@ -6,7 +6,7 @@ import {
   configuredService,
   findProjectConfig,
   readProjectConfig,
-} from '../src/authoring/config'
+} from '../src/cli/config'
 
 const directories: string[] = []
 

@@ -5,7 +5,7 @@ import {
   duplicatedChangeIds,
   materializeExplainDocument,
 } from '../src/authoring/capture'
-import type { CaptureSource, ExplainCapture } from '../src/format'
+import type { CaptureSource, ExplainCapture } from '../src/format/types'
 import { fileDiffStats, parseSectionPatch } from '../src/report/patches'
 
 const source: CaptureSource = {

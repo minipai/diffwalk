@@ -200,16 +200,22 @@
       <footer><span>diffwalk</span><p>Review code in human order.</p></footer>
     </main>
     <script>
-      for (const button of document.querySelectorAll('[data-copy]')) {
-        button.addEventListener('click', async () => {
-          await navigator.clipboard.writeText(button.dataset.copy);
-          button.textContent = 'Copied';
-          setTimeout(() => { button.textContent = 'Copy'; }, 1500);
-        });
+      wireCopyButtons();
+      mountAssemblyDemo();
+
+      function wireCopyButtons() {
+        for (const button of document.querySelectorAll('[data-copy]')) {
+          button.addEventListener('click', async () => {
+            await navigator.clipboard.writeText(button.dataset.copy);
+            button.textContent = 'Copied';
+            setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+          });
+        }
       }
 
-      const assemblyDemo = document.querySelector('[data-assembly-demo]');
-      if (assemblyDemo && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      function mountAssemblyDemo() {
+        const assemblyDemo = document.querySelector('[data-assembly-demo]');
+        if (!assemblyDemo || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
         const cards = [...assemblyDemo.querySelectorAll('[data-code-card]')];
         const layer = assemblyDemo.querySelector('.assembly-layer');
         const viewport = assemblyDemo.querySelector('.walk-scroll');
@@ -222,20 +228,72 @@
         let fadeTimer;
         let scrollFrame;
 
-        const slotRect = (name, side) => {
-          const layer = assemblyDemo.querySelector('.assembly-layer').getBoundingClientRect();
-          const slot = assemblyDemo.querySelector(`[data-${side}-slot="${name}"]`).getBoundingClientRect();
-          return { left: slot.left - layer.left, top: slot.top - layer.top, width: slot.width };
-        };
+        replay.addEventListener('submit', event => {
+          event.preventDefault();
+          if (playing) finishAssembly();
+          else resetAssembly();
+        });
+        viewport.addEventListener('wheel', stopOnUserScroll, { passive: true });
+        viewport.addEventListener('touchstart', stopOnUserScroll, { passive: true });
+        viewport.addEventListener('pointerdown', stopOnUserScroll);
+        viewport.addEventListener('keydown', event => {
+          if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) stopOnUserScroll();
+        });
+        addEventListener('resize', () => {
+          if (playing) finishAssembly();
+          else if (!started) for (const card of cards) placeCard(card, readSlotRect(card.dataset.codeCard, 'start'));
+        });
+        const observer = new IntersectionObserver(entries => {
+          clearTimeout(startTimer);
+          if (!started && entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= .2)) {
+            startTimer = setTimeout(assembleCards, 2600);
+          }
+        }, { threshold: .2 });
+        assemblyDemo.classList.add('is-initializing');
+        for (const card of cards) placeCard(card, readSlotRect(card.dataset.codeCard, 'start'));
+        assemblyDemo.classList.replace('is-initializing', 'is-ready');
+        observer.observe(assemblyDemo);
 
-        const place = (card, rect) => {
-          card.style.left = `${rect.left}px`;
-          card.style.top = `${rect.top}px`;
-          card.style.width = `${rect.width}px`;
-          card.style.transform = 'none';
-        };
+        function assembleCards() {
+          started = true;
+          playing = true;
+          observer.disconnect();
+          control.textContent = 'Skip';
+          control.setAttribute('aria-label', 'Skip assembly animation');
+          replay.hidden = false;
+          assemblyDemo.classList.add('is-assembling');
+          moveCard(assemblyDemo.querySelector('[data-code-card="schema"]'), 2000);
+          // Leave room for the previous 800ms landing and the next 420ms scroll.
+          moveCard(assemblyDemo.querySelector('[data-code-card="delete"]'), 3300);
+          moveCard(assemblyDemo.querySelector('[data-code-card="list"]'), 5300);
+          moveCard(assemblyDemo.querySelector('[data-code-card="trash"]'), 6600);
+          moveCard(assemblyDemo.querySelector('[data-code-card="restore"]'), 7900);
+          moveCard(assemblyDemo.querySelector('[data-code-card="purge"]'), 9900);
+        }
 
-        const finish = () => {
+        function resetAssembly() {
+          playing = true;
+          control.textContent = 'Skip';
+          control.setAttribute('aria-label', 'Skip assembly animation');
+          cancelAnimationFrame(scrollFrame);
+          pending.splice(0).forEach(clearTimeout);
+          clearTimeout(startTimer);
+          clearTimeout(fadeTimer);
+          assemblyDemo.classList.add('is-resetting');
+          fadeTimer = setTimeout(() => {
+            for (const card of cards) {
+              card.getAnimations().forEach(animation => animation.cancel());
+              layer.append(card);
+              placeCard(card, readSlotRect(card.dataset.codeCard, 'start'));
+            }
+            viewport.scrollTo({ top: 0, behavior: 'instant' });
+            assemblyDemo.classList.remove('is-assembling', 'is-explained');
+            assemblyDemo.classList.remove('is-resetting');
+            startTimer = setTimeout(assembleCards, 2600);
+          }, 260);
+        }
+
+        function finishAssembly() {
           playing = false;
           const scrollTop = viewport.scrollTop;
           cancelAnimationFrame(scrollFrame);
@@ -254,32 +312,10 @@
           control.textContent = 'Replay';
           control.setAttribute('aria-label', 'Replay assembly animation');
           replay.hidden = false;
-        };
+        }
 
-        const reset = () => {
-          playing = true;
-          control.textContent = 'Skip';
-          control.setAttribute('aria-label', 'Skip assembly animation');
-          cancelAnimationFrame(scrollFrame);
-          pending.splice(0).forEach(clearTimeout);
-          clearTimeout(startTimer);
-          clearTimeout(fadeTimer);
-          assemblyDemo.classList.add('is-resetting');
-          fadeTimer = setTimeout(() => {
-            for (const card of cards) {
-              card.getAnimations().forEach(animation => animation.cancel());
-              layer.append(card);
-              place(card, slotRect(card.dataset.codeCard, 'start'));
-            }
-            viewport.scrollTo({ top: 0, behavior: 'instant' });
-            assemblyDemo.classList.remove('is-assembling', 'is-explained');
-            assemblyDemo.classList.remove('is-resetting');
-            startTimer = setTimeout(assemble, 2600);
-          }, 260);
-        };
-
-        const moveCard = (card, dockAt) => {
-          const start = slotRect(card.dataset.codeCard, 'start');
+        function moveCard(card, dockAt) {
+          const start = readSlotRect(card.dataset.codeCard, 'start');
           const direction = cards.indexOf(card) % 2 === 0 ? -1 : 1;
           const stage = assemblyDemo.getBoundingClientRect();
           const rect = card.getBoundingClientRect();
@@ -307,7 +343,7 @@
             pending.push(setTimeout(() => {
               cancelAnimationFrame(scrollFrame);
               viewport.scrollTop = target;
-              const end = slotRect(card.dataset.codeCard, 'end');
+              const end = readSlotRect(card.dataset.codeCard, 'end');
               card.style.transform = lift;
               lifting.cancel();
               const docking = card.animate([
@@ -320,58 +356,29 @@
                 card.removeAttribute('style');
                 docking.cancel();
                 if (cards.every(card => card.parentElement.hasAttribute('data-end-slot'))) {
-                  finish();
+                  finishAssembly();
                 }
               }).catch(() => {});
             }, 420));
           }, dockAt - 420));
-        };
+        }
 
-        const assemble = () => {
-          started = true;
-          playing = true;
-          observer.disconnect();
-          control.textContent = 'Skip';
-          control.setAttribute('aria-label', 'Skip assembly animation');
-          replay.hidden = false;
-          assemblyDemo.classList.add('is-assembling');
-          moveCard(assemblyDemo.querySelector('[data-code-card="schema"]'), 2000);
-          // Leave room for the previous 800ms landing and the next 420ms scroll.
-          moveCard(assemblyDemo.querySelector('[data-code-card="delete"]'), 3300);
-          moveCard(assemblyDemo.querySelector('[data-code-card="list"]'), 5300);
-          moveCard(assemblyDemo.querySelector('[data-code-card="trash"]'), 6600);
-          moveCard(assemblyDemo.querySelector('[data-code-card="restore"]'), 7900);
-          moveCard(assemblyDemo.querySelector('[data-code-card="purge"]'), 9900);
-        };
+        function readSlotRect(name, side) {
+          const layer = assemblyDemo.querySelector('.assembly-layer').getBoundingClientRect();
+          const slot = assemblyDemo.querySelector(`[data-${side}-slot="${name}"]`).getBoundingClientRect();
+          return { left: slot.left - layer.left, top: slot.top - layer.top, width: slot.width };
+        }
 
-        replay.addEventListener('submit', event => {
-          event.preventDefault();
-          if (playing) finish();
-          else reset();
-        });
-        const userScroll = () => {
-          if (playing) finish();
-        };
-        viewport.addEventListener('wheel', userScroll, { passive: true });
-        viewport.addEventListener('touchstart', userScroll, { passive: true });
-        viewport.addEventListener('pointerdown', userScroll);
-        viewport.addEventListener('keydown', event => {
-          if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) userScroll();
-        });
-        addEventListener('resize', () => {
-          if (playing) finish();
-          else if (!started) for (const card of cards) place(card, slotRect(card.dataset.codeCard, 'start'));
-        });
-        const observer = new IntersectionObserver(entries => {
-          clearTimeout(startTimer);
-          if (!started && entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= .2)) {
-            startTimer = setTimeout(assemble, 2600);
-          }
-        }, { threshold: .2 });
-        assemblyDemo.classList.add('is-initializing');
-        for (const card of cards) place(card, slotRect(card.dataset.codeCard, 'start'));
-        assemblyDemo.classList.replace('is-initializing', 'is-ready');
-        observer.observe(assemblyDemo);
+        function placeCard(card, rect) {
+          card.style.left = `${rect.left}px`;
+          card.style.top = `${rect.top}px`;
+          card.style.width = `${rect.width}px`;
+          card.style.transform = 'none';
+        }
+
+        function stopOnUserScroll() {
+          if (playing) finishAssembly();
+        }
       }
     </script>
   </body>

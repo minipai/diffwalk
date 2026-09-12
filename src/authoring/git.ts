@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve } from 'node:path'
-import type { DraftFile } from '../format'
+import type { DraftFile } from '../format/types'
 
 export interface GitCapture {
   root: string
@@ -66,15 +66,10 @@ export async function captureGitChanges(
         oldContent: await gitFile(baseCommit, change.oldPath!, root),
         newContent: await newContentFor(change.path),
       })
-      continue
-    }
-
-    if (change.kind === 'M') {
+    } else if (change.kind === 'M') {
       const oldContent = await gitFile(baseCommit, change.path, root)
       const newContent = await newContentFor(change.path)
-      if (change.oldMode !== change.newMode && oldContent === newContent) {
-        throw new Error(`File mode changes are not supported: ${change.path}`)
-      }
+      validateFileModeChange(change.path, change.oldMode, change.newMode, oldContent, newContent)
       files.push({
         path: change.path,
         status: 'modified',
@@ -121,9 +116,7 @@ export async function captureGitChanges(
         if (existing.status !== 'deleted') continue
         const newContent = await workingTreeFile(path, root)
         const newMode = await workingTreeMode(path, root)
-        if (existing.oldMode !== newMode && existing.oldContent === newContent) {
-          throw new Error(`File mode changes are not supported: ${path}`)
-        }
+        validateFileModeChange(path, existing.oldMode, newMode, existing.oldContent, newContent)
         if (existing.oldContent === newContent) {
           filesByPath.delete(path)
         } else {
@@ -173,8 +166,8 @@ export async function captureGitRevisionChanges(
   for (const change of changes) {
     const oldContent = change.kind === 'A' ? '' : await gitFile(fromCommit, change.oldPath ?? change.path, root)
     const newContent = change.kind === 'D' ? '' : await gitFile(toCommit, change.path, root)
-    if (change.kind === 'M' && change.oldMode !== change.newMode && oldContent === newContent) {
-      throw new Error(`File mode changes are not supported: ${change.path}`)
+    if (change.kind === 'M') {
+      validateFileModeChange(change.path, change.oldMode, change.newMode, oldContent, newContent)
     }
     files.push({
       path: change.path,
@@ -214,16 +207,7 @@ export async function gitUserName(root = process.cwd()): Promise<string | undefi
 }
 
 async function workingTreeFile(path: string, root: string): Promise<string> {
-  const absolutePath = resolve(root, path)
-  const pathWithinRoot = relative(root, absolutePath)
-  if (isAbsolute(pathWithinRoot) || pathWithinRoot.startsWith('..')) {
-    throw new Error(`Git path escapes the repository: ${path}`)
-  }
-
-  const file = await lstat(absolutePath)
-  if (file.isSymbolicLink()) throw new Error(`Symbolic links are not supported: ${path}`)
-  if (!file.isFile()) throw new Error(`Non-file Git paths are not supported: ${path}`)
-
+  const absolutePath = await validateWorkingTreeFile(path, root)
   const scratch = await mkdtemp(join(tmpdir(), 'diffwalk-working-tree-'))
   try {
     const objectDirectory = join(scratch, 'objects')
@@ -236,6 +220,32 @@ async function workingTreeFile(path: string, root: string): Promise<string> {
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }
+}
+
+function validateFileModeChange(
+  filePath: string,
+  oldMode: DraftFile['oldMode'],
+  newMode: DraftFile['newMode'],
+  oldContent: string,
+  newContent: string,
+): void {
+  if (oldMode !== newMode && oldContent === newContent) {
+    throw new Error(`File mode changes are not supported: ${filePath}`)
+  }
+}
+
+async function validateWorkingTreeFile(path: string, root: string): Promise<string> {
+  const absolutePath = resolve(root, path)
+  const pathWithinRoot = relative(root, absolutePath)
+  if (isAbsolute(pathWithinRoot) || pathWithinRoot.startsWith('..')) {
+    throw new Error(`Git path escapes the repository: ${path}`)
+  }
+
+  const file = await lstat(absolutePath)
+  if (file.isSymbolicLink()) throw new Error(`Symbolic links are not supported: ${path}`)
+  if (!file.isFile()) throw new Error(`Non-file Git paths are not supported: ${path}`)
+
+  return absolutePath
 }
 
 async function workingTreeMode(path: string, root: string): Promise<DraftFile['newMode']> {

@@ -21,23 +21,15 @@ and the npm version afterward.`);
 }
 
 function prepareRelease(version) {
-  if (!isStable(version)) throw new Error('Usage: pnpm release <stable version>, e.g. pnpm release 0.1.8');
-  if (git('status', '--porcelain')) throw new Error('Commit or stash working-tree changes before preparing a release.');
-  run('gh', ['auth', 'status']);
-  if (run('gh', ['api', 'user', '--jq', '.login']).trim() !== 'claudecafe') {
-    throw new Error('GitHub CLI must be authenticated as claudecafe.');
-  }
+  validateReleaseVersion(version);
+  validateCleanTree('preparing a release');
+  validateGitHubAccount();
   run('git', ['fetch', 'origin', 'main']);
   const current = packageVersion('origin/main');
-  if (!isStable(current) || compareVersions(version, current) <= 0) {
-    throw new Error(`Release version must be newer than ${current}.`);
-  }
+  validateNewerVersion(version, current);
   const tag = `v${version}`;
   const branch = `release/${tag}`;
-  if (git('tag', '--list', tag) || git('branch', '--list', branch) ||
-      git('ls-remote', 'origin', `refs/tags/${tag}`, `refs/heads/${branch}`)) {
-    throw new Error(`${tag} or ${branch} already exists.`);
-  }
+  validateNewReleaseBranch(tag, branch);
 
   run('git', ['switch', '-c', branch, 'origin/main']);
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
@@ -53,30 +45,78 @@ function prepareRelease(version) {
   console.log(`${url}\nAfter CI passes and this PR is merged, run pnpm release:publish <PR number>.`);
 }
 
-function publishRelease(number) {
-  if (!/^[1-9]\d*$/.test(number ?? '')) throw new Error('Usage: pnpm release:publish <PR number>');
-  if (git('status', '--porcelain')) throw new Error('Commit or stash working-tree changes before publishing.');
+function publishRelease(prNumber) {
+  validatePrNumber(prNumber);
+  validateCleanTree('publishing');
   run('gh', ['auth', 'status']);
-  const pr = JSON.parse(run('gh', ['pr', 'view', number, '--json', 'state,baseRefName,headRefName,mergeCommit']));
-  if (pr.state !== 'MERGED' || pr.baseRefName !== 'main' || !pr.mergeCommit?.oid) {
-    throw new Error('The release PR must be merged into main before publishing.');
-  }
+  const pr = JSON.parse(run('gh', ['pr', 'view', prNumber, '--json', 'state,baseRefName,headRefName,mergeCommit']));
+  validateMergedReleasePr(pr);
   const version = pr.headRefName.replace(/^release\/v/, '');
-  if (!pr.headRefName.startsWith('release/v') || !isStable(version)) {
-    throw new Error('Expected a release/v<version> PR branch.');
-  }
+  validateReleaseBranch(pr.headRefName, version);
   run('git', ['fetch', 'origin', 'main']);
   const commit = pr.mergeCommit.oid;
-  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error('GitHub returned an invalid merge commit.');
-  git('merge-base', '--is-ancestor', commit, 'origin/main');
-  if (packageVersion(commit) !== version) throw new Error('The merged package version does not match the release branch.');
+  validateReleaseCommit(commit, version);
   const tag = `v${version}`;
-  if (git('tag', '--list', tag) || git('ls-remote', 'origin', `refs/tags/${tag}`)) {
-    throw new Error(`${tag} already exists.`);
-  }
+  validateNewReleaseTag(tag);
   run('git', ['tag', tag, commit]);
   run('git', ['push', 'origin', `refs/tags/${tag}`]);
   console.log(`Pushed ${tag} at ${commit}. Check the Publish workflow in GitHub Actions.`);
+}
+
+function validateReleaseVersion(version) {
+  if (!isStable(version)) throw new Error('Usage: pnpm release <stable version>, e.g. pnpm release 0.1.8');
+}
+
+function validateCleanTree(operation) {
+  if (git('status', '--porcelain')) throw new Error(`Commit or stash working-tree changes before ${operation}.`);
+}
+
+function validateGitHubAccount() {
+  run('gh', ['auth', 'status']);
+  if (run('gh', ['api', 'user', '--jq', '.login']).trim() !== 'claudecafe') {
+    throw new Error('GitHub CLI must be authenticated as claudecafe.');
+  }
+}
+
+function validateNewerVersion(version, current) {
+  if (!isStable(current) || compareVersions(version, current) <= 0) {
+    throw new Error(`Release version must be newer than ${current}.`);
+  }
+}
+
+function validateNewReleaseBranch(tag, branch) {
+  if (git('tag', '--list', tag) || git('branch', '--list', branch) ||
+      git('ls-remote', 'origin', `refs/tags/${tag}`, `refs/heads/${branch}`)) {
+    throw new Error(`${tag} or ${branch} already exists.`);
+  }
+}
+
+function validatePrNumber(prNumber) {
+  if (!/^[1-9]\d*$/.test(prNumber ?? '')) throw new Error('Usage: pnpm release:publish <PR number>');
+}
+
+function validateMergedReleasePr(pr) {
+  if (pr.state !== 'MERGED' || pr.baseRefName !== 'main' || !pr.mergeCommit?.oid) {
+    throw new Error('The release PR must be merged into main before publishing.');
+  }
+}
+
+function validateReleaseBranch(branch, version) {
+  if (!branch.startsWith('release/v') || !isStable(version)) {
+    throw new Error('Expected a release/v<version> PR branch.');
+  }
+}
+
+function validateReleaseCommit(commit, version) {
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error('GitHub returned an invalid merge commit.');
+  git('merge-base', '--is-ancestor', commit, 'origin/main');
+  if (packageVersion(commit) !== version) throw new Error('The merged package version does not match the release branch.');
+}
+
+function validateNewReleaseTag(tag) {
+  if (git('tag', '--list', tag) || git('ls-remote', 'origin', `refs/tags/${tag}`)) {
+    throw new Error(`${tag} already exists.`);
+  }
 }
 
 function isStable(version) {
