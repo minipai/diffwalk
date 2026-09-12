@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ExplainDocument } from '../src/format'
 import {
   publishDocument,
@@ -10,15 +13,29 @@ import {
 
 const originalFetch = globalThis.fetch
 const originalEnvironment = { ...process.env }
+const directories: string[] = []
 
-afterEach(() => {
+afterEach(async () => {
   globalThis.fetch = originalFetch
   for (const key of ['DIFFWALK_SERVICE_URL']) {
     const previous = originalEnvironment[key]
     if (previous === undefined) delete process.env[key]
     else process.env[key] = previous
   }
+  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })))
 })
+
+async function temporaryProject(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), 'diffwalk-service-'))
+  directories.push(directory)
+  await mkdir(join(directory, '.git'), { recursive: true })
+  return directory
+}
+
+async function writeProjectService(root: string, service: string): Promise<void> {
+  await mkdir(join(root, '.diffwalk'), { recursive: true })
+  await writeFile(join(root, '.diffwalk', 'config.json'), JSON.stringify({ service }))
+}
 
 const document: ExplainDocument = {
   formatVersion: 1,
@@ -68,13 +85,80 @@ function json(status: number, value: unknown): Response {
 }
 
 describe('reportService', () => {
-  test('falls back to the hosted service, then the environment, then the flag', () => {
+  test('falls back to the hosted service, then the environment, then the flag', async () => {
+    const directory = await temporaryProject()
     delete process.env['DIFFWALK_SERVICE_URL']
-    expect(reportService(undefined)).toBe('https://review.diffwalk.dev')
+    expect(reportService(undefined, directory)).toBe('https://review.diffwalk.dev')
 
     process.env['DIFFWALK_SERVICE_URL'] = 'https://reports.example.test'
-    expect(reportService(undefined)).toBe('https://reports.example.test')
-    expect(reportService('https://explicit.example.test')).toBe('https://explicit.example.test')
+    expect(reportService(undefined, directory)).toBe('https://reports.example.test')
+    expect(reportService('https://explicit.example.test', directory)).toBe(
+      'https://explicit.example.test',
+    )
+  })
+
+  test('uses the project config between the environment and the default', async () => {
+    const directory = await temporaryProject()
+    await writeProjectService(directory, 'https://configured.example.test')
+    delete process.env['DIFFWALK_SERVICE_URL']
+
+    expect(reportService(undefined, directory)).toBe('https://configured.example.test')
+
+    process.env['DIFFWALK_SERVICE_URL'] = 'https://environment.example.test'
+    expect(reportService(undefined, directory)).toBe('https://environment.example.test')
+    expect(reportService('https://explicit.example.test', directory)).toBe(
+      'https://explicit.example.test',
+    )
+  })
+
+  test('finds the project config from a subdirectory', async () => {
+    const directory = await temporaryProject()
+    await writeProjectService(directory, 'https://configured.example.test')
+    const nested = join(directory, 'packages', 'app')
+    await mkdir(nested, { recursive: true })
+    delete process.env['DIFFWALK_SERVICE_URL']
+
+    expect(reportService(undefined, nested)).toBe('https://configured.example.test')
+  })
+
+  test('normalizes the configured URL like the flag', async () => {
+    const directory = await temporaryProject()
+    await writeProjectService(directory, 'https://configured.example.test/some/path?x=1')
+    delete process.env['DIFFWALK_SERVICE_URL']
+
+    expect(reportService(undefined, directory)).toBe('https://configured.example.test')
+  })
+
+  test('rejects an invalid configured URL instead of falling back', async () => {
+    const directory = await temporaryProject()
+    await writeProjectService(directory, 'http://configured.example.test')
+    delete process.env['DIFFWALK_SERVICE_URL']
+
+    expect(() => reportService(undefined, directory)).toThrow('over HTTPS')
+  })
+
+  test('a malformed config is ignored when the flag or environment is selected', async () => {
+    const directory = await temporaryProject()
+    await mkdir(join(directory, '.diffwalk'), { recursive: true })
+    await writeFile(join(directory, '.diffwalk', 'config.json'), '{not json')
+    delete process.env['DIFFWALK_SERVICE_URL']
+
+    expect(reportService('https://explicit.example.test', directory)).toBe(
+      'https://explicit.example.test',
+    )
+
+    process.env['DIFFWALK_SERVICE_URL'] = 'https://environment.example.test'
+    expect(reportService(undefined, directory)).toBe('https://environment.example.test')
+  })
+
+  test('a malformed config fails only when it is the selected setting', async () => {
+    const directory = await temporaryProject()
+    const path = join(directory, '.diffwalk', 'config.json')
+    await mkdir(join(directory, '.diffwalk'), { recursive: true })
+    await writeFile(path, '{not json')
+    delete process.env['DIFFWALK_SERVICE_URL']
+
+    expect(() => reportService(undefined, directory)).toThrow(path)
   })
 
   test('keeps only the origin and rejects plaintext and malformed URLs', () => {
