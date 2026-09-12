@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { FileDiff } from '@pierre/diffs'
 import { Window } from 'happy-dom'
-import type { ExplainDocument } from '../src/format'
+import type { ExplainDocument } from '../src/format/types'
 import { loadReportClient, renderReport } from '../src/report'
 import { mountReport } from '../src/report/client'
 import { reportTargets } from '../src/report/targets'

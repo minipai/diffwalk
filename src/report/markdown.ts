@@ -1,5 +1,9 @@
 import { Marked, type RendererObject, type Tokens } from 'marked'
 
+export function renderMarkdown(markdown: string): string {
+  return parser.parse(markdown, { async: false })
+}
+
 const renderer: RendererObject = {
   // Authored text is trusted, so inline HTML passes through: that is how a diagram
   // reaches the page. The report origin's Content Security Policy is what contains it.
@@ -20,10 +24,6 @@ const renderer: RendererObject = {
 }
 
 const parser = new Marked({ gfm: true, async: false, renderer })
-
-export function renderMarkdown(markdown: string): string {
-  return parser.parse(markdown, { async: false })
-}
 
 function isSafeLinkHref(href: string): boolean {
   const scheme = /^[a-z][a-z0-9+.-]*:/i.exec(href)?.[0]?.toLowerCase()

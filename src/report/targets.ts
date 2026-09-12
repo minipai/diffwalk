@@ -1,4 +1,4 @@
-import type { ExplainDocument } from '../format'
+import type { ExplainDocument } from '../format/types'
 
 export interface ReportChangeTarget {
   id: string
@@ -85,6 +85,12 @@ export function reportTargets(document: ExplainDocument): ReportSectionTarget[] 
     }
   }
 
+  assignCanonicalChanges(targets, changeIds)
+
+  return targets
+}
+
+function assignCanonicalChanges(targets: ReportSectionTarget[], changeIds: string[]): void {
   for (const id of changeIds) {
     const occurrences = targets
       .flatMap((section) =>
@@ -98,7 +104,6 @@ export function reportTargets(document: ExplainDocument): ReportSectionTarget[] 
     occurrences[0]!.change.canonical = true
   }
 
-  return targets
 }
 
 function stepFingerprint(step: ExplainDocument['sections'][number]['steps'][number]): string {

@@ -1,21 +1,30 @@
 import { z } from 'zod'
-import { captureInput, captureOptionsSchema, readCapture } from '../../authoring/input'
+import type { DraftFile, ExplainCapture } from '../../format/types'
+import { captureInput, readCapture } from '../input'
 import { UsageError } from '../usage'
 
-export const fileOptionsSchema = captureOptionsSchema.extend({
+const fileOptionsSchema = z.object({
+  input: z.string().optional(),
   before: z.boolean().optional(),
   after: z.boolean().optional(),
 })
-type FileOptions = z.infer<typeof fileOptionsSchema>
 
-export async function fileCommand(path: string, options: FileOptions): Promise<void> {
-  const before = options.before === true
-  const after = options.after === true
+export async function printFile(filePath: string, options: z.input<typeof fileOptionsSchema>): Promise<void> {
+  const { input, before = false, after = false } = fileOptionsSchema.parse(options)
+  validateFileSide(before, after)
+  const capture = await readCapture(await captureInput({ input }))
+  const file = findFile(capture, filePath)
+  process.stdout.write(before ? file.oldContent : file.newContent)
+}
+
+function validateFileSide(before: boolean, after: boolean): void {
   if (before === after) {
     throw new UsageError('Choose exactly one side with --before or --after')
   }
-  const capture = await readCapture(await captureInput(options))
-  const file = capture.files.find((candidate) => candidate.path === path)
-  if (!file) throw new Error(`Unknown file path: ${path}`)
-  process.stdout.write(before ? file.oldContent : file.newContent)
+}
+
+function findFile(capture: ExplainCapture, filePath: string): DraftFile {
+  const file = capture.files.find((candidate) => candidate.path === filePath)
+  if (!file) throw new Error(`Unknown file path: ${filePath}`)
+  return file
 }

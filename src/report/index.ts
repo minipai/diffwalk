@@ -1,10 +1,9 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
-export { renderHostedReport, renderReport, shellStyles } from './report/render'
-export type { HostedAssets, ReportLayout, ReportOptions } from './report/render'
+export { renderHostedReport, renderReport, shellStyles } from './render'
+export type { HostedAssets, ReportLayout, ReportOptions } from './render'
 
 export async function writeReport(output: string, html: string): Promise<void> {
   const absolutePath = resolve(output)
@@ -30,8 +29,11 @@ export function loadReportClient(): Promise<string> {
 }
 
 async function loadReportClientUncached(): Promise<string> {
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  const prebuilt = join(root, 'dist', 'report-client.js')
+  // Source runs from src/report; the bundled CLI runs beside report-client.js.
+  const prebuilt = new URL(
+    import.meta.url.endsWith('.ts') ? '../../dist/report-client.js' : './report-client.js',
+    import.meta.url,
+  )
   try {
     return await readFile(prebuilt, 'utf8')
   } catch (error) {

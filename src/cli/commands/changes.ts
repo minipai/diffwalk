@@ -1,21 +1,29 @@
 import { z } from 'zod'
-import { captureInput, captureOptionsSchema, readCapture, shortId } from '../../authoring/input'
+import type { ExplainCapture } from '../../format/types'
+import { captureInput, readCapture, shortId } from '../input'
 import { changeLine } from '../output'
 
-export const changesOptionsSchema = captureOptionsSchema.extend({
+const changesOptionsSchema = z.object({
+  input: z.string().optional(),
   json: z.boolean().optional(),
 })
-type ChangesOptions = z.infer<typeof changesOptionsSchema>
 
-export async function changesCommand(options: ChangesOptions): Promise<void> {
-  const capture = await readCapture(await captureInput(options))
-  if (options.json === true) {
-    console.log(JSON.stringify({ captureId: capture.captureId, changes: capture.changes }, null, 2))
-    return
+export async function printChanges(options: z.input<typeof changesOptionsSchema>): Promise<void> {
+  const { input, json = false } = changesOptionsSchema.parse(options)
+  const capture = await readCapture(await captureInput({ input }))
+  switch (json) {
+    case true:
+      console.log(JSON.stringify({ captureId: capture.captureId, changes: capture.changes }, null, 2))
+      break
+    case false:
+      printCaptureChanges(capture)
+      break
   }
+}
+
+function printCaptureChanges(capture: ExplainCapture): void {
   const fileCount = new Set(capture.files.map((file) => file.path)).size
-  console.log(
-    `${capture.changes.length} changes across ${fileCount} files · capture ${shortId(capture.captureId)}`,
-  )
-  for (const change of capture.changes) console.log(changeLine(change))
+  const heading = `${capture.changes.length} changes across ${fileCount} files · capture ${shortId(capture.captureId)}`
+  const lines = capture.changes.map(changeLine)
+  console.log([heading, ...lines].join('\n'))
 }

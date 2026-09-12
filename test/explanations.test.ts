@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { parseExplanations } from '../src/authoring/explanations'
+import { parseExplanations } from '../src/cli/explanations'
 
 const captureId = 'a'.repeat(64)
 const head = `captureId: ${captureId}\ntitle: A change set\n`

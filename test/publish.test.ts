@@ -2,14 +2,14 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ExplainDocument } from '../src/format'
+import type { ExplainDocument } from '../src/format/types'
 import {
   publishDocument,
-  reportService,
   unpublishDocument,
   updateDocument,
   withPublisher,
-} from '../src/publish'
+} from '../src/publish/client'
+import { reportService } from '../src/cli/service'
 
 const originalFetch = globalThis.fetch
 const originalEnvironment = { ...process.env }

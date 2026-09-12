@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { captureSchema, explainDocumentSchema, explanationsSchema } from '../src/format'
+import { captureSchema, explainDocumentSchema, explanationsSchema } from '../src/format/schema'
 
 function diff(patchText = 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n') {
   return patchText

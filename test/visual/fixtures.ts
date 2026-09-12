@@ -1,4 +1,4 @@
-import type { ExplainDocument } from '../../src/format'
+import type { ExplainDocument } from '../../src/format/types'
 
 export function simplePatch(oldLine = 'old', newLine = 'new'): string {
   return [

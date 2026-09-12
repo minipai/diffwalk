@@ -8,13 +8,13 @@ import {
   writeCapture,
   writeJson,
   writeText,
-} from '../../authoring/input'
-import type { ExplainCapture } from '../../format'
+} from '../input'
+import type { ExplainCapture } from '../../format/types'
 import { captureGitChanges, captureGitRevisionChanges, commitForRevision } from '../../authoring/git'
 import { UsageError } from '../usage'
 import { currentWalkIfPresent, setCurrentWalk, walkId, walkPaths } from '../../authoring/walk'
 
-export const inspectOptionsSchema = z.object({
+const inspectOptionsSchema = z.object({
   staged: z.boolean().default(false),
   base: z.string().optional(),
   from: z.string().optional(),
@@ -24,13 +24,23 @@ export const inspectOptionsSchema = z.object({
 })
 type InspectOptions = z.infer<typeof inspectOptionsSchema>
 
-export async function inspectCommand(
+export async function inspectChanges(
   revision: string | undefined,
-  options: InspectOptions,
+  options: z.input<typeof inspectOptionsSchema>,
   paths: string[] = [],
 ): Promise<void> {
+  const { base, from, to, staged, output, explanations } = inspectOptionsSchema.parse(options)
+  validateCaptureOptions(revision, { base, from, to, staged }, paths)
   const capturedAt = new Date().toISOString()
-  const { base, from, to, staged } = options
+  const capture = await captureChanges(revision, { base, from, to, staged }, paths, capturedAt)
+  await saveCapture(capture, { output, explanations }, capturedAt)
+}
+
+function validateCaptureOptions(
+  revision: string | undefined,
+  { base, from, to, staged }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged'>,
+  paths: string[],
+): void {
   if (from !== undefined || to !== undefined) {
     if (from === undefined || to === undefined) {
       throw new UsageError('Pass both --from and --to for a committed revision range')
@@ -44,67 +54,70 @@ export async function inspectCommand(
     if (staged) {
       throw new UsageError('Do not combine --staged with --from/--to')
     }
-    const git = await captureGitRevisionChanges(from, to)
-    const capture = createExplainCapture(git.files, {
-      kind: 'commit-diff',
-      from: { revision: from, commit: git.fromCommit },
-      to: { revision: to, commit: git.toCommit },
-      capturedAt,
-    })
-    await finishInspect(options, capture, capturedAt)
-    return
-  }
-  if (revision !== undefined && base !== undefined) {
-    throw new UsageError('Do not combine a positional commit revision with --base')
-  }
-  if (revision !== undefined) {
+  } else if (revision !== undefined) {
+    if (base !== undefined) {
+      throw new UsageError('Do not combine a positional commit revision with --base')
+    }
     if (paths.length > 0) {
       throw new UsageError('Path limiting applies only to working-tree captures')
     }
     if (staged) {
       throw new UsageError('Do not combine --staged with a positional commit revision')
     }
+  }
+}
+
+async function captureChanges(
+  revision: string | undefined,
+  { base, from, to, staged }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged'>,
+  paths: string[],
+  capturedAt: string,
+): Promise<ExplainCapture> {
+  if (from !== undefined && to !== undefined) {
+    const git = await captureGitRevisionChanges(from, to)
+    return createExplainCapture(git.files, {
+      kind: 'commit-diff',
+      from: { revision: from, commit: git.fromCommit },
+      to: { revision: to, commit: git.toCommit },
+      capturedAt,
+    })
+  } else if (revision !== undefined) {
     const commit = await commitForRevision(revision)
     const parent = await firstParent(commit)
     const git = await captureGitRevisionChanges(`${revision}^1`, revision)
-    const capture = createExplainCapture(git.files, {
+    return createExplainCapture(git.files, {
       kind: 'commit-diff',
       from: { revision: `${revision}^1`, commit: parent },
       to: { revision, commit },
       capturedAt,
     })
-    await finishInspect(options, capture, capturedAt)
-    return
+  } else {
+    const resolvedBase = base ?? 'HEAD'
+    const git = await captureGitChanges(resolvedBase, process.cwd(), { staged, paths })
+    return createExplainCapture(git.files, {
+      kind: 'working-tree',
+      from: { revision: resolvedBase, commit: git.baseCommit },
+      capturedAt,
+    })
   }
-  const resolvedBase = base ?? 'HEAD'
-  const git = await captureGitChanges(resolvedBase, process.cwd(), { staged, paths })
-  const capture = createExplainCapture(git.files, {
-    kind: 'working-tree',
-    from: { revision: resolvedBase, commit: git.baseCommit },
-    capturedAt,
-  })
-  await finishInspect(options, capture, capturedAt)
 }
 
-async function finishInspect(
-  options: InspectOptions,
+async function saveCapture(
   capture: ExplainCapture,
+  { output: outputOverride, explanations: explanationsOverride }: Pick<InspectOptions, 'output' | 'explanations'>,
   capturedAt: string,
 ): Promise<void> {
-  const { output: outputOverride, explanations: explanationsOverride } = options
-
   if (outputOverride !== undefined || explanationsOverride !== undefined) {
     const paths = authoringFiles(outputOverride, explanationsOverride)
     await writeCapture(paths, capture)
-    console.log(
-      `Captured ${capture.changes.length} change blocks across ${capture.files.length} files to ${paths.capture}`,
-    )
-    console.log(
-      `Next: edit ${paths.explanations}, then run \`diffwalk check --input ${paths.capture} --explanations ${paths.explanations}\`.`,
-    )
-    return
+    console.log(`Captured ${capture.changes.length} change blocks across ${capture.files.length} files to ${paths.capture}
+Next: edit ${paths.explanations}, then run \`diffwalk check --input ${paths.capture} --explanations ${paths.explanations}\`.`)
+  } else {
+    await saveWalk(capture, capturedAt)
   }
+}
 
+async function saveWalk(capture: ExplainCapture, capturedAt: string): Promise<void> {
   const previous = await currentWalkIfPresent()
   if (previous !== null) {
     const previousCapture = await readCapture(previous.capture)
@@ -126,10 +139,8 @@ async function finishInspect(
         await writeText(previous.explanations, explanationsSkeleton(capture.captureId))
         console.log(`Wrote a ${previous.explanations} skeleton to author`)
       }
-      console.log(
-        `${capture.source.kind === 'working-tree' ? 'Working tree' : 'Capture'} is unchanged; kept current walk ${previous.id}`,
-      )
-      console.log(`Next: edit ${previous.explanations}, then run \`diffwalk check\`.`)
+      console.log(`${capture.source.kind === 'working-tree' ? 'Working tree' : 'Capture'} is unchanged; kept current walk ${previous.id}
+Next: edit ${previous.explanations}, then run \`diffwalk check\`.`)
       return
     }
   }
@@ -152,11 +163,9 @@ async function finishInspect(
     console.log(`Wrote a ${paths.explanations} skeleton to author`)
   }
   await setCurrentWalk(id)
-  console.log(
-    `Captured ${capture.changes.length} change blocks across ${capture.files.length} files to ${paths.capture}`,
-  )
-  console.log(`Current walk: ${id}`)
-  console.log(`Next: edit ${paths.explanations}, then run \`diffwalk check\`.`)
+  console.log(`Captured ${capture.changes.length} change blocks across ${capture.files.length} files to ${paths.capture}
+Current walk: ${id}
+Next: edit ${paths.explanations}, then run \`diffwalk check\`.`)
 }
 
 function sourceIdentity(source: ExplainCapture['source']): string {

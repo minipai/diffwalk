@@ -1,16 +1,11 @@
 import { parseDocument } from 'yaml'
 import { ZodError } from 'zod'
-import { explanationsSchema, type Explanations } from '../format'
+import { explanationsSchema } from '../format/schema'
+import type { Explanations } from '../format/types'
 
 export function parseExplanations(text: string): Explanations {
   const document = parseDocument(text, { strict: true, schema: 'core' })
-  const problems = [...document.errors, ...document.warnings]
-  if (problems.length > 0) {
-    throw new Error(`Invalid explanations YAML: ${problems[0]!.message}`)
-  }
-  if (document.contents === null) {
-    throw new Error('Invalid explanations YAML: the document is empty')
-  }
+  validateExplanationsYaml(document)
   const value: unknown = document.toJS({ maxAliasCount: 0 })
   try {
     return explanationsSchema.parse(value)
@@ -22,5 +17,15 @@ export function parseExplanations(text: string): Explanations {
       throw new Error(`Invalid explanations YAML: ${detail}`)
     }
     throw error
+  }
+}
+
+function validateExplanationsYaml(document: ReturnType<typeof parseDocument>): void {
+  const problems = [...document.errors, ...document.warnings]
+  if (problems.length > 0) {
+    throw new Error(`Invalid explanations YAML: ${problems[0]!.message}`)
+  }
+  if (document.contents === null) {
+    throw new Error('Invalid explanations YAML: the document is empty')
   }
 }

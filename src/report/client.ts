@@ -21,6 +21,29 @@ type FileDiffFactory = (options: FileDiffOptions<undefined>) => FileDiff
 
 const initialRenderTimeoutMs = 10_000
 
+export function mountReport(
+  createFileDiff: FileDiffFactory = (options) => new FileDiff(options),
+) {
+  reserveGeneratedIds()
+  const data = readReportData()
+  if (!data) return
+  let layout = initialLayout()
+  if (isNarrowViewport() && layout === 'split') {
+    layout = 'unified'
+    reflectLayout(layout)
+  }
+  let finishInitialRender!: () => void
+  const initialRender = new Promise<void>((resolve) => (finishInitialRender = resolve))
+  wireSectionFolds()
+  wireFragments(initialRender)
+  const mountedDiffs = mountDiffs(data, layout, createFileDiff)
+  void mountedDiffs.initialRender.then(finishInitialRender)
+  const { mounted } = mountedDiffs
+  wireLayout(mounted)
+  wireGlobalFolds()
+  prepareForPrint()
+}
+
 function readReportData(): ReportData | null {
   const element = document.querySelector<HTMLScriptElement>(
     'body > script#diffwalk-report-data[type="application/json"]',
@@ -369,28 +392,6 @@ function prepareForPrint() {
   })
 }
 
-export function mountReport(
-  createFileDiff: FileDiffFactory = (options) => new FileDiff(options),
-) {
-  reserveGeneratedIds()
-  const data = readReportData()
-  if (!data) return
-  let layout = initialLayout()
-  if (isNarrowViewport() && layout === 'split') {
-    layout = 'unified'
-    reflectLayout(layout)
-  }
-  let finishInitialRender!: () => void
-  const initialRender = new Promise<void>((resolve) => (finishInitialRender = resolve))
-  wireSectionFolds()
-  wireFragments(initialRender)
-  const mountedDiffs = mountDiffs(data, layout, createFileDiff)
-  void mountedDiffs.initialRender.then(finishInitialRender)
-  const { mounted } = mountedDiffs
-  wireLayout(mounted)
-  wireGlobalFolds()
-  prepareForPrint()
-}
 
 if (typeof document !== 'undefined') {
   mountReport()

@@ -1,7 +1,11 @@
 import { setCurrentWalk, walkExists } from '../../authoring/walk'
 
-export async function useCommand(id: string): Promise<void> {
-  if (!(await walkExists(id))) throw new Error(`No Diffwalk walk ${id}.`)
-  await setCurrentWalk(id)
-  console.log(`Current walk: ${id}`)
+export async function selectWalk(walkId: string): Promise<void> {
+  await validateWalkExists(walkId)
+  await setCurrentWalk(walkId)
+  console.log(`Current walk: ${walkId}`)
+}
+
+async function validateWalkExists(walkId: string): Promise<void> {
+  if (!(await walkExists(walkId))) throw new Error(`No Diffwalk walk ${walkId}.`)
 }

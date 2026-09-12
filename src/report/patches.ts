@@ -9,9 +9,7 @@ export interface FileDiffStats {
 export function parseSectionPatch(patch: string): FileDiffMetadata[] {
   const parsed = parsePatchFiles(patch, undefined, true)
   const files = parsed.flatMap((result) => result.files)
-  if (files.length === 0) {
-    throw new Error('The section patch contains no parseable file diffs')
-  }
+  validatePatchFiles(files)
   const structured = parsePatch(patch)
   for (const [index, file] of files.entries()) {
     const source = structured[index]
@@ -38,4 +36,10 @@ export function fileDiffLabel(file: FileDiffMetadata): string {
   return file.prevName && file.prevName !== file.name
     ? `${file.prevName} → ${file.name}`
     : file.name
+}
+
+function validatePatchFiles(files: FileDiffMetadata[]): void {
+  if (files.length === 0) {
+    throw new Error('The section patch contains no parseable file diffs')
+  }
 }

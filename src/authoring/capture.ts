@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto'
 import { diffLines, formatPatch, structuredPatch, type StructuredPatch } from 'diff'
-import {
-  captureSchema,
-  explainDocumentSchema,
-  type CaptureSource,
-  type ChangeBlock,
-  type DraftFile,
-  type ExplainCapture,
-  type ExplainDocument,
-  type Explanations,
-} from '../format'
+import type {
+  CaptureSource,
+  ChangeBlock,
+  DraftFile,
+  DocumentStep,
+  ExplanationStep,
+  ExplainCapture,
+  ExplainDocument,
+  Explanations,
+} from '../format/types'
 
 export function createExplainCapture(files: DraftFile[], source: CaptureSource): ExplainCapture {
   let nextId = 1
@@ -38,12 +38,146 @@ export function createExplainCapture(files: DraftFile[], source: CaptureSource):
     changes.push(...fileChanges)
   }
 
-  return captureSchema.parse({
+  return {
     captureId: captureIdFor(files),
     source,
     files,
     changes,
-  })
+  }
+}
+
+export function captureIdFor(files: DraftFile[], includeModes = true): string {
+  const hash = createHash('sha256')
+  for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
+    hash.update(file.status)
+    hash.update('\0')
+    hash.update(file.path)
+    hash.update('\0')
+    hash.update(file.oldPath ?? '')
+    hash.update('\0')
+    if (includeModes) {
+      hash.update(file.oldMode)
+      hash.update('\0')
+      hash.update(file.newMode)
+      hash.update('\0')
+    }
+    hash.update(file.oldContent)
+    hash.update('\0')
+    hash.update(file.newContent)
+    hash.update('\0')
+  }
+  return hash.digest('hex')
+}
+
+export function stalePairingMessage(capture: ExplainCapture, explanations: Explanations): string {
+  return `The explanations target capture ${explanations.captureId} but capture.json holds ${capture.captureId}. The files come from different walks or the captured contents changed after the explanations were authored. Use capture.json and explanations.yaml from the same .diffwalk walk, or run \`diffwalk inspect\` for a fresh current pair.`
+}
+
+export function duplicatedChangeIds(explanations: Explanations): string[] {
+  const seen = new Set<string>()
+  const repeated = new Set<string>()
+  for (const section of explanations.sections) {
+    for (const step of section.steps) {
+      for (const changeId of step.changes ?? []) {
+        if (seen.has(changeId)) repeated.add(changeId)
+        seen.add(changeId)
+      }
+    }
+  }
+  return [...repeated].sort()
+}
+
+export function materializeExplainDocument(
+  capture: ExplainCapture,
+  explanations: Explanations,
+): ExplainDocument {
+  validateCapturePair(capture, explanations)
+  const filesByPath = new Map(capture.files.map((file) => [file.path, file]))
+  const changesById = new Map(capture.changes.map((change) => [change.id, change]))
+
+  const shown = new Set<string>()
+  const sections = explanations.sections.map((section) => ({
+    title: section.title,
+    steps: section.steps.map((step) => materializeStep(step, filesByPath, changesById, shown)),
+  }))
+
+  validateChangeCoverage(capture.changes, shown)
+
+  return {
+    formatVersion: 1,
+    title: explanations.title,
+    summary: explanations.summary,
+    source: capture.source,
+    ...(explanations.metadata === undefined ? {} : { metadata: explanations.metadata }),
+    sections,
+  }
+}
+
+function materializeStep(
+  step: ExplanationStep,
+  filesByPath: Map<string, DraftFile>,
+  changesById: Map<string, ChangeBlock>,
+  shown: Set<string>,
+): DocumentStep {
+  if (step.changes === undefined) {
+    return { text: step.text }
+  } else {
+    const selected = step.changes.map((changeId) => {
+      const change = findChange(changesById, changeId)
+      shown.add(changeId)
+      return change
+    })
+
+    const changesByPath = new Map<string, ChangeBlock[]>()
+    for (const change of selected) {
+      const fileChanges = changesByPath.get(change.path) ?? []
+      fileChanges.push(change)
+      changesByPath.set(change.path, fileChanges)
+    }
+
+    const patches: StructuredPatch[] = []
+    for (const [path, fileChanges] of changesByPath) {
+      const file = findFile(filesByPath, path)
+      patches.push(createFilePatch(file, fileChanges))
+    }
+
+    return {
+      text: step.text,
+      diff: patches.map(formatFilePatch).join('\n'),
+      changes: step.changes,
+    }
+  }
+}
+
+function findChange(changesById: Map<string, ChangeBlock>, changeId: string): ChangeBlock {
+  const change = changesById.get(changeId)
+  if (!change) throw new Error(`Unknown change ID: ${changeId}`)
+  return change
+}
+
+function findFile(filesByPath: Map<string, DraftFile>, filePath: string): DraftFile {
+  const file = filesByPath.get(filePath)
+  if (!file) throw new Error(`Change references missing file: ${filePath}`)
+  return file
+}
+
+function validateCapturePair(capture: ExplainCapture, explanations: Explanations): void {
+  if (capture.captureId !== explanations.captureId) {
+    throw new Error(stalePairingMessage(capture, explanations))
+  }
+  if (capture.changes.length === 0 && explanations.sections.length === 0) {
+    throw new Error('No captured changes or authored sections to materialize; nothing to view, export, or publish.')
+  }
+  if (new Set(capture.changes.map((change) => change.id)).size !== capture.changes.length) {
+    throw new Error('Capture contains duplicate change IDs')
+  }
+}
+
+function validateChangeCoverage(changes: ChangeBlock[], shown: Set<string>): void {
+  const unshown = changes.filter((change) => !shown.has(change.id))
+  if (unshown.length > 0) {
+    throw new Error(`Unassigned change IDs: ${unshown.map((change) => change.id).join(', ')}`)
+  }
 }
 
 function changeBlocks(file: DraftFile): Omit<ChangeBlock, 'id' | 'path'>[] {
@@ -88,115 +222,6 @@ function changeBlocks(file: DraftFile): Omit<ChangeBlock, 'id' | 'path'>[] {
   }
 
   return changes
-}
-
-export function captureIdFor(files: DraftFile[], includeModes = true): string {
-  const hash = createHash('sha256')
-  for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
-    hash.update(file.status)
-    hash.update('\0')
-    hash.update(file.path)
-    hash.update('\0')
-    hash.update(file.oldPath ?? '')
-    hash.update('\0')
-    if (includeModes) {
-      hash.update(file.oldMode)
-      hash.update('\0')
-      hash.update(file.newMode)
-      hash.update('\0')
-    }
-    hash.update(file.oldContent)
-    hash.update('\0')
-    hash.update(file.newContent)
-    hash.update('\0')
-  }
-  return hash.digest('hex')
-}
-
-export function stalePairingMessage(capture: ExplainCapture, explanations: Explanations): string {
-  return `The explanations target capture ${explanations.captureId} but capture.json holds ${capture.captureId}. The files come from different walks or the captured contents changed after the explanations were authored. Use capture.json and explanations.yaml from the same .diffwalk walk, or run \`diffwalk inspect\` for a fresh current pair.`
-}
-
-export function duplicatedChangeIds(explanations: Explanations): string[] {
-  const seen = new Set<string>()
-  const repeated = new Set<string>()
-  for (const section of explanations.sections) {
-    for (const step of section.steps) {
-      for (const id of step.changes ?? []) {
-        if (seen.has(id)) repeated.add(id)
-        seen.add(id)
-      }
-    }
-  }
-  return [...repeated].sort()
-}
-
-export function materializeExplainDocument(
-  capture: ExplainCapture,
-  explanations: Explanations,
-): ExplainDocument {
-  if (capture.captureId !== explanations.captureId) {
-    throw new Error(stalePairingMessage(capture, explanations))
-  }
-
-  if (capture.changes.length === 0 && explanations.sections.length === 0) {
-    throw new Error('No captured changes or authored sections to materialize; nothing to view, export, or publish.')
-  }
-
-  const filesByPath = new Map(capture.files.map((file) => [file.path, file]))
-  const changesById = new Map(capture.changes.map((change) => [change.id, change]))
-  if (changesById.size !== capture.changes.length) {
-    throw new Error('Capture contains duplicate change IDs')
-  }
-
-  const shown = new Set<string>()
-  const sections = explanations.sections.map((section) => ({
-    title: section.title,
-    steps: section.steps.map((step) => {
-      if (step.changes === undefined) return { text: step.text }
-
-      const selected = step.changes.map((id) => {
-        const change = changesById.get(id)
-        if (!change) throw new Error(`Unknown change ID: ${id}`)
-        shown.add(id)
-        return change
-      })
-
-      const changesByPath = new Map<string, ChangeBlock[]>()
-      for (const change of selected) {
-        const fileChanges = changesByPath.get(change.path) ?? []
-        fileChanges.push(change)
-        changesByPath.set(change.path, fileChanges)
-      }
-
-      const patches: StructuredPatch[] = []
-      for (const [path, fileChanges] of changesByPath) {
-        const file = filesByPath.get(path)
-        if (!file) throw new Error(`Change references missing file: ${path}`)
-        patches.push(createFilePatch(file, fileChanges))
-      }
-
-      return {
-        text: step.text,
-        diff: patches.map(formatFilePatch).join('\n'),
-        changes: step.changes,
-      }
-    }),
-  }))
-
-  const unshown = capture.changes.filter((change) => !shown.has(change.id))
-  if (unshown.length > 0) {
-    throw new Error(`Unassigned change IDs: ${unshown.map((change) => change.id).join(', ')}`)
-  }
-
-  return explainDocumentSchema.parse({
-    formatVersion: 1,
-    title: explanations.title,
-    summary: explanations.summary,
-    source: capture.source,
-    ...(explanations.metadata === undefined ? {} : { metadata: explanations.metadata }),
-    sections,
-  })
 }
 
 function createFilePatch(file: DraftFile, changes: ChangeBlock[]): StructuredPatch {

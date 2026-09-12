@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { captureIdFor } from '../src/authoring/capture'
-import { captureSchema } from '../src/format'
+import { captureSchema } from '../src/format/schema'
 
 const directories: string[] = []
 

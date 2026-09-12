@@ -1,4 +1,4 @@
-import type { ExplainDocument } from '../format'
+import type { ExplainDocument } from '../format/types'
 import { faviconDataUrl } from './favicon'
 import { renderMarkdown } from './markdown'
 import { fileDiffLabel, fileDiffStats, parseSectionPatch } from './patches'
@@ -32,6 +32,30 @@ interface ReportBody {
   title: string
   markup: string
   data: ReportData
+}
+
+export function renderReport(
+  document: ExplainDocument,
+  clientBundle: string,
+  options: ReportOptions = {},
+): string {
+  return renderShell(
+    renderReportBody(document, options),
+    `<style>\n${shellStyles}\n</style>`,
+    `<script>${escapeScriptTerminators(clientBundle)}</script>`,
+  )
+}
+
+export function renderHostedReport(
+  document: ExplainDocument,
+  assets: HostedAssets,
+  options: ReportOptions = {},
+): string {
+  return renderShell(
+    renderReportBody(document, options, true),
+    `<link rel="stylesheet" href="${escapeHtml(assets.stylesHref)}">`,
+    `<script src="${escapeHtml(assets.clientSrc)}" defer></script>`,
+  )
 }
 
 function renderReportBody(
@@ -90,30 +114,6 @@ ${sections.map((section) => section.markup).join('\n')}
   }
 }
 
-export function renderReport(
-  document: ExplainDocument,
-  clientBundle: string,
-  options: ReportOptions = {},
-): string {
-  return renderShell(
-    renderReportBody(document, options),
-    `<style>\n${shellStyles}\n</style>`,
-    `<script>${escapeScriptTerminators(clientBundle)}</script>`,
-  )
-}
-
-export function renderHostedReport(
-  document: ExplainDocument,
-  assets: HostedAssets,
-  options: ReportOptions = {},
-): string {
-  return renderShell(
-    renderReportBody(document, options, true),
-    `<link rel="stylesheet" href="${escapeHtml(assets.stylesHref)}">`,
-    `<script src="${escapeHtml(assets.clientSrc)}" defer></script>`,
-  )
-}
-
 function renderShell(body: ReportBody, styles: string, client: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -163,13 +163,7 @@ function renderSection(
       return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}</div>`
     }
 
-    let files: FileDiffMetadata[]
-    try {
-      files = parseSectionPatch(step.diff)
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(`Section "${section.title}" has an unparseable diff: ${detail}`)
-    }
+    const files = parseStepDiff(step.diff, section.title)
     fileCount += files.length
     diffs.push({ section: index, step: stepIndex, diff: step.diff })
 
@@ -202,6 +196,15 @@ ${steps.join('\n')}
   </details>
 </section>`
   return { markup, fileCount, diffs }
+}
+
+function parseStepDiff(diff: string, sectionTitle: string): FileDiffMetadata[] {
+  try {
+    return parseSectionPatch(diff)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`Section "${sectionTitle}" has an unparseable diff: ${detail}`)
+  }
 }
 
 function renderReviewMap(
@@ -263,18 +266,19 @@ function renderAttribution(metadata: ExplainDocument['metadata'], hosted: boolea
 }
 
 function renderSourceMetadata(source: ExplainDocument['source']): string {
-  if (source.kind === 'commit-diff') {
-    return `<dt>From</dt><dd>${renderEndpoint(source.from)}</dd>
+  switch (source.kind) {
+    case 'commit-diff':
+      return `<dt>From</dt><dd>${renderEndpoint(source.from)}</dd>
     <dt>To</dt><dd>${renderEndpoint(source.to)}</dd>
     <dt>Captured at</dt><dd>${escapeHtml(source.capturedAt)}</dd>`
-  }
-  if (source.kind === 'working-tree') {
-    return `<dt>From</dt><dd>${renderEndpoint(source.from)}</dd>
+    case 'working-tree':
+      return `<dt>From</dt><dd>${renderEndpoint(source.from)}</dd>
     <dt>To</dt><dd>Working tree</dd>
     <dt>Captured at</dt><dd>${escapeHtml(source.capturedAt)}</dd>`
-  }
-  return `<dt>Source</dt><dd>Proposal</dd>
+    case 'proposal':
+      return `<dt>Source</dt><dd>Proposal</dd>
     <dt>Captured at</dt><dd>${escapeHtml(source.capturedAt)}</dd>`
+  }
 }
 
 function renderEndpoint(endpoint: { revision: string; commit: string }): string {

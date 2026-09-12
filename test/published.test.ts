@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readPublishedReview, writePublishedReview } from '../src/authoring/published'
+import { readPublishedReview, writePublishedReview } from '../src/cli/published'
 
 const directories: string[] = []
 

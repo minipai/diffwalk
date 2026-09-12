@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander'
-import { authoringOptionsSchema, captureOptionsSchema } from './authoring/input'
-import { changeCommand } from './cli/commands/change'
-import { changesCommand, changesOptionsSchema } from './cli/commands/changes'
-import { checkCommand } from './cli/commands/check'
-import { deleteCommand } from './cli/commands/delete'
-import { exportCommand, exportOptionsSchema } from './cli/commands/export'
-import { fileCommand, fileOptionsSchema } from './cli/commands/file'
-import { inspectCommand, inspectOptionsSchema } from './cli/commands/inspect'
-import { publishCommand, publishOptionsSchema } from './cli/commands/publish'
-import { unpublishCommand, unpublishOptionsSchema } from './cli/commands/unpublish'
-import { useCommand } from './cli/commands/use'
-import { viewCommand } from './cli/commands/view'
-import { walksCommand } from './cli/commands/walks'
-import { withArgument, withOptions } from './cli/options'
+import { printChange } from './cli/commands/change'
+import { printChanges } from './cli/commands/changes'
+import { checkReview } from './cli/commands/check'
+import { removeWalk } from './cli/commands/delete'
+import { exportReview } from './cli/commands/export'
+import { printFile } from './cli/commands/file'
+import { inspectChanges } from './cli/commands/inspect'
+import { publishReview } from './cli/commands/publish'
+import { removeReview } from './cli/commands/unpublish'
+import { selectWalk } from './cli/commands/use'
+import { viewReview } from './cli/commands/view'
+import { printWalks } from './cli/commands/walks'
 import { UsageError } from './cli/usage'
 import packageJson from '../package.json'
 
@@ -49,9 +47,9 @@ function createCli(): Command {
     .addHelpText('after', '\nLimit a working-tree capture with --staged or a `-- <path>...` list.')
     .action((_revision: string | undefined, options: Record<string, unknown>, command: Command) => {
       const positionals = inspectPositionals(command)
-      return inspectCommand(
+      return inspectChanges(
         positionals.revision,
-        inspectOptionsSchema.parse(options),
+        options,
         positionals.paths,
       )
     })
@@ -59,30 +57,30 @@ function createCli(): Command {
   cli
     .command('walks')
     .description('List timestamped walks and mark the current one')
-    .action(() => walksCommand())
+    .action(() => printWalks())
 
   cli
     .command('use <walk-id>')
     .description('Select a local walk as current')
-    .action((id: string) => useCommand(id))
+    .action(selectWalk)
 
   cli
     .command('delete <walk-id>')
     .description('Delete a local walk')
-    .action((id: string) => deleteCommand(id))
+    .action(removeWalk)
 
   cli
     .command('changes')
     .description('List captured change blocks')
     .option('--json', 'Print structured JSON change data')
     .option('--input <path>', 'Use an explicit capture path')
-    .action(withOptions(changesOptionsSchema, changesCommand))
+    .action(printChanges)
 
   cli
     .command('change <id>')
     .description('Read one captured change block')
     .option('--input <path>', 'Use an explicit capture path')
-    .action(withArgument(captureOptionsSchema, changeCommand))
+    .action(printChange)
 
   cli
     .command('file <path>')
@@ -90,21 +88,21 @@ function createCli(): Command {
     .option('--before', 'Print the captured old side')
     .option('--after', 'Print the captured new side')
     .option('--input <path>', 'Use an explicit capture path')
-    .action(withArgument(fileOptionsSchema, fileCommand))
+    .action(printFile)
 
   cli
     .command('check')
     .description('Validate capture and explanations')
     .option('--input <path>', 'Use an explicit capture path')
     .option('--explanations <path>', 'Use an explicit explanations path')
-    .action(withOptions(authoringOptionsSchema, checkCommand))
+    .action(checkReview)
 
   cli
     .command('view')
     .description('Preview the review in a local browser')
     .option('--input <path>', 'Use an explicit capture path')
     .option('--explanations <path>', 'Use an explicit explanations path')
-    .action(withOptions(authoringOptionsSchema, viewCommand))
+    .action(viewReview)
 
   cli
     .command('export <format>')
@@ -112,7 +110,7 @@ function createCli(): Command {
     .option('--input <path>', 'Use an explicit capture path')
     .option('--explanations <path>', 'Use an explicit explanations path')
     .option('--output <path>', 'Write to an explicit output path')
-    .action(withArgument(exportOptionsSchema, exportCommand))
+    .action(exportReview)
 
   cli
     .command('publish')
@@ -121,14 +119,14 @@ function createCli(): Command {
     .option('--explanations <path>', 'Use an explicit explanations path')
     .option('--service <url>', 'Use an explicit review service origin')
     .option('--update', 'Replace the content behind the retained review link')
-    .action(withOptions(publishOptionsSchema, publishCommand))
+    .action(publishReview)
 
   cli
     .command('unpublish <id>')
     .description('Remove a published review')
     .option('--token <token>', 'Use the review revocation token')
     .option('--service <url>', 'Use an explicit review service origin')
-    .action(withArgument(unpublishOptionsSchema, unpublishCommand))
+    .action(removeReview)
 
   return cli
 }
@@ -137,16 +135,20 @@ function inspectPositionals(command: Command): { revision: string | undefined; p
   const operands = command.args
   const separator = process.argv.indexOf('--', 2)
   if (separator === -1) {
-    if (operands.length > 1) {
-      throw new UsageError('Pass at most one revision; separate paths from options with `--`')
-    }
+    validateRevisionCount(operands.length, false)
     return { revision: operands[0], paths: [] }
   }
   const paths = process.argv.slice(separator + 1)
-  if (operands.length - paths.length > 1) {
-    throw new UsageError('Pass at most one revision before `--`')
-  }
+  validateRevisionCount(operands.length - paths.length, true)
   return { revision: operands.length > paths.length ? operands[0] : undefined, paths }
+}
+
+function validateRevisionCount(count: number, hasPathSeparator: boolean): void {
+  if (count > 1) {
+    throw new UsageError(hasPathSeparator
+      ? 'Pass at most one revision before `--`'
+      : 'Pass at most one revision; separate paths from options with `--`')
+  }
 }
 
 function reportError(error: unknown): void {

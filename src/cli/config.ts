@@ -1,7 +1,7 @@
 import { lstatSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { diffwalkDirectory } from './walk'
+import { diffwalkDirectory } from '../authoring/walk'
 
 export const projectConfigFileName = 'config.json'
 
@@ -12,16 +12,12 @@ export const projectConfigSchema = z
     service: z.string().optional(),
   })
   .strict()
-export type ProjectConfig = z.infer<typeof projectConfigSchema>
+export interface ProjectConfig {
+  service?: string
+}
 
-// The project is the Git work tree, so its config only sits at the work-tree root. A
-// `.diffwalk/config.json` above the root belongs to some outer directory, not this
-// project, and is ignored; outside a work tree there is no project config at all.
-export function findProjectConfig(directory = process.cwd()): string | null {
-  const root = workTreeRoot(directory)
-  if (root === null) return null
-  const candidate = join(root, diffwalkDirectory, projectConfigFileName)
-  return entryExists(candidate) ? candidate : null
+export function configuredService(directory = process.cwd()): string | undefined {
+  return readProjectConfig(directory)?.service
 }
 
 export function readProjectConfig(directory = process.cwd()): ProjectConfig | null {
@@ -46,8 +42,14 @@ export function readProjectConfig(directory = process.cwd()): ProjectConfig | nu
   }
 }
 
-export function configuredService(directory = process.cwd()): string | undefined {
-  return readProjectConfig(directory)?.service
+// The project is the Git work tree, so its config only sits at the work-tree root. A
+// `.diffwalk/config.json` above the root belongs to some outer directory, not this
+// project, and is ignored; outside a work tree there is no project config at all.
+export function findProjectConfig(directory = process.cwd()): string | null {
+  const root = workTreeRoot(directory)
+  if (root === null) return null
+  const candidate = join(root, diffwalkDirectory, projectConfigFileName)
+  return entryExists(candidate) ? candidate : null
 }
 
 function workTreeRoot(directory: string): string | null {

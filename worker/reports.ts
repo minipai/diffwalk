@@ -1,13 +1,13 @@
 export const maxDocumentBytes = 1024 * 1024
 
-const idPattern = /^[A-Za-z0-9_-]{22}$/
+const reportIdPattern = /^[A-Za-z0-9_-]{22}$/
 
 export function isReportId(value: string): boolean {
-  return idPattern.test(value)
+  return reportIdPattern.test(value)
 }
 
-export function reportKey(id: string): string {
-  return `reports/${id}.json`
+export function reportKey(reportId: string): string {
+  return `reports/${reportId}.json`
 }
 
 export function createReportId(): string {
