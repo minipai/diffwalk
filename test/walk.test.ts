@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { currentWalk, currentWalkIfPresent, setCurrentWalk, walkId, walkPaths } from '../src/authoring/walk'
+import {
+  currentWalk,
+  currentWalkIdIfPresent,
+  currentWalkIfPresent,
+  deleteWalk,
+  listWalkIds,
+  setCurrentWalk,
+  walkExists,
+  walkId,
+  walkPaths,
+} from '../src/authoring/walk'
 
 const directories: string[] = []
 
@@ -41,5 +51,73 @@ describe('walk paths', () => {
     )
     expect((await currentWalk(root)).id).toBe('20260831T063842Z-a7c9e4f2')
     expect(() => walkPaths('../outside', root)).toThrow('Invalid Diffwalk walk ID')
+  })
+})
+
+describe('walk management', () => {
+  const older = '20260831T063842Z-a7c9e4f2'
+  const newer = '20260901T101500Z-deadbeef'
+
+  test('lists walk directories newest first and reports the current one', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffwalk-walks-'))
+    directories.push(root)
+    expect(await listWalkIds(root)).toEqual([])
+
+    await mkdir(walkPaths(older, root).directory, { recursive: true })
+    await mkdir(walkPaths(newer, root).directory, { recursive: true })
+    await writeFile(join(root, 'notes.txt'), 'not a walk\n')
+    await setCurrentWalk(older, root)
+
+    expect(await listWalkIds(root)).toEqual([newer, older])
+    expect(await currentWalkIdIfPresent(root)).toBe(older)
+    expect(await walkExists(newer, root)).toBe(true)
+    expect(await walkExists('20260901T101500Z-ffffffff', root)).toBe(false)
+  })
+
+  test('deletes a walk and keeps or clears the current pointer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffwalk-delete-'))
+    directories.push(root)
+    await mkdir(walkPaths(older, root).directory, { recursive: true })
+    await mkdir(walkPaths(newer, root).directory, { recursive: true })
+    await setCurrentWalk(newer, root)
+
+    expect(await deleteWalk(older, root)).toBe(false)
+    expect(await walkExists(older, root)).toBe(false)
+    expect(await currentWalkIdIfPresent(root)).toBe(newer)
+
+    expect(await deleteWalk(newer, root)).toBe(true)
+    expect(await walkExists(newer, root)).toBe(false)
+    expect(await currentWalkIdIfPresent(root)).toBeNull()
+
+    await expect(deleteWalk(older, root)).rejects.toThrow('No Diffwalk walk')
+  })
+
+  test('refuses to delete a non-directory entry that looks like a walk', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffwalk-delete-file-'))
+    directories.push(root)
+    await writeFile(walkPaths(older, root).directory, 'not a walk\n')
+
+    await expect(deleteWalk(older, root)).rejects.toThrow('No Diffwalk walk')
+
+    expect(await readFile(walkPaths(older, root).directory, 'utf8')).toBe('not a walk\n')
+  })
+
+  test('clears a dangling current pointer when its walk is deleted', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffwalk-dangling-'))
+    directories.push(root)
+    await setCurrentWalk(older, root)
+
+    expect(await deleteWalk(older, root)).toBe(true)
+    expect(await currentWalkIdIfPresent(root)).toBeNull()
+  })
+
+  test('does not treat a symlinked directory as a walk', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffwalk-symlink-'))
+    const target = await mkdtemp(join(tmpdir(), 'diffwalk-target-'))
+    directories.push(root, target)
+    await symlink(target, walkPaths(older, root).directory)
+
+    expect(await walkExists(older, root)).toBe(false)
+    expect(await listWalkIds(root)).toEqual([])
   })
 })

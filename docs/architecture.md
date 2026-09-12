@@ -111,11 +111,12 @@ exact corresponding diffs in a deliberate order.
 - `src/cli/commands/`: one typed handler module per CLI command.
 - `src/authoring/input.ts`: shared capture and explanations path resolution, schemas,
   validation, and persistence.
-- `src/authoring/walk.ts`: timestamped walk IDs, per-walk paths, and the current-walk pointer.
+- `src/authoring/walk.ts`: timestamped walk IDs, per-walk paths, listing and deleting
+  walks, and the current-walk pointer.
 - `src/authoring/published.ts`: the locally retained published review (ID, URL, service,
   and revocation token), written by `publish` and read by `publish --update`.
-- `src/cli.ts`: executable entry point for `inspect`, `changes`, `change`, `file`,
-  `check`, `view`, `export`, `publish`, and `unpublish`.
+- `src/cli.ts`: executable entry point for `inspect`, `walks`, `use`, `delete`,
+  `changes`, `change`, `file`, `check`, `view`, `export`, `publish`, and `unpublish`.
 - `src/report/view.ts`: loopback-only report preview server and default-browser launch.
 - `src/report/patches.ts`: shared Pierre parse seam used by the generator, the browser
   client, and tests.

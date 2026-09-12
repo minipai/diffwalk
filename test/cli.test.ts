@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -663,6 +664,133 @@ describe('inspect', () => {
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr.length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('walks', () => {
+  test('lists every walk and marks the current one', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    const first = await readCurrentWalkId(repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\nMultiverse\n')
+    await runCli(['inspect'], repo)
+    const second = await readCurrentWalkId(repo)
+    expect(second).not.toBe(first)
+
+    const result = await runCli(['walks'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const lines = result.stdout.split('\n')
+    expect(lines).toContain(`${second}  (current)`)
+    expect(lines).toContain(first)
+    expect(lines.find((line) => line.startsWith(first))).not.toContain('current')
+  })
+
+  test('reports an empty workspace without failing', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['walks'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('No Diffwalk walks')
+  })
+
+  test('use selects another walk and updates current', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    const first = await readCurrentWalkId(repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\nMultiverse\n')
+    await runCli(['inspect'], repo)
+    expect(await readCurrentWalkId(repo)).not.toBe(first)
+
+    const result = await runCli(['use', first], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect(await readCurrentWalkId(repo)).toBe(first)
+    const walks = await runCli(['walks'], repo)
+    expect(walks.stdout.split('\n')).toContain(`${first}  (current)`)
+  })
+
+  test('use rejects an unknown walk and a missing walk ID', async () => {
+    const repo = await fixtureRepo()
+
+    const unknown = await runCli(['use', '20260831T063842Z-a7c9e4f2'], repo)
+    expect(unknown.exitCode).not.toBe(0)
+    expect(unknown.stderr).toContain('No Diffwalk walk')
+
+    const missing = await runCli(['use'], repo)
+    expect(missing.exitCode).not.toBe(0)
+    expect(missing.stderr).toContain("missing required argument 'walk-id'")
+  })
+
+  test('delete removes a walk, keeps current, then clears a deleted current walk', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    const first = await readCurrentWalkId(repo)
+    await writeFile(join(repo, 'greeting.ts'), 'Hello\nMultiverse\n')
+    await runCli(['inspect'], repo)
+    const second = await readCurrentWalkId(repo)
+
+    const deletedOther = await runCli(['delete', first], repo)
+    expect(deletedOther.exitCode).toBe(0)
+    expect(existsSync(join(diffwalkDir(repo), first))).toBe(false)
+    expect(await readCurrentWalkId(repo)).toBe(second)
+
+    const deletedCurrent = await runCli(['delete', second], repo)
+    expect(deletedCurrent.exitCode).toBe(0)
+    expect(existsSync(join(diffwalkDir(repo), second))).toBe(false)
+    expect(existsSync(join(diffwalkDir(repo), 'current'))).toBe(false)
+
+    const missing = await runCli(['delete'], repo)
+    expect(missing.exitCode).not.toBe(0)
+    expect(missing.stderr).toContain("missing required argument 'walk-id'")
+
+    const unknown = await runCli(['delete', second], repo)
+    expect(unknown.exitCode).not.toBe(0)
+    expect(unknown.stderr).toContain('No Diffwalk walk')
+  })
+
+  test('use and delete reject malformed or path-traversal walk IDs', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+
+    for (const args of [
+      ['use', '../outside'],
+      ['delete', '../outside'],
+      ['use', '/etc'],
+      ['delete', '/etc'],
+    ]) {
+      const result = await runCli(args, repo)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('Invalid Diffwalk walk ID')
+    }
+  })
+
+  test('delete refuses a non-walk file that matches the ID shape', async () => {
+    const repo = await fixtureRepo()
+    const id = '20260831T063842Z-a7c9e4f2'
+    await mkdir(diffwalkDir(repo), { recursive: true })
+    await writeFile(join(diffwalkDir(repo), id), 'not a walk\n')
+
+    const result = await runCli(['delete', id], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('No Diffwalk walk')
+    expect(existsSync(join(diffwalkDir(repo), id))).toBe(true)
+  })
+
+  test('delete clears a dangling current walk so inspect can start fresh', async () => {
+    const repo = await fixtureRepo()
+    const dangling = '20260831T063842Z-a7c9e4f2'
+    await mkdir(diffwalkDir(repo), { recursive: true })
+    await writeFile(join(diffwalkDir(repo), 'current'), `${dangling}\n`)
+
+    const deleted = await runCli(['delete', dangling], repo)
+    expect(deleted.exitCode).toBe(0)
+    expect(existsSync(join(diffwalkDir(repo), 'current'))).toBe(false)
+
+    const inspect = await runCli(['inspect'], repo)
+    expect(inspect.exitCode).toBe(0)
   })
 })
 
