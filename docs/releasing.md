@@ -1,26 +1,20 @@
 # Releasing to npm
 
-**Pushing a `v*` tag triggers a public npm release.** The
-[publish workflow](../.github/workflows/publish.yml) checks that the tag matches the
-stable version in `package.json`, runs `pnpm check`, and publishes through OIDC.
-The existing `prepack` script builds the package before publishing. There is no
-manual npm approval step; pushing a branch or creating a local tag does not publish.
+From a clean working tree, run:
 
-To release:
+```bash
+pnpm release 0.1.8
+```
 
-1. Update `package.json` to the next stable version and merge the change through
-   a pull request after CI passes.
-2. Update your local `main` and tag that release commit. For example, if the merged
-   package version is `0.1.8`:
+The script branches from the latest `origin/main`, updates `package.json`, creates
+and tags the version commit, pushes the branch and tag, and opens a release PR.
+Use a new stable version; prereleases are not supported.
 
-   ```bash
-   git switch main
-   git pull --ff-only origin main
-   git tag v0.1.8
-   git push origin v0.1.8
-   ```
+After CI passes, manually select **Create a merge commit**. Do not squash, rebase,
+or enable auto-merge: the tag must keep pointing to the original PR commit.
+Release branches (`release/*`) are excluded from automatic merging.
 
-3. Check the Publish run in GitHub Actions and confirm the version on npm.
-
-Use a new version for each release. Prerelease versions such as `0.1.8-beta.1`
-are rejected by this workflow.
+Pushing the tag does not publish. Merging the release PR triggers the
+[publish workflow](../.github/workflows/publish.yml), which verifies that the tagged
+commit was preserved, tests and builds that commit, and publishes it directly to
+npm. Check the Publish run and the version on npm after merging.

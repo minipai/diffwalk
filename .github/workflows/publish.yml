@@ -1,18 +1,40 @@
 name: Publish
 
 on:
-  push:
-    tags: ['v*']
+  pull_request:
+    branches: [main]
+    types: [closed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
+  release:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.release.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Find the release commit
+        id: release
+        run: |
+          commit=$(node scripts/release.mjs --resolve)
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: release
+    if: needs.release.outputs.commit != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -20,6 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.release.outputs.commit }}
           persist-credentials: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
@@ -32,15 +55,6 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.1
-      - name: Check release version
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs';
-          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
-          if (!/^\d+\.\d+\.\d+$/.test(version) || process.env.GITHUB_REF_NAME !== `v${version}`) {
-            throw new Error(`Expected a stable version and matching tag v${version}; received ${process.env.GITHUB_REF_NAME}`);
-          }
-          NODE
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - name: Install npm with OIDC support
