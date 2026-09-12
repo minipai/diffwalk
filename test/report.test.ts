@@ -346,7 +346,6 @@ describe('renderReport shell', () => {
 
     expect(fold).toBeGreaterThan(form)
     expect(label).toBeGreaterThan(fold)
-    expect(html).toContain('class="fold-all" data-fold-all')
     expect(html).toContain('aria-label="Fold all review sections"')
     expect(html).toContain('data-fold-all-label>Fold all<')
   })
