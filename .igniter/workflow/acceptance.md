@@ -1,4 +1,4 @@
-# Review
+# Acceptance
 
 Independently test the committed checkpoint through diffwalk's public product
 surface. This is black-box acceptance, not source or diff review.
@@ -12,7 +12,7 @@ files, Git history, Git diffs, the Build plan, file list, implementation notes,
 or Builder conclusions.
 
 The generic work-order instruction to inspect the worktree diff and branch log
-does not apply to Review. Keep this stage black-box.
+does not apply to Acceptance. Keep this stage black-box.
 
 ## Environment
 
@@ -70,7 +70,7 @@ acceptance evidence into the Diffwalk walkthrough.
   from transcripts and images.
 
 Do not comment on Linear yourself. The Global Commander submits the structured
-Review receipt and adds any screenshot attachments or formatted follow-up
+Acceptance receipt and adds any screenshot attachments or formatted follow-up
 evidence without editing the immutable receipt comment.
 
 Never fix a finding. On a correction attempt, recheck only the failed criteria

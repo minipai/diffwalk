@@ -2,7 +2,7 @@
 
 Implement one ticket in the prepared worktree. Read and follow the repository
 instructions before writing. The work order supplies the request, acceptance
-criteria, checkpoint context, and any failures returned from Review.
+criteria, checkpoint context, and any failures returned from Acceptance.
 
 - Inspect the existing branch and working-tree diff before editing. Preserve
   unrelated work and continue from an existing correction attempt.
@@ -35,7 +35,7 @@ criteria, checkpoint context, and any failures returned from Review.
   the Build result. Do not comment on Linear yourself; the Global Commander
   verifies the URL and adds it to the ticket before submitting the Build
   receipt.
-- Do not push. Only Deliver updates the remote branch after Review passes and
+- Do not push. Only Deliver updates the remote branch after Acceptance passes and
   the owner approves the accepted checkpoint.
 
 Report the checkpoint commit, every required check and its result, one
