@@ -12,7 +12,7 @@ afterEach(() => {
 })
 
 describe('release preparation', () => {
-  test('pushes the version commit and tag together, then opens a manual release PR', () => {
+  test('pushes the version commit and opens a manual release PR without creating tags', () => {
     const fixture = repository()
     const base = git(fixture.repo, 'rev-parse', 'origin/main')
     git(fixture.repo, 'switch', '-c', 'other-work')
@@ -27,9 +27,9 @@ describe('release preparation', () => {
     expect(git(fixture.repo, 'branch', '--show-current')).toBe('release/v3.10.0')
     const head = git(fixture.repo, 'rev-parse', 'HEAD')
     expect(git(fixture.repo, 'rev-parse', 'HEAD^')).toBe(base)
-    expect(git(fixture.repo, 'rev-parse', 'v3.10.0')).toBe(head)
+    expect(git(fixture.repo, 'tag', '--list')).toBe('')
     expect(git(fixture.remote, 'rev-parse', 'refs/heads/release/v3.10.0')).toBe(head)
-    expect(git(fixture.remote, 'rev-parse', 'refs/tags/v3.10.0')).toBe(head)
+    expect(git(fixture.remote, 'tag', '--list')).toBe('')
     expect(git(fixture.remote, 'rev-parse', 'main')).toBe(base)
     expect(git(fixture.repo, 'diff', 'HEAD^', 'HEAD', '--name-only')).toBe('package.json')
     expect(JSON.parse(readFileSync(join(fixture.repo, 'package.json'), 'utf8')).version).toBe('3.10.0')
@@ -42,8 +42,10 @@ describe('release preparation', () => {
       ['pr', 'create', '--base', 'main', '--head', 'release/v3.10.0', '--title', 'Release v3.10.0', '--body-file', '-'],
       ['pr', 'merge', 'https://github.example/fixture/pull/1', '--disable-auto'],
     ])
-    expect(calls[2]?.body).toContain('Create a merge commit')
-    expect(calls[2]?.body).toContain('Do not squash, rebase, or enable auto-merge')
+    expect(calls[2]?.body).toContain('Do not enable auto-merge')
+    expect(calls[2]?.body).toContain('After merging, run pnpm release:publish')
+    expect(calls[2]?.body).toContain('v3.10.0')
+    expect(calls[2]?.body).toContain('tag the merged commit')
   })
 
   test('refuses a dirty working tree before calling GitHub or changing refs', () => {
@@ -82,19 +84,65 @@ describe('release preparation', () => {
     expect(ghCalls(fixture).some((call) => call.args[0] === 'pr')).toBe(false)
   })
 
-  test('refuses preparation until the release workflows are merged into main', () => {
-    const fixture = repository()
-    writeFileSync(join(fixture.repo, '.github/workflows/publish.yml'), 'on:\n  push:\n    tags: ["v*"]\n')
-    git(fixture.repo, 'add', '.')
-    git(fixture.repo, 'commit', '-m', 'Use old publish workflow')
-    git(fixture.repo, 'push', 'origin', 'main')
+})
 
-    const result = prepare(fixture, '3.10.0')
+describe('release publishing', () => {
+  test('tags and pushes the actual merged PR commit after main has advanced', () => {
+    const fixture = repository()
+    const pr = mergeRelease(fixture)
+    git(fixture.repo, 'commit', '--allow-empty', '-m', 'Later main change')
+    git(fixture.repo, 'push', 'origin', 'main')
+    const main = git(fixture.remote, 'rev-parse', 'main')
+
+    const result = publish(fixture, pr)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain(`Pushed v3.10.0 at ${pr.mergeCommit.oid}`)
+    expect(git(fixture.repo, 'rev-parse', 'v3.10.0')).toBe(pr.mergeCommit.oid)
+    expect(git(fixture.remote, 'rev-parse', 'refs/tags/v3.10.0')).toBe(pr.mergeCommit.oid)
+    expect(git(fixture.remote, 'rev-parse', 'main')).toBe(main)
+    expect(main).not.toBe(pr.mergeCommit.oid)
+    expect(ghCalls(fixture).map((call) => call.args)).toEqual([
+      ['auth', 'status'],
+      ['pr', 'view', '1', '--json', 'state,baseRefName,headRefName,mergeCommit'],
+    ])
+  })
+
+  test('refuses to publish an unmerged PR', () => {
+    const fixture = repository()
+    const pr = { ...mergeRelease(fixture), state: 'OPEN' }
+
+    const result = publish(fixture, pr)
 
     expect(result.status).not.toBe(0)
-    expect(result.stderr).toContain('Merge the PR-based release workflow')
+    expect(result.stderr).toContain('must be merged into main')
     expect(git(fixture.repo, 'tag', '--list')).toBe('')
-    expect(ghCalls(fixture).some((call) => call.args[0] === 'pr')).toBe(false)
+    expect(git(fixture.remote, 'tag', '--list')).toBe('')
+  })
+
+  test('refuses a release branch version that differs from the merged package', () => {
+    const fixture = repository()
+    const pr = { ...mergeRelease(fixture), headRefName: 'release/v3.10.1' }
+
+    const result = publish(fixture, pr)
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('does not match the release branch')
+    expect(git(fixture.repo, 'tag', '--list')).toBe('')
+    expect(git(fixture.remote, 'tag', '--list')).toBe('')
+  })
+
+  test('does not replace an existing remote release tag', () => {
+    const fixture = repository()
+    const pr = mergeRelease(fixture)
+    const previous = git(fixture.remote, 'rev-parse', 'main^')
+    git(fixture.remote, 'tag', 'v3.10.0', previous)
+
+    const result = publish(fixture, pr)
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('already exists')
+    expect(git(fixture.remote, 'rev-parse', 'refs/tags/v3.10.0')).toBe(previous)
   })
 })
 
@@ -113,7 +161,7 @@ function repository() {
   git(repo, 'config', 'commit.gpgsign', 'false')
   git(repo, 'config', 'tag.gpgsign', 'false')
   mkdirSync(join(repo, '.github/workflows'), { recursive: true })
-  writeFileSync(join(repo, '.github/workflows/publish.yml'), 'on:\n  pull_request:\n    types: [closed]\n')
+  writeFileSync(join(repo, '.github/workflows/publish.yml'), 'on:\n  push:\n    tags: ["v*"]\n')
   writeFileSync(join(repo, '.github/workflows/auto-merge.yml'), "# startsWith(github.event.pull_request.head.ref, 'release/')\n")
   writeFileSync(join(repo, 'package.json'), `${JSON.stringify({ name: 'release-fixture', version: '3.9.0' }, null, 2)}\n`)
   git(repo, 'add', '.')
@@ -129,6 +177,7 @@ const body = args[0] === 'pr' && args[1] === 'create' ? readFileSync(0, 'utf8') 
 appendFileSync(process.env.RELEASE_TEST_GH_LOG, JSON.stringify({ args, body }) + '\\n');
 if (args[0] === 'auth' && args[1] === 'status') process.exit(0);
 if (args[0] === 'api' && args[1] === 'user') { console.log('claudecafe'); process.exit(0); }
+if (args[0] === 'pr' && args[1] === 'view') { console.log(process.env.RELEASE_TEST_PR); process.exit(0); }
 if (args[0] === 'pr' && args[1] === 'create') { console.log('https://github.example/fixture/pull/1'); process.exit(0); }
 if (args[0] === 'pr' && args[1] === 'merge' && args[3] === '--disable-auto') process.exit(0);
 console.error('Unexpected mock gh call', args);
@@ -143,6 +192,35 @@ function prepare(fixture: ReturnType<typeof repository>, version: string) {
     cwd: fixture.repo,
     encoding: 'utf8',
     env: { ...process.env, PATH: `${fixture.bin}:${process.env.PATH}`, RELEASE_TEST_GH_LOG: fixture.log },
+  })
+}
+
+function mergeRelease(fixture: ReturnType<typeof repository>) {
+  git(fixture.repo, 'switch', '-c', 'release/v3.10.0')
+  writeFileSync(join(fixture.repo, 'package.json'), `${JSON.stringify({ name: 'release-fixture', version: '3.10.0' }, null, 2)}\n`)
+  git(fixture.repo, 'add', 'package.json')
+  git(fixture.repo, 'commit', '-m', 'Prepare release')
+  git(fixture.repo, 'switch', 'main')
+  git(fixture.repo, 'merge', '--no-ff', 'release/v3.10.0', '-m', 'Merge release')
+  git(fixture.repo, 'push', 'origin', 'main')
+  return {
+    state: 'MERGED',
+    baseRefName: 'main',
+    headRefName: 'release/v3.10.0',
+    mergeCommit: { oid: git(fixture.repo, 'rev-parse', 'HEAD') },
+  }
+}
+
+function publish(fixture: ReturnType<typeof repository>, pr: ReturnType<typeof mergeRelease>) {
+  return spawnSync('node', [script, '--publish', '1'], {
+    cwd: fixture.repo,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${fixture.bin}:${process.env.PATH}`,
+      RELEASE_TEST_GH_LOG: fixture.log,
+      RELEASE_TEST_PR: JSON.stringify(pr),
+    },
   })
 }
 

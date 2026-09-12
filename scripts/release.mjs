@@ -1,9 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
-if (process.argv[2] === '--resolve') {
-  const { pull_request: pr } = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-  if (pr.merged) resolveRelease(pr);
+if (process.argv[2] === '--publish') {
+  publishRelease(process.argv[3]);
 } else {
   prepareRelease(process.argv[2]);
 }
@@ -20,10 +19,6 @@ function prepareRelease(version) {
   if (!isStable(current) || compareVersions(version, current) <= 0) {
     throw new Error(`Release version must be newer than ${current}.`);
   }
-  if (!git('show', 'origin/main:.github/workflows/publish.yml').includes('types: [closed]') ||
-      !git('show', 'origin/main:.github/workflows/auto-merge.yml').includes("startsWith(github.event.pull_request.head.ref, 'release/')")) {
-    throw new Error('Merge the PR-based release workflow into main before preparing a release.');
-  }
   const tag = `v${version}`;
   const branch = `release/${tag}`;
   if (git('tag', '--list', tag) || git('branch', '--list', branch) ||
@@ -37,38 +32,38 @@ function prepareRelease(version) {
   writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
   run('git', ['add', 'package.json']);
   run('git', ['commit', '-m', `Prepare ${tag} for npm release`, '-m', 'Co-Authored-By: ことね <kotone@claudecafe.dev>']);
-  run('git', ['tag', tag]);
-  run('git', ['push', '--atomic', '--set-upstream', 'origin', branch, `refs/tags/${tag}`]);
-  const body = `Release ${tag} to npm after CI passes and this PR is manually merged.\n\nUse **Create a merge commit**. Do not squash, rebase, or enable auto-merge: the version tag points to the original release commit.\n\nThe Publish workflow tests and publishes the tagged commit after merge.\n`;
+  run('git', ['push', '--set-upstream', 'origin', branch]);
+  const body = `Prepare ${tag} for npm release.\n\nAfter CI passes, merge this PR manually. Do not enable auto-merge. After merging, run pnpm release:publish <PR number> to tag the merged commit and trigger npm publishing.\n`;
   const url = run('gh', ['pr', 'create', '--base', 'main', '--head', branch, '--title', `Release ${tag}`, '--body-file', '-'], body).trim();
   // Keep the release manual even if auto-merge was enabled externally during creation.
   run('gh', ['pr', 'merge', url, '--disable-auto']);
-  console.log(`${url}\nAfter CI passes, manually use Create a merge commit to publish ${tag}.`);
+  console.log(`${url}\nAfter CI passes and this PR is merged, run pnpm release:publish <PR number>.`);
 }
 
-function resolveRelease(pr) {
-  const version = packageVersion(pr.head.sha);
-  if (!isStable(version)) {
-    throw new Error(`Expected a stable package version; received ${version}`);
+function publishRelease(number) {
+  if (!/^[1-9]\d*$/.test(number ?? '')) throw new Error('Usage: pnpm release:publish <PR number>');
+  if (git('status', '--porcelain')) throw new Error('Commit or stash working-tree changes before publishing.');
+  run('gh', ['auth', 'status']);
+  const pr = JSON.parse(run('gh', ['pr', 'view', number, '--json', 'state,baseRefName,headRefName,mergeCommit']));
+  if (pr.state !== 'MERGED' || pr.baseRefName !== 'main' || !pr.mergeCommit?.oid) {
+    throw new Error('The release PR must be merged into main before publishing.');
   }
+  const version = pr.headRefName.replace(/^release\/v/, '');
+  if (!pr.headRefName.startsWith('release/v') || !isStable(version)) {
+    throw new Error('Expected a release/v<version> PR branch.');
+  }
+  run('git', ['fetch', 'origin', 'main']);
+  const commit = pr.mergeCommit.oid;
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error('GitHub returned an invalid merge commit.');
+  git('merge-base', '--is-ancestor', commit, 'origin/main');
+  if (packageVersion(commit) !== version) throw new Error('The merged package version does not match the release branch.');
   const tag = `v${version}`;
-  const ref = `refs/tags/${tag}`;
-  if (!git('tag', '--list', tag)) return;
-
-  const commit = git('rev-parse', `${ref}^{commit}`);
-  const parents = git('show', '-s', '--format=%P', pr.merge_commit_sha).split(' ');
-  // A tag already present before this merge belongs to an earlier release.
-  if (isAncestor(commit, parents[0])) return;
-  if (parents.length !== 2 || parents[1] !== pr.head.sha) {
-    throw new Error('Release PRs require Create a merge commit; squash and rebase are not supported.');
+  if (git('tag', '--list', tag) || git('ls-remote', 'origin', `refs/tags/${tag}`)) {
+    throw new Error(`${tag} already exists.`);
   }
-  if (!isAncestor(commit, pr.head.sha) || !isAncestor(commit, pr.merge_commit_sha)) {
-    throw new Error(`${tag} must point to a commit in the merged PR.`);
-  }
-  if (packageVersion(commit) !== version) {
-    throw new Error(`${tag} does not match package.json at its commit.`);
-  }
-  console.log(commit);
+  run('git', ['tag', tag, commit]);
+  run('git', ['push', 'origin', `refs/tags/${tag}`]);
+  console.log(`Pushed ${tag} at ${commit}. Check the Publish workflow in GitHub Actions.`);
 }
 
 function isStable(version) {
@@ -89,16 +84,6 @@ function run(command, args, input) {
 
 function packageVersion(commit) {
   return JSON.parse(git('show', `${commit}:package.json`)).version;
-}
-
-function isAncestor(commit, descendant) {
-  try {
-    git('merge-base', '--is-ancestor', commit, descendant);
-    return true;
-  } catch (error) {
-    if (error.status === 1) return false;
-    throw error;
-  }
 }
 
 function git(...args) {

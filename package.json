@@ -33,6 +33,7 @@
   ],
   "scripts": {
     "release": "node scripts/release.mjs",
+    "release:publish": "node scripts/release.mjs --publish",
     "build": "bun build ./src/cli.ts --target=node --packages=external --outfile=dist/diffwalk.js && bun build ./src/report/client.ts --target=browser --format=iife --minify --outfile=dist/report-client.js",
     "build:worker": "bun run ./worker/build-assets.ts",
     "deploy": "pnpm build:worker && wrangler deploy",
