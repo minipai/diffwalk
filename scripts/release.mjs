@@ -1,7 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
-if (process.argv[2] === '--publish') {
+if (process.argv.includes('--help') || process.argv.includes('-h') || process.argv.length === 2) {
+  console.log(`Usage:
+  pnpm release <version>          Prepare a version PR, e.g. pnpm release 0.1.8
+  pnpm release:publish <number>   Tag a merged PR, e.g. pnpm release:publish 123
+
+Start with a clean working tree and a new stable version (no prereleases).
+Preparation branches from the latest origin/main, updates package.json, commits,
+pushes the branch, and opens a PR with auto-merge disabled. It does not create a tag.
+
+After CI passes, merge the PR manually, then run release:publish with its PR number.
+This tags that PR's merged commit, even if main has advanced. Pushing the tag
+triggers GitHub Actions to check, build, and publish to npm. Check the Publish run
+and the npm version afterward.`);
+} else if (process.argv[2] === '--publish') {
   publishRelease(process.argv[3]);
 } else {
   prepareRelease(process.argv[2]);
