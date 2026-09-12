@@ -32,8 +32,10 @@ explained.
    - `diffwalk file <path> --before` / `diffwalk file <path> --after` to read one captured file side.
 4. Edit the generated explanations path printed by `inspect`. Diffwalk stores each
    authoring pair under `.diffwalk/<walkId>/` and records the selected walk in
-   `.diffwalk/current`. Treat `captureId` as captured data: write `title`, an optional
-   `summary`, and `sections`:
+   `.diffwalk/current`. When the user asks to switch or clean up walks, run
+   `diffwalk walks` to list them, `diffwalk use <walk-id>` to select one, or
+   `diffwalk delete <walk-id>` to remove one. Treat `captureId` as captured data: write
+   `title`, an optional `summary`, and `sections`:
 
    ```yaml
    title: What this whole change set does
@@ -171,6 +173,9 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
 
 ```bash
 diffwalk inspect [revision] [--staged] [--base <revision>] [--from <revision> --to <revision>] [--output <capture-path>] [--explanations <yaml-path>] [-- <path>...]
+diffwalk walks
+diffwalk use <walk-id>
+diffwalk delete <walk-id>
 diffwalk changes [--json] [--input <capture-path>]
 diffwalk change <id> [--input <capture-path>]
 diffwalk file <path> (--before | --after) [--input <capture-path>]

@@ -106,6 +106,20 @@ and contents reuses it; a different capture creates a new walk and preserves pre
 `captureId` ties explanations to their captured contents, so `check` catches stale
 pairings.
 
+## Manage walks
+
+Each capture lives in its own timestamped directory under `.diffwalk/`. List the walks,
+select one as current, or remove one by its explicit ID:
+
+```bash
+diffwalk walks             # list walks, newest first, and mark the current one
+diffwalk use <walk-id>     # make another walk current
+diffwalk delete <walk-id>  # remove one walk
+```
+
+`delete` requires the walk ID. Deleting the current walk clears `.diffwalk/current`;
+select another with `use` before running later commands.
+
 ## Inspect captured changes
 
 Read captured data with:

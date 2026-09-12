@@ -5,12 +5,15 @@ import { authoringOptionsSchema, captureOptionsSchema } from './authoring/input'
 import { changeCommand } from './cli/commands/change'
 import { changesCommand, changesOptionsSchema } from './cli/commands/changes'
 import { checkCommand } from './cli/commands/check'
+import { deleteCommand } from './cli/commands/delete'
 import { exportCommand, exportOptionsSchema } from './cli/commands/export'
 import { fileCommand, fileOptionsSchema } from './cli/commands/file'
 import { inspectCommand, inspectOptionsSchema } from './cli/commands/inspect'
 import { publishCommand, publishOptionsSchema } from './cli/commands/publish'
 import { unpublishCommand, unpublishOptionsSchema } from './cli/commands/unpublish'
+import { useCommand } from './cli/commands/use'
 import { viewCommand } from './cli/commands/view'
+import { walksCommand } from './cli/commands/walks'
 import { withArgument, withOptions } from './cli/options'
 import { UsageError } from './cli/usage'
 import packageJson from '../package.json'
@@ -52,6 +55,21 @@ function createCli(): Command {
         positionals.paths,
       )
     })
+
+  cli
+    .command('walks')
+    .description('List timestamped walks and mark the current one')
+    .action(() => walksCommand())
+
+  cli
+    .command('use <walk-id>')
+    .description('Select a local walk as current')
+    .action((id: string) => useCommand(id))
+
+  cli
+    .command('delete <walk-id>')
+    .description('Delete a local walk')
+    .action((id: string) => deleteCommand(id))
 
   cli
     .command('changes')
