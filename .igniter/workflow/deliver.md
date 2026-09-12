@@ -14,7 +14,7 @@ are one delivery; do not stop after opening the pull request.
   the approval valid.
 - Resolve a rebase conflict here only when the result preserves the accepted
   behavior. If resolution or a failed check requires a product behavior change,
-  report the blocker so the ticket returns through Build and Review.
+  report the blocker so the ticket returns through Build and Acceptance.
 - Push only the ticket branch named in the work order. Never push directly to
   `main`.
 

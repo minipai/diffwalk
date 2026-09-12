@@ -4,34 +4,13 @@ team: Starcoder
 
 max_running: 3
 
-stages:
-  build:
-    prompt: .igniter/workflow/build.md
-    agent: builder
-  review:
-    prompt: .igniter/workflow/review.md
-    agent: reviewer
-  deliver:
-    prompt: .igniter/workflow/deliver.md
-    agent: deliverer
-
-states:
-  backlog: Backlog
-  todo: Todo
-  build: Build
-  review: Acceptance
-  deliver: Deliver
-  done: Done
-
-progress:
-  group: Progress
-  pending: Pending
-  in_progress: In progress
-  complete: Complete
-  blocked: Blocked
+runbooks:
+  build: .igniter/workflow/build.md
+  acceptance: .igniter/workflow/acceptance.md
+  deliver: .igniter/workflow/deliver.md
 
 # Agent overrides may set any profile field (commander, builder,
-# builder.fallback, reviewer, deliverer: harness, model, effort).
+# builder.fallback, acceptance, deliverer: harness, model, effort).
 # Omitted profiles inherit src/commander/config.yaml.
 agents:
   builder:
@@ -40,6 +19,6 @@ agents:
     # DeepSeek V4.1 Flash defaults to high, its recommended effort for daily
     # agent work. OpenCode's interactive TUI has no --variant launch option.
 
-  reviewer:
+  acceptance:
     harness: claude
     model: claude-sonnet-5
