@@ -50,6 +50,142 @@
       ]
     },
     {
+      "title": "Explain binary assets with metadata cards",
+      "steps": [
+        {
+          "text": "### Binary changes carry identity, not text\n\nA binary asset has no lines to diff, so Diffwalk records each existing side's kind, byte size, and SHA-256 hash instead of decoding the bytes, then draws a metadata card in place of a patch. The card names the path, the status, and the before/after identity, so a reviewer can still separate an addition from a modification and can confirm that an edit changed the bytes even when it kept the byte size.\n\nNo raw bytes reach the page. The steps below show an addition, a same-size modification, a deletion, a rename, and both directions of a text/binary transition."
+        },
+        {
+          "text": "The added asset ships beside an ordinary code change, so one step shows both card types at once. The text file still renders its patch; the PNG gets a card. Both `changes` entries belong to this step, and the review map counts one step with two files.",
+          "diff": "diff --git a/src/report/binary-card.ts b/src/report/binary-card.ts\n--- a/src/report/binary-card.ts\n+++ b/src/report/binary-card.ts\n@@ -1,3 +1,4 @@\n export function cardKind(): string {\n-  return \"patch\"\n+  return \"metadata\"\n }\n+export const cardDelayMs = 0\n",
+          "binary": [
+            {
+              "kind": "binary",
+              "id": "change-051",
+              "path": "assets/expressions-v2/afraid.box.png",
+              "status": "added",
+              "oldMode": "000000",
+              "newMode": "100644",
+              "after": {
+                "kind": "binary",
+                "size": 48211,
+                "hash": "4bf34f69726bfcda81145cd78a11d71581a58c69f7aeddcd19dec2497b007baa"
+              }
+            }
+          ],
+          "changes": [
+            "change-050",
+            "change-051"
+          ]
+        },
+        {
+          "text": "An edit can keep the byte size and still change the asset. Both sides report **51,204 B**, but the before and after hashes differ, which is why the content hash participates in capture identity. A deletion is the other extreme: only the before side exists, so the after row reads `absent`.",
+          "binary": [
+            {
+              "kind": "binary",
+              "id": "change-052",
+              "path": "assets/expressions-v2/curious.box.png",
+              "status": "modified",
+              "oldMode": "100644",
+              "newMode": "100644",
+              "before": {
+                "kind": "binary",
+                "size": 51204,
+                "hash": "d30d18a489265bf6234144b7f0b6a613392307c3da8ebe3fb80aa565dded9c36"
+              },
+              "after": {
+                "kind": "binary",
+                "size": 51204,
+                "hash": "3bc9aee6796dfde881c424f1e0ec7945fd107843416429d055dda2a3904a96c8"
+              }
+            },
+            {
+              "kind": "binary",
+              "id": "change-053",
+              "path": "assets/expressions-v2/retired.box.png",
+              "status": "deleted",
+              "oldMode": "100644",
+              "newMode": "000000",
+              "before": {
+                "kind": "binary",
+                "size": 30122,
+                "hash": "be59af98df030c4738c2e74d332177b3948551248ec8fd91457ab910ec369828"
+              }
+            }
+          ],
+          "changes": [
+            "change-052",
+            "change-053"
+          ]
+        },
+        {
+          "text": "A rename moves the path without changing the bytes, so the card shows the old path, an arrow, and the new path. A transition changes the kind of the file itself: a readable config becomes a compiled blob, and a packed asset becomes readable source. Diffwalk keeps both sides in either direction, so the card shows what the file was and what it became.",
+          "binary": [
+            {
+              "kind": "binary",
+              "id": "change-054",
+              "path": "assets/expressions-v2/excited.box.png",
+              "status": "renamed",
+              "oldPath": "assets/expressions-v1/excited.box.png",
+              "oldMode": "100644",
+              "newMode": "100644",
+              "before": {
+                "kind": "binary",
+                "size": 44987,
+                "hash": "3bc0977e7fc8fa58e79e43cc6e0d330c957586d0a555e68006d6d0bfaef8042c"
+              },
+              "after": {
+                "kind": "binary",
+                "size": 44987,
+                "hash": "3bc0977e7fc8fa58e79e43cc6e0d330c957586d0a555e68006d6d0bfaef8042c"
+              }
+            },
+            {
+              "kind": "binary",
+              "id": "change-055",
+              "path": "assets/loader.conf",
+              "status": "modified",
+              "oldMode": "100644",
+              "newMode": "100644",
+              "before": {
+                "kind": "text",
+                "size": 812,
+                "hash": "bbf096f2ae6671689f175738f04246ad1b23b7bfc3749fd4e1b04647393b33a5"
+              },
+              "after": {
+                "kind": "binary",
+                "size": 6104,
+                "hash": "37418d6597fe0b07e72d44abc55a7162e8ee9371594c988ba55cf30ce1f6ee95"
+              }
+            },
+            {
+              "kind": "binary",
+              "id": "change-056",
+              "path": "assets/theme.tokens",
+              "status": "modified",
+              "oldMode": "100644",
+              "newMode": "100644",
+              "before": {
+                "kind": "binary",
+                "size": 256,
+                "hash": "e4cd60c730974ce82775d6526d807c126616302a66281e5916dfe4fa5e4a56de"
+              },
+              "after": {
+                "kind": "text",
+                "size": 318,
+                "hash": "3b084f8f3fe6b12ee44c9eccd1ff29f7eeac5efe8c8f43b09815b76329769eed"
+              }
+            }
+          ],
+          "changes": [
+            "change-054",
+            "change-055",
+            "change-056"
+          ]
+        }
+      ]
+    },
+    {
       "title": "Review a code-only step without an explanation heading",
       "steps": [
         {
