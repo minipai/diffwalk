@@ -107,7 +107,12 @@ function assignCanonicalChanges(targets: ReportSectionTarget[], changeIds: strin
 }
 
 function stepFingerprint(step: ExplainDocument['sections'][number]['steps'][number]): string {
-  return JSON.stringify({ text: step.text, diff: step.diff, changes: step.changes })
+  return JSON.stringify({
+    text: step.text,
+    diff: step.diff,
+    binary: step.binary,
+    changes: step.changes,
+  })
 }
 
 interface FragmentSeed {

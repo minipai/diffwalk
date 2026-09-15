@@ -30,6 +30,9 @@ explained.
    - `diffwalk changes` for a concise summary, or `diffwalk changes --json` for structured IDs, paths, coordinates, before, and after.
    - `diffwalk change <id>` to read one captured change block.
    - `diffwalk file <path> --before` / `diffwalk file <path> --after` to read one captured file side.
+   - A binary change has no coordinates or bytes; `changes`, `change`, and `file` report its
+     path, status, and each existing side's byte size and hash instead. Assign its ID like
+     any other change.
 4. Edit the generated explanations path printed by `inspect`. Diffwalk stores each
    authoring pair under `.diffwalk/<walkId>/` and records the selected walk in
    `.diffwalk/current`. When the user asks to switch or clean up walks, run
@@ -163,8 +166,16 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
   and never overwrites an authored `explanations.yaml`.
 - Executable modes are preserved for additions, deletions, renames, and content
   changes. A chmod-only change has no representable explanation block, so stop when
-  Diffwalk reports it. Also stop for binary files, symbolic links, or non-file Git
-  paths; do not bypass these boundaries.
+  Diffwalk reports it. Symbolic links and non-file Git paths are still rejected at
+  capture time; do not bypass that boundary.
+- Binary files are represented at file level, not by their bytes. The capture records
+  the path, status, modes, and each side's byte size and SHA-256 hash; the review shows
+  a metadata card instead of a patch. A side counts as binary when its bytes contain a
+  NUL or do not decode as UTF-8, so a non-UTF-8 text file also becomes an opaque card.
+  Binary IDs must be assigned like any other change, and `check` re-validates the
+  captured metadata. Diffwalk does not generate binary patches or image previews, so
+  explain a binary change from its identity rather than expecting its contents in the
+  diff. Never reconstruct the missing bytes or paste them into `text`.
 - Treat a pure rename as a real assignable change. Diffwalk renders it as a move rather
   than an empty textual diff.
 - The capture contains full file contents. Treat it as potentially sensitive and do not publish or send it without the user's authorization.

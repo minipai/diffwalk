@@ -1,4 +1,4 @@
-import type { ExplainDocument } from '../format/types'
+import type { ExplainDocument, BinaryChangeBlock } from '../format/types'
 import { faviconDataUrl } from './favicon'
 import { renderMarkdown } from './markdown'
 import { fileDiffLabel, fileDiffStats, parseSectionPatch } from './patches'
@@ -159,13 +159,13 @@ function renderSection(
     const actions = `<div class="step-actions">
     ${renderPermalink(stepTarget.fragment, `Permalink to step ${stepIndex + 1} in ${section.title}`, 'LINK')}${changeTargets}
   </div>`
-    if (step.diff === undefined) {
+    if (step.diff === undefined && step.binary === undefined) {
       return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}</div>`
     }
 
-    const files = parseStepDiff(step.diff, section.title)
-    fileCount += files.length
-    diffs.push({ section: index, step: stepIndex, diff: step.diff })
+    const files = step.diff === undefined ? [] : parseStepDiff(step.diff, section.title)
+    fileCount += files.length + (step.binary?.length ?? 0)
+    if (step.diff !== undefined) diffs.push({ section: index, step: stepIndex, diff: step.diff })
 
     const filesMarkup = files
       .map((file, fileIndex) => {
@@ -184,8 +184,11 @@ function renderSection(
       })
       .join('\n')
 
+    const binaryMarkup = (step.binary ?? []).map(renderBinaryCard).join('\n')
+    const stepFiles = [filesMarkup, binaryMarkup].filter((markup) => markup !== '').join('\n')
+
     return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}
-  <div class="step-files">${filesMarkup}</div>
+  <div class="step-files">${stepFiles}</div>
 </div>`
   })
 
@@ -205,6 +208,25 @@ function parseStepDiff(diff: string, sectionTitle: string): FileDiffMetadata[] {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`Section "${sectionTitle}" has an unparseable diff: ${detail}`)
   }
+}
+
+// A binary change has no patch to render, so its card carries the identity a reader needs:
+// the path, the status, and each existing side's kind, byte size, and content hash.
+function renderBinaryCard(change: BinaryChangeBlock): string {
+  const label = change.oldPath && change.oldPath !== change.path ? `${change.oldPath} → ${change.path}` : change.path
+  return `<div class="file file-binary">
+  <div class="file-summary">${escapeHtml(label)} <span class="file-stats">Binary · ${escapeHtml(change.status)}</span></div>
+  <dl class="binary-sides">
+    ${renderBinarySide('Before', change.before)}
+    ${renderBinarySide('After', change.after)}
+  </dl>
+</div>`
+}
+
+function renderBinarySide(label: string, side: BinaryChangeBlock['before']): string {
+  const detail =
+    side === undefined ? 'absent' : `${side.kind} · ${side.size} B · sha256 ${side.hash}`
+  return `<div class="binary-side"><dt>${label}</dt><dd>${escapeHtml(detail)}</dd></div>`
 }
 
 function renderReviewMap(
@@ -542,6 +564,10 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 .file > summary::before { content: "▸ "; }
 .file[open] > summary::before { content: "▾ "; }
 .file-stats { float: right; color: #6d7d72; }
+.binary-sides { display: grid; gap: 4px; margin: 0; padding: 10px 12px; border-top: 1px solid #d2ddd4; }
+.binary-side { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.binary-side dt { color: #7e8d82; font-weight: 600; }
+.binary-side dd { min-width: 0; margin: 0; color: #314439; overflow-wrap: anywhere; }
 .file-diff { border-top: 1px solid #d2ddd4; }
 .file-diff:empty { border-top: none; }
 .diff-error {

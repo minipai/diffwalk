@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -151,7 +152,7 @@ describe('captureGitChanges', () => {
     ])
   })
 
-  test('rejects a binary replacement after a staged deletion', async () => {
+  test('captures a binary replacement after a staged deletion with both side identities', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
     directories.push(directory)
     await initializeRepository(directory)
@@ -162,9 +163,19 @@ describe('captureGitChanges', () => {
     await git(['rm', '--cached', '-q', 'replacement.dat'], directory)
     await writeFile(join(directory, 'replacement.dat'), new Uint8Array([0, 1, 2]))
 
-    await expect(captureGitChanges('HEAD', directory)).rejects.toThrow(
-      'Binary files are not supported: replacement.dat',
-    )
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'replacement.dat',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'text\n',
+        newContent: '',
+        newBinary: { size: 3, hash: sha256(new Uint8Array([0, 1, 2])) },
+      },
+    ])
   })
 
   test('rejects a symbolic-link replacement after a staged deletion', async () => {
@@ -417,7 +428,7 @@ describe('captureGitChanges', () => {
     ])
   })
 
-  test('rejects a binary edit in a CRLF checkout', async () => {
+  test('captures a binary edit in a CRLF checkout as a text-to-binary change', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
     directories.push(directory)
     await initializeRepository(directory)
@@ -428,9 +439,19 @@ describe('captureGitChanges', () => {
 
     await writeFile(join(directory, 'data.dat'), new Uint8Array([0, 1, 2]))
 
-    await expect(captureGitChanges('HEAD', directory)).rejects.toThrow(
-      'Binary files are not supported: data.dat',
-    )
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'data.dat',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'text\n',
+        newContent: '',
+        newBinary: { size: 3, hash: sha256(new Uint8Array([0, 1, 2])) },
+      },
+    ])
   })
 
   test('captures committed revisions without reading the working tree', async () => {
@@ -712,6 +733,178 @@ describe('captureGitChanges selection', () => {
   })
 })
 
+describe('binary capture', () => {
+  test('captures binary additions, modifications, deletions, and renames in the working tree', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeBinary(directory, 'old.bin', [0, 1, 2, 3])
+    await writeBinary(directory, 'delete.bin', [0, 9])
+    await writeBinary(directory, 'rename.bin', [0, 5, 5])
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeBinary(directory, 'old.bin', [0, 1, 2, 3, 4])
+    await unlink(join(directory, 'delete.bin'))
+    await unlink(join(directory, 'rename.bin'))
+    await writeBinary(directory, 'moved.bin', [0, 5, 5])
+    await writeBinary(directory, 'new.bin', [0, 7, 7, 7])
+    await git(['add', '-A'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'delete.bin',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: '',
+        newContent: '',
+        oldBinary: { size: 2, hash: sha256(new Uint8Array([0, 9])) },
+      },
+      {
+        path: 'moved.bin',
+        oldPath: 'rename.bin',
+        status: 'renamed',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: '',
+        newContent: '',
+        oldBinary: { size: 3, hash: sha256(new Uint8Array([0, 5, 5])) },
+        newBinary: { size: 3, hash: sha256(new Uint8Array([0, 5, 5])) },
+      },
+      {
+        path: 'new.bin',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100644',
+        oldContent: '',
+        newContent: '',
+        newBinary: { size: 4, hash: sha256(new Uint8Array([0, 7, 7, 7])) },
+      },
+      {
+        path: 'old.bin',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: '',
+        newContent: '',
+        oldBinary: { size: 4, hash: sha256(new Uint8Array([0, 1, 2, 3])) },
+        newBinary: { size: 5, hash: sha256(new Uint8Array([0, 1, 2, 3, 4])) },
+      },
+    ])
+  })
+
+  test('captures a binary-to-text transition with the identity of both sides', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeBinary(directory, 'transition.dat', [0, 1, 2])
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'transition.dat'), 'plain text\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'transition.dat',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: '',
+        newContent: 'plain text\n',
+        oldBinary: { size: 3, hash: sha256(new Uint8Array([0, 1, 2])) },
+      },
+    ])
+  })
+
+  test('captures binary additions and deletions between committed revisions', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeBinary(directory, 'gone.bin', [0, 3, 3])
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'one'], directory)
+    const first = (await gitText(['rev-parse', 'HEAD'], directory)).trim()
+
+    await unlink(join(directory, 'gone.bin'))
+    await writeBinary(directory, 'fresh.bin', [0, 4])
+    await git(['add', '-A'], directory)
+    await git(['commit', '-q', '-m', 'two'], directory)
+
+    const capture = await captureGitRevisionChanges(first, 'HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'fresh.bin',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100644',
+        oldContent: '',
+        newContent: '',
+        newBinary: { size: 2, hash: sha256(new Uint8Array([0, 4])) },
+      },
+      {
+        path: 'gone.bin',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: '',
+        newContent: '',
+        oldBinary: { size: 3, hash: sha256(new Uint8Array([0, 3, 3])) },
+      },
+    ])
+  })
+
+  test('captures a binary rename between committed revisions', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeBinary(directory, 'before.bin', [0, 5, 5])
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'one'], directory)
+    const first = (await gitText(['rev-parse', 'HEAD'], directory)).trim()
+
+    await rename(join(directory, 'before.bin'), join(directory, 'after.bin'))
+    await git(['add', '-A'], directory)
+    await git(['commit', '-q', '-m', 'two'], directory)
+
+    const capture = await captureGitRevisionChanges(first, 'HEAD', directory)
+
+    expect(capture.files).toEqual([
+      {
+        path: 'after.bin',
+        oldPath: 'before.bin',
+        status: 'renamed',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: '',
+        newContent: '',
+        oldBinary: { size: 3, hash: sha256(new Uint8Array([0, 5, 5])) },
+        newBinary: { size: 3, hash: sha256(new Uint8Array([0, 5, 5])) },
+      },
+    ])
+  })
+
+  test('rejects a mode-only change to a binary file', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeBinary(directory, 'script.bin', [0, 1])
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await chmod(join(directory, 'script.bin'), 0o755)
+
+    await expect(captureGitChanges('HEAD', directory)).rejects.toThrow(
+      'File mode changes are not supported: script.bin',
+    )
+  })
+})
+
 describe('gitUserName', () => {
   test('reads the configured Git user name', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
@@ -758,6 +951,14 @@ async function initializeRepository(directory: string) {
   await git(['init', '-q'], directory)
   await git(['config', 'user.name', 'Test'], directory)
   await git(['config', 'user.email', 'test@example.com'], directory)
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+async function writeBinary(directory: string, name: string, bytes: number[]) {
+  await writeFile(join(directory, name), new Uint8Array(bytes))
 }
 
 async function git(args: string[], cwd: string) {

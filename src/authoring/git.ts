@@ -1,8 +1,16 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { lstat, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve } from 'node:path'
-import type { DraftFile } from '../format/types'
+import type { BinarySide, DraftFile } from '../format/types'
+
+// A captured file side is text when its bytes decode as UTF-8, and binary otherwise.
+// Binary sides keep only an identity: byte size and a content hash, never the bytes.
+interface CapturedSide {
+  content: string
+  binary?: BinarySide
+}
 
 export interface GitCapture {
   root: string
@@ -57,45 +65,51 @@ export async function captureGitChanges(
 
   for (const change of changes) {
     if (change.kind === 'R') {
-      files.push({
-        path: change.path,
-        oldPath: change.oldPath,
-        status: 'renamed',
-        oldMode: change.oldMode,
-        newMode: change.newMode,
-        oldContent: await gitFile(baseCommit, change.oldPath!, root),
-        newContent: await newContentFor(change.path),
-      })
+      files.push(
+        draftFile({
+          path: change.path,
+          oldPath: change.oldPath,
+          status: 'renamed',
+          oldMode: change.oldMode,
+          newMode: change.newMode,
+          oldSide: await gitFile(baseCommit, change.oldPath!, root),
+          newSide: await newContentFor(change.path),
+        }),
+      )
     } else if (change.kind === 'M') {
-      const oldContent = await gitFile(baseCommit, change.path, root)
-      const newContent = await newContentFor(change.path)
-      validateFileModeChange(change.path, change.oldMode, change.newMode, oldContent, newContent)
-      files.push({
-        path: change.path,
-        status: 'modified',
-        oldMode: change.oldMode,
-        newMode: change.newMode,
-        oldContent,
-        newContent,
-      })
+      const oldSide = await gitFile(baseCommit, change.path, root)
+      const newSide = await newContentFor(change.path)
+      validateFileModeChange(change.path, change.oldMode, change.newMode, oldSide, newSide)
+      files.push(
+        draftFile({
+          path: change.path,
+          status: 'modified',
+          oldMode: change.oldMode,
+          newMode: change.newMode,
+          oldSide,
+          newSide,
+        }),
+      )
     } else if (change.kind === 'A') {
-      files.push({
-        path: change.path,
-        status: 'added',
-        oldMode: change.oldMode,
-        newMode: change.newMode,
-        oldContent: '',
-        newContent: await newContentFor(change.path),
-      })
+      files.push(
+        draftFile({
+          path: change.path,
+          status: 'added',
+          oldMode: change.oldMode,
+          newMode: change.newMode,
+          newSide: await newContentFor(change.path),
+        }),
+      )
     } else if (change.kind === 'D') {
-      files.push({
-        path: change.path,
-        status: 'deleted',
-        oldMode: change.oldMode,
-        newMode: change.newMode,
-        oldContent: await gitFile(baseCommit, change.path, root),
-        newContent: '',
-      })
+      files.push(
+        draftFile({
+          path: change.path,
+          status: 'deleted',
+          oldMode: change.oldMode,
+          newMode: change.newMode,
+          oldSide: await gitFile(baseCommit, change.path, root),
+        }),
+      )
     } else {
       throw new Error(`Unsupported Git change status: ${change.kind}`)
     }
@@ -114,32 +128,38 @@ export async function captureGitChanges(
       const existing = filesByPath.get(path)
       if (existing !== undefined) {
         if (existing.status !== 'deleted') continue
-        const newContent = await workingTreeFile(path, root)
+        const oldSide = storedSide(existing, 'old')
+        const newSide = await workingTreeFile(path, root)
         const newMode = await workingTreeMode(path, root)
-        validateFileModeChange(path, existing.oldMode, newMode, existing.oldContent, newContent)
-        if (existing.oldContent === newContent) {
+        validateFileModeChange(path, existing.oldMode, newMode, oldSide, newSide)
+        if (sidesMatch(oldSide, newSide)) {
           filesByPath.delete(path)
         } else {
-          filesByPath.set(path, {
+          filesByPath.set(
             path,
-            status: 'modified',
-            oldMode: existing.oldMode,
-            newMode,
-            oldContent: existing.oldContent,
-            newContent,
-          })
+            draftFile({
+              path,
+              status: 'modified',
+              oldMode: existing.oldMode,
+              newMode,
+              oldSide,
+              newSide,
+            }),
+          )
         }
         continue
       }
 
-      filesByPath.set(path, {
+      filesByPath.set(
         path,
-        status: 'added',
-        oldMode: '000000',
-        newMode: await workingTreeMode(path, root),
-        oldContent: '',
-        newContent: await workingTreeFile(path, root),
-      })
+        draftFile({
+          path,
+          status: 'added',
+          oldMode: '000000',
+          newMode: await workingTreeMode(path, root),
+          newSide: await workingTreeFile(path, root),
+        }),
+      )
     }
   }
 
@@ -164,20 +184,29 @@ export async function captureGitRevisionChanges(
   const files: DraftFile[] = []
 
   for (const change of changes) {
-    const oldContent = change.kind === 'A' ? '' : await gitFile(fromCommit, change.oldPath ?? change.path, root)
-    const newContent = change.kind === 'D' ? '' : await gitFile(toCommit, change.path, root)
+    const oldSide = change.kind === 'A' ? undefined : await gitFile(fromCommit, change.oldPath ?? change.path, root)
+    const newSide = change.kind === 'D' ? undefined : await gitFile(toCommit, change.path, root)
     if (change.kind === 'M') {
-      validateFileModeChange(change.path, change.oldMode, change.newMode, oldContent, newContent)
+      validateFileModeChange(change.path, change.oldMode, change.newMode, oldSide!, newSide!)
     }
-    files.push({
-      path: change.path,
-      ...(change.oldPath === undefined ? {} : { oldPath: change.oldPath }),
-      status: change.kind === 'R' ? 'renamed' : change.kind === 'M' ? 'modified' : change.kind === 'A' ? 'added' : 'deleted',
-      oldMode: change.oldMode,
-      newMode: change.newMode,
-      oldContent,
-      newContent,
-    })
+    files.push(
+      draftFile({
+        path: change.path,
+        oldPath: change.oldPath,
+        status:
+          change.kind === 'R'
+            ? 'renamed'
+            : change.kind === 'M'
+              ? 'modified'
+              : change.kind === 'A'
+                ? 'added'
+                : 'deleted',
+        oldMode: change.oldMode,
+        newMode: change.newMode,
+        oldSide,
+        newSide,
+      }),
+    )
   }
 
   return {
@@ -206,7 +235,7 @@ export async function gitUserName(root = process.cwd()): Promise<string | undefi
   }
 }
 
-async function workingTreeFile(path: string, root: string): Promise<string> {
+async function workingTreeFile(path: string, root: string): Promise<CapturedSide> {
   const absolutePath = await validateWorkingTreeFile(path, root)
   const scratch = await mkdtemp(join(tmpdir(), 'diffwalk-working-tree-'))
   try {
@@ -216,7 +245,7 @@ async function workingTreeFile(path: string, root: string): Promise<string> {
     const object = (
       await gitText(['hash-object', '-w', `--path=${path}`, '--', absolutePath], root, environment)
     ).trim()
-    return decodeText(await gitBytes(['cat-file', 'blob', object], root, environment), path)
+    return decodeFile(await gitBytes(['cat-file', 'blob', object], root, environment))
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }
@@ -226,12 +255,52 @@ function validateFileModeChange(
   filePath: string,
   oldMode: DraftFile['oldMode'],
   newMode: DraftFile['newMode'],
-  oldContent: string,
-  newContent: string,
+  oldSide: CapturedSide,
+  newSide: CapturedSide,
 ): void {
-  if (oldMode !== newMode && oldContent === newContent) {
+  if (oldMode !== newMode && sidesMatch(oldSide, newSide)) {
     throw new Error(`File mode changes are not supported: ${filePath}`)
   }
+}
+
+function draftFile(input: {
+  path: string
+  oldPath?: string
+  status: DraftFile['status']
+  oldMode: DraftFile['oldMode']
+  newMode: DraftFile['newMode']
+  oldSide?: CapturedSide
+  newSide?: CapturedSide
+}): DraftFile {
+  return {
+    path: input.path,
+    ...(input.oldPath === undefined ? {} : { oldPath: input.oldPath }),
+    status: input.status,
+    oldMode: input.oldMode,
+    newMode: input.newMode,
+    oldContent: input.oldSide?.content ?? '',
+    newContent: input.newSide?.content ?? '',
+    ...(input.oldSide?.binary === undefined ? {} : { oldBinary: input.oldSide.binary }),
+    ...(input.newSide?.binary === undefined ? {} : { newBinary: input.newSide.binary }),
+  }
+}
+
+function storedSide(file: DraftFile, side: 'old' | 'new'): CapturedSide {
+  const binary = side === 'old' ? file.oldBinary : file.newBinary
+  const content = side === 'old' ? file.oldContent : file.newContent
+  return binary === undefined ? { content } : { content: '', binary }
+}
+
+function sidesMatch(left: CapturedSide, right: CapturedSide): boolean {
+  if (left.binary !== undefined || right.binary !== undefined) {
+    return (
+      left.binary !== undefined &&
+      right.binary !== undefined &&
+      left.binary.size === right.binary.size &&
+      left.binary.hash === right.binary.hash
+    )
+  }
+  return left.content === right.content
 }
 
 async function validateWorkingTreeFile(path: string, root: string): Promise<string> {
@@ -253,12 +322,12 @@ async function workingTreeMode(path: string, root: string): Promise<DraftFile['n
   return (file.mode & 0o100) === 0 ? '100644' : '100755'
 }
 
-async function gitFile(commit: string, path: string, root: string): Promise<string> {
-  return decodeText(await gitBytes(['show', `${commit}:${path}`], root), path)
+async function gitFile(commit: string, path: string, root: string): Promise<CapturedSide> {
+  return decodeFile(await gitBytes(['show', `${commit}:${path}`], root))
 }
 
-async function indexFile(path: string, root: string): Promise<string> {
-  return decodeText(await gitBytes(['show', `:${path}`], root), path)
+async function indexFile(path: string, root: string): Promise<CapturedSide> {
+  return decodeFile(await gitBytes(['show', `:${path}`], root))
 }
 
 async function gitText(
@@ -304,12 +373,35 @@ async function gitBytes(
 }
 
 function decodeText(bytes: Uint8Array, label: string): string {
-  if (bytes.includes(0)) throw new Error(`Binary files are not supported: ${label}`)
+  if (bytes.includes(0)) throw new Error(`Unexpected binary output from ${label}`)
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
     throw new Error(`File is not valid UTF-8: ${label}`)
   }
+}
+
+function decodeFile(bytes: Uint8Array): CapturedSide {
+  if (isBinary(bytes)) {
+    return { content: '', binary: { size: bytes.byteLength, hash: hashBytes(bytes) } }
+  }
+  return { content: new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+}
+
+// A file is binary when it has a NUL byte or its bytes are not valid UTF-8, matching how the
+// rest of Diffwalk decides that a side cannot be shown as text.
+function isBinary(bytes: Uint8Array): boolean {
+  if (bytes.includes(0)) return true
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    return false
+  } catch {
+    return true
+  }
+}
+
+function hashBytes(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
 }
 
 function splitNulls(bytes: Uint8Array): string[] {

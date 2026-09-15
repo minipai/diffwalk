@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import type { ChangeBlock, ExplainCapture } from '../../format/types'
+import type { BinaryChangeBlock, ChangeBlock, ExplainCapture, TextChangeBlock } from '../../format/types'
 import { captureInput, readCapture } from '../input'
-import { coordinates } from '../output'
+import { binarySideLine, coordinates } from '../output'
 
 const changeOptionsSchema = z.object({
   input: z.string().optional(),
@@ -25,6 +25,22 @@ function findChange(capture: ExplainCapture, changeId: string): ChangeBlock {
 }
 
 function printChangeDetails(change: ChangeBlock): void {
+  if (change.kind === 'binary') {
+    printBinaryChange(change)
+    return
+  }
+  printTextChange(change)
+}
+
+function printBinaryChange(change: BinaryChangeBlock): void {
+  process.stdout.write(`${change.id}  ${change.path}  binary ${change.status}
+modes: ${change.oldMode} → ${change.newMode}
+${binarySideLine('before', change.before)}
+${binarySideLine('after', change.after)}
+`)
+}
+
+function printTextChange(change: TextChangeBlock): void {
   // The template supplies one final newline for each block.
   const before = change.before.endsWith('\n') ? change.before.slice(0, -1) : change.before
   const after = change.after.endsWith('\n') ? change.after.slice(0, -1) : change.after

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { DraftFile, ExplainCapture } from '../../format/types'
+import type { BinarySide, DraftFile, ExplainCapture } from '../../format/types'
 import { captureInput, readCapture } from '../input'
 import { UsageError } from '../usage'
 
@@ -14,6 +14,11 @@ export async function printFile(filePath: string, options: z.input<typeof fileOp
   validateFileSide(before, after)
   const capture = await readCapture(await captureInput({ input }))
   const file = findFile(capture, filePath)
+  const side = before ? file.oldBinary : file.newBinary
+  if (side !== undefined) {
+    printBinarySide(file, before ? 'before' : 'after', side)
+    return
+  }
   process.stdout.write(before ? file.oldContent : file.newContent)
 }
 
@@ -27,4 +32,12 @@ function findFile(capture: ExplainCapture, filePath: string): DraftFile {
   const file = capture.files.find((candidate) => candidate.path === filePath)
   if (!file) throw new Error(`Unknown file path: ${filePath}`)
   return file
+}
+
+// Binary bytes are never printed: the capture keeps only their identity, and this names it.
+function printBinarySide(file: DraftFile, side: 'before' | 'after', binary: BinarySide): void {
+  process.stdout.write(`${file.path}  binary  ${file.status}  ${side}
+size: ${binary.size} B
+sha256: ${binary.hash}
+`)
 }
