@@ -464,3 +464,108 @@ describe('explanations schema', () => {
     }
   })
 })
+
+describe('binary capture and document cards', () => {
+  const binaryCapture = {
+    captureId: 'c'.repeat(64),
+    source: workingTreeSource,
+    files: [
+      {
+        path: 'assets/logo.png',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: '',
+        newContent: '',
+        oldBinary: { size: 3, hash: 'a'.repeat(64) },
+        newBinary: { size: 5, hash: 'b'.repeat(64) },
+      },
+    ],
+    changes: [
+      {
+        kind: 'binary',
+        id: 'change-001',
+        path: 'assets/logo.png',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        before: { kind: 'binary', size: 3, hash: 'a'.repeat(64) },
+        after: { kind: 'binary', size: 5, hash: 'b'.repeat(64) },
+      },
+    ],
+  } as const
+
+  test('reads captures written before binary support as textual changes', () => {
+    const parsed = captureSchema.parse(JSON.parse(JSON.stringify(capture)))
+
+    expect(parsed.changes[0]).toMatchObject({ kind: 'text', before: 'old\n', after: 'new\n' })
+  })
+
+  test('accepts file-level binary sides and a binary change with both identities', () => {
+    const parsed = captureSchema.parse(JSON.parse(JSON.stringify(binaryCapture)))
+
+    expect(parsed.files[0]).toMatchObject({
+      oldBinary: { size: 3, hash: 'a'.repeat(64) },
+      newBinary: { size: 5, hash: 'b'.repeat(64) },
+    })
+    expect(parsed.changes[0]).toMatchObject({
+      kind: 'binary',
+      before: { kind: 'binary', size: 3, hash: 'a'.repeat(64) },
+      after: { kind: 'binary', size: 5, hash: 'b'.repeat(64) },
+    })
+  })
+
+  test('accepts a document step whose only captured change is binary', () => {
+    const document = explainDocumentSchema.parse({
+      formatVersion: 1,
+      title: 'Binary card',
+      source: proposalSource,
+      sections: [{ title: 'Assets', steps: [{ text: 'A new logo.', binary: [...binaryCapture.changes] }] }],
+    })
+
+    expect(document.sections[0]!.steps[0]!.diff).toBeUndefined()
+    expect(document.sections[0]!.steps[0]!.binary).toEqual([...binaryCapture.changes])
+    expect(explainDocumentSchema.parse(JSON.parse(JSON.stringify(document)))).toEqual(document)
+  })
+
+  test('requires a diff or binary card to carry captured change IDs', () => {
+    expect(() =>
+      explainDocumentSchema.parse({
+        formatVersion: 1,
+        title: 'Missing card',
+        source: proposalSource,
+        sections: [{ title: 'Bad', steps: [{ text: 'Only text.', changes: ['change-001'] }] }],
+      }),
+    ).toThrow('captured change IDs require a diff')
+  })
+
+  test('rejects malformed binary metadata and unknown card fields', () => {
+    const cases: unknown[] = [
+      { size: -1, hash: 'a'.repeat(64) },
+      { size: 3, hash: '' },
+      { size: 3.5, hash: 'a'.repeat(64) },
+      { size: 3, hash: 'a'.repeat(64), extra: 'x' },
+    ]
+    for (const oldBinary of cases) {
+      expect(() =>
+        captureSchema.parse({
+          ...binaryCapture,
+          files: [{ ...binaryCapture.files[0], oldBinary }],
+        }),
+      ).toThrow()
+    }
+    expect(() =>
+      explainDocumentSchema.parse({
+        formatVersion: 1,
+        title: 'Bad card',
+        source: proposalSource,
+        sections: [
+          {
+            title: 'Bad',
+            steps: [{ text: 'x', binary: [{ ...binaryCapture.changes[0], kind: 'text' }] }],
+          },
+        ],
+      }),
+    ).toThrow()
+  })
+})

@@ -3,6 +3,13 @@ import type { ExplainCapture, ExplainDocument, Explanations } from './types'
 
 const gitModeSchema = z.enum(['000000', '100644', '100755'])
 
+const binarySideSchema = z
+  .object({
+    size: z.number().int().nonnegative(),
+    hash: z.string().min(1),
+  })
+  .strict()
+
 export const draftFileSchema = z.preprocess(
   normalizeFileModes,
   z.object({
@@ -13,11 +20,22 @@ export const draftFileSchema = z.preprocess(
     newMode: gitModeSchema,
     oldContent: z.string(),
     newContent: z.string(),
+    oldBinary: binarySideSchema.optional(),
+    newBinary: binarySideSchema.optional(),
   }).strict(),
 )
 
-export const changeBlockSchema = z
+const changeSideSchema = z
   .object({
+    kind: z.enum(['text', 'binary']),
+    size: z.number().int().nonnegative(),
+    hash: z.string().min(1),
+  })
+  .strict()
+
+export const textChangeBlockSchema = z
+  .object({
+    kind: z.literal('text'),
     id: z.string().min(1),
     path: z.string().min(1),
     oldStart: z.number().int().positive(),
@@ -28,6 +46,26 @@ export const changeBlockSchema = z
     after: z.string(),
   })
   .strict()
+
+export const binaryChangeBlockSchema = z
+  .object({
+    kind: z.literal('binary'),
+    id: z.string().min(1),
+    path: z.string().min(1),
+    status: z.enum(['added', 'modified', 'deleted', 'renamed']),
+    oldPath: z.string().min(1).optional(),
+    oldMode: gitModeSchema,
+    newMode: gitModeSchema,
+    before: changeSideSchema.optional(),
+    after: changeSideSchema.optional(),
+  })
+  .strict()
+
+// Captures written before binary support have no discriminator; they are textual.
+export const changeBlockSchema = z.preprocess(
+  normalizeChangeKind,
+  z.discriminatedUnion('kind', [textChangeBlockSchema, binaryChangeBlockSchema]),
+)
 
 export const commitEndpointSchema = z
   .object({
@@ -124,15 +162,19 @@ export const documentStepSchema = z
   .object({
     text: z.string().default(''),
     diff: z.string().min(1).optional(),
+    binary: z.array(binaryChangeBlockSchema).min(1).optional(),
     changes: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict()
-  .refine((step) => step.text.trim() !== '' || step.diff !== undefined, {
-    message: 'a step needs text, a diff, or both',
+  .refine((step) => step.text.trim() !== '' || step.diff !== undefined || step.binary !== undefined, {
+    message: 'a step needs text, a diff, a binary change, or a combination',
   })
-  .refine((step) => step.changes === undefined || step.diff !== undefined, {
-    message: 'captured change IDs require a diff',
-  })
+  .refine(
+    (step) => step.changes === undefined || step.diff !== undefined || step.binary !== undefined,
+    {
+      message: 'captured change IDs require a diff',
+    },
+  )
 
 export const documentMetadataSchema = z
   .object({
@@ -170,4 +212,10 @@ function normalizeFileModes(value: unknown): unknown {
     oldMode: file.oldMode ?? (file.status === 'added' ? '000000' : '100644'),
     newMode: file.newMode ?? (file.status === 'deleted' ? '000000' : '100644'),
   }
+}
+
+function normalizeChangeKind(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const change = value as Record<string, unknown>
+  return 'kind' in change ? change : { ...change, kind: 'text' }
 }

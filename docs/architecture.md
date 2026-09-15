@@ -113,11 +113,14 @@ exact corresponding diffs in a deliberate order.
 - `src/format/types.ts`: independent TypeScript types used by internal logic.
 - `src/format/schema.ts`: boundary-only Zod schemas for the machine-owned capture and the author-edited
   explanations, plus the version 1 ExplainDocument and its optional attribution metadata.
-- `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked UTF-8
-  files from an immutable Git base commit, optionally reading the index or limiting the
-  capture to named paths.
-- `src/authoring/capture.ts`: derives change blocks and the content `captureId`, and
-  materializes exact section patches from capture plus explanations.
+- `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked text
+  and binary files from an immutable Git base commit, optionally reading the index or
+  limiting the capture to named paths. A text side keeps its UTF-8 content; a binary side
+  keeps only its byte size and SHA-256 content hash.
+- `src/authoring/capture.ts`: derives text change blocks, file-level binary change blocks,
+  and the content `captureId`, and materializes exact section patches from capture plus
+  explanations. Text-only files hash into `captureId` exactly as before binary support, so
+  existing captures and their explanations stay matched.
 - `src/cli/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.
 - `src/cli/commands/`: each command owns its option schema and validates inputs before
   calling internal logic. `cli.ts` registers commands and forwards their arguments.
@@ -138,6 +141,8 @@ exact corresponding diffs in a deliberate order.
 - `src/report/index.ts`: atomic report writes and client-bundle loading.
 - `src/report/render.ts`: the one report shell, embedded-data escaping, and shell styles,
   rendered with inlined assets for the offline file or linked assets for the hosted page.
+  A binary change renders as a metadata card carrying its path, status, and before/after
+  sizes instead of a diff.
 - `src/cli/service.ts`: review service configuration and origin checks.
 - `src/publish/client.ts`: publish, update, and unpublish requests, and adding the Git user name as
   `metadata.publishedBy` without mutating the authoring files.

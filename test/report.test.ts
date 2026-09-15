@@ -790,3 +790,114 @@ describe('attribution metadata', () => {
     expect(html).not.toContain('onmouseover="alert(1)"')
   })
 })
+
+const binaryChange = {
+  kind: 'binary',
+  id: 'change-001',
+  path: 'assets/logo.png',
+  status: 'modified',
+  oldMode: '100644',
+  newMode: '100644',
+  before: { kind: 'binary', size: 3, hash: 'a'.repeat(64) },
+  after: { kind: 'binary', size: 5, hash: 'b'.repeat(64) },
+} as const
+
+describe('binary change cards', () => {
+  test('renders a metadata card with the path, status, and both side sizes', () => {
+    const html = renderReport(
+      document([{ title: 'Assets', steps: [{ text: 'A new logo.', binary: [{ ...binaryChange }] }] }]),
+      stubClient,
+    )
+
+    expect(html).toContain('assets/logo.png')
+    expect(html).toContain('Binary · modified')
+    expect(html).toContain('3 B')
+    expect(html).toContain('5 B')
+    expect(html).toContain(binaryChange.before.hash)
+    expect(html).toContain(binaryChange.after.hash)
+    expect(html).not.toContain('data-diff-mount')
+    expect(html).not.toContain('<details class="file"')
+  })
+
+  test('a hosted report keeps the same binary card', () => {
+    const html = renderHostedReport(
+      document([{ title: 'Assets', steps: [{ text: 'A new logo.', binary: [{ ...binaryChange }] }] }]),
+      { stylesHref: '/report.css', clientSrc: '/report-client.js' },
+    )
+
+    expect(html).toContain('assets/logo.png')
+    expect(html).toContain('Binary · modified')
+    expect(html).toContain('3 B')
+    expect(html).toContain('5 B')
+  })
+
+  test('renders a textual diff and a binary card inside one step', () => {
+    const html = renderReport(
+      document([
+        {
+          title: 'Mixed',
+          steps: [
+            {
+              text: 'Code and asset.',
+              diff: simplePatch(),
+              binary: [{ ...binaryChange }],
+            },
+          ],
+        },
+      ]),
+      stubClient,
+    )
+
+    expect(html).toContain('data-diff-mount="0-0-0"')
+    expect(html).toContain('assets/logo.png')
+    expect(html).toContain('Binary · modified')
+  })
+
+  test('counts binary cards as files in the review map', () => {
+    const html = renderReport(
+      document([
+        {
+          title: 'Assets',
+          steps: [
+            {
+              text: 'Two assets.',
+              binary: [
+                { ...binaryChange },
+                { ...binaryChange, id: 'change-002', path: 'assets/icon.png' },
+              ],
+            },
+          ],
+        },
+      ]),
+      stubClient,
+    )
+
+    expect(html).toContain('1 section')
+    expect(html).toContain('2 files')
+  })
+
+  test('escapes binary paths and hashes', () => {
+    const html = renderReport(
+      document([
+        {
+          title: 'Assets',
+          steps: [
+            {
+              text: '',
+              binary: [
+                {
+                  ...binaryChange,
+                  path: 'assets/<img src=x>.png',
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+      stubClient,
+    )
+
+    expect(html).not.toContain('<img src=x>')
+    expect(html).toContain('assets/&lt;img src=x&gt;.png')
+  })
+})

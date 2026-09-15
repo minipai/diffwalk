@@ -14,8 +14,8 @@ diffwalk inspect
 diffwalk changes
 ```
 
-`inspect` captures staged, unstaged, and untracked UTF-8 file changes relative to
-`HEAD`. It creates a walk under `.diffwalk/` containing:
+`inspect` captures staged, unstaged, and untracked file changes relative to `HEAD`,
+including binary assets. It creates a walk under `.diffwalk/` containing:
 
 - `capture.json` — generated capture data. Do not edit it.
 - `explanations.yaml` — the file you edit to explain and order the changes.
@@ -122,11 +122,33 @@ diffwalk file src/a.ts --after  # full captured new file
 
 `changes --json` includes change blocks, not full file snapshots.
 
+Text changes list line coordinates and their before/after blocks. Binary changes keep
+only an identity, never the bytes: `changes` shows the status and each existing side's
+byte size, `changes --json` and `change <id>` add the content hash, and
+`file <path> --before/--after` prints that metadata instead of bytes. A file that
+switches between text and binary keeps both side identities. Binary change IDs are
+assigned to steps like any other change.
+
+## Binary assets
+
+Diffwalk represents binary files at file level. It records the path, change status,
+file modes, and each existing side's byte size and SHA-256 content hash, and assigns
+the file a change ID rendered as a metadata card instead of a textual patch. Because
+the hash participates in `captureId`, two binary revisions of the same size are still
+distinguished, and `check` re-validates the captured metadata before it passes.
+
+Diffwalk treats a file side as binary when its bytes contain a NUL byte or do not
+decode as UTF-8, so a non-UTF-8 text file is captured as an opaque card rather than
+shown as text. Diffwalk does not generate binary patches, preview images, or decode
+binary contents, so a binary card shows identity rather than the changed bytes.
+Symbolic links and non-file Git paths are still rejected at capture time.
+
 ## Validation
 
 `diffwalk check` rejects stale capture IDs, malformed YAML, unknown change IDs,
-unexplained changes, and blocks that cannot produce an exact patch. It reports
-section, step, change, and file counts, including repeated changes.
+unexplained changes, and blocks that cannot produce an exact patch or whose binary
+metadata no longer matches the captured file. It reports section, step, change, and
+file counts, including repeated changes.
 
 Explanations use YAML 1.2. Custom tags, duplicate keys, anchors, and aliases are not
 allowed; `yes` and `on` remain strings.
@@ -142,6 +164,9 @@ diffwalk export json --output document.json
 HTML reviews are standalone files that work offline with JavaScript enabled. JSON
 export produces an ExplainDocument (format version 1) for integrations or archiving;
 its default filename is `diffwalk.json` in the current walk.
+
+Both exports, and the hosted review, keep a binary change's card with its path, status,
+and before/after sizes.
 
 `text` and `summary` support Markdown and inline HTML. Use inline SVG or `data:` URIs
 for images; hosted reviews block remote image URLs. Authored HTML is not sanitized,
@@ -228,4 +253,3 @@ diffwalk check --input path/to/capture.json --explanations path/to/explanations.
 
 `view`, `export`, and `publish` accept the same options. With explicit input files,
 `publish` saves `published.json` alongside the authoring pair.
-

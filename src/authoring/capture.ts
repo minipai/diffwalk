@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto'
 import { diffLines, formatPatch, structuredPatch, type StructuredPatch } from 'diff'
 import type {
+  BinaryChangeBlock,
   CaptureSource,
   ChangeBlock,
+  ChangeSide,
   DraftFile,
   DocumentStep,
   ExplanationStep,
   ExplainCapture,
   ExplainDocument,
   Explanations,
+  TextChangeBlock,
 } from '../format/types'
 
 export function createExplainCapture(files: DraftFile[], source: CaptureSource): ExplainCapture {
@@ -16,7 +19,13 @@ export function createExplainCapture(files: DraftFile[], source: CaptureSource):
   const changes: ChangeBlock[] = []
 
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
+    if (file.oldBinary !== undefined || file.newBinary !== undefined) {
+      changes.push(binaryChangeBlock(file, changeId(nextId++)))
+      continue
+    }
+
     const fileChanges = changeBlocks(file).map((change) => ({
+      kind: 'text' as const,
       id: changeId(nextId++),
       path: file.path,
       ...change,
@@ -24,6 +33,7 @@ export function createExplainCapture(files: DraftFile[], source: CaptureSource):
 
     if (fileChanges.length === 0 && file.status !== 'modified') {
       fileChanges.push({
+        kind: 'text',
         id: changeId(nextId++),
         path: file.path,
         oldStart: 1,
@@ -46,6 +56,39 @@ export function createExplainCapture(files: DraftFile[], source: CaptureSource):
   }
 }
 
+function binaryChangeBlock(file: DraftFile, id: string): BinaryChangeBlock {
+  const before = changeSide(file, 'old')
+  const after = changeSide(file, 'new')
+  return {
+    kind: 'binary',
+    id,
+    path: file.path,
+    status: file.status,
+    ...(file.oldPath === undefined ? {} : { oldPath: file.oldPath }),
+    oldMode: file.oldMode,
+    newMode: file.newMode,
+    ...(before === undefined ? {} : { before }),
+    ...(after === undefined ? {} : { after }),
+  }
+}
+
+// Every existing side has an identity, whether its bytes decode as text or stay binary, so a
+// text-to-binary or binary-to-text transition keeps both sides instead of dropping one.
+function changeSide(file: DraftFile, side: 'old' | 'new'): ChangeSide | undefined {
+  const absent = side === 'old' ? file.status === 'added' : file.status === 'deleted'
+  if (absent) return undefined
+
+  const binary = side === 'old' ? file.oldBinary : file.newBinary
+  if (binary !== undefined) return { kind: 'binary', size: binary.size, hash: binary.hash }
+
+  const content = side === 'old' ? file.oldContent : file.newContent
+  return {
+    kind: 'text',
+    size: Buffer.byteLength(content, 'utf8'),
+    hash: createHash('sha256').update(content).digest('hex'),
+  }
+}
+
 export function captureIdFor(files: DraftFile[], includeModes = true): string {
   const hash = createHash('sha256')
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
@@ -65,6 +108,17 @@ export function captureIdFor(files: DraftFile[], includeModes = true): string {
     hash.update('\0')
     hash.update(file.newContent)
     hash.update('\0')
+    // Binary sides keep their bytes out of the capture, so their size and content hash must
+    // carry the identity instead. Text-only files hash exactly as they did before this field,
+    // keeping existing captures and their explanations matched.
+    if (file.oldBinary !== undefined) {
+      hash.update(`old-binary:${file.oldBinary.size}:${file.oldBinary.hash}`)
+      hash.update('\0')
+    }
+    if (file.newBinary !== undefined) {
+      hash.update(`new-binary:${file.newBinary.size}:${file.newBinary.hash}`)
+      hash.update('\0')
+    }
   }
   return hash.digest('hex')
 }
@@ -128,8 +182,16 @@ function materializeStep(
       return change
     })
 
-    const changesByPath = new Map<string, ChangeBlock[]>()
-    for (const change of selected) {
+    const textChanges = selected.filter(
+      (change): change is TextChangeBlock => change.kind === 'text',
+    )
+    const binaryChanges = selected.filter(
+      (change): change is BinaryChangeBlock => change.kind === 'binary',
+    )
+    for (const change of binaryChanges) validateBinaryChange(change, filesByPath)
+
+    const changesByPath = new Map<string, TextChangeBlock[]>()
+    for (const change of textChanges) {
       const fileChanges = changesByPath.get(change.path) ?? []
       fileChanges.push(change)
       changesByPath.set(change.path, fileChanges)
@@ -143,9 +205,30 @@ function materializeStep(
 
     return {
       text: step.text,
-      diff: patches.map(formatFilePatch).join('\n'),
+      ...(patches.length === 0 ? {} : { diff: patches.map(formatFilePatch).join('\n') }),
+      ...(binaryChanges.length === 0 ? {} : { binary: binaryChanges }),
       changes: step.changes,
     }
+  }
+}
+
+// A binary change carries no patch to re-derive, so materialization re-reads the file and
+// confirms the captured sizes, hashes, status, and modes still describe it.
+function validateBinaryChange(change: BinaryChangeBlock, filesByPath: Map<string, DraftFile>): void {
+  const file = findFile(filesByPath, change.path)
+  if (file.oldBinary === undefined && file.newBinary === undefined) {
+    throw new Error(`Change block no longer matches captured file content: ${change.id}`)
+  }
+  const expected = binaryChangeBlock(file, change.id)
+  if (
+    expected.status !== change.status ||
+    expected.oldPath !== change.oldPath ||
+    expected.oldMode !== change.oldMode ||
+    expected.newMode !== change.newMode ||
+    JSON.stringify(expected.before) !== JSON.stringify(change.before) ||
+    JSON.stringify(expected.after) !== JSON.stringify(change.after)
+  ) {
+    throw new Error(`Change block no longer matches captured file content: ${change.id}`)
   }
 }
 
@@ -180,9 +263,9 @@ function validateChangeCoverage(changes: ChangeBlock[], shown: Set<string>): voi
   }
 }
 
-function changeBlocks(file: DraftFile): Omit<ChangeBlock, 'id' | 'path'>[] {
+function changeBlocks(file: DraftFile): Omit<TextChangeBlock, 'kind' | 'id' | 'path'>[] {
   const parts = diffLines(file.oldContent, file.newContent)
-  const changes: Omit<ChangeBlock, 'id' | 'path'>[] = []
+  const changes: Omit<TextChangeBlock, 'kind' | 'id' | 'path'>[] = []
   let oldIndex = 0
   let newIndex = 0
 
@@ -224,7 +307,7 @@ function changeBlocks(file: DraftFile): Omit<ChangeBlock, 'id' | 'path'>[] {
   return changes
 }
 
-function createFilePatch(file: DraftFile, changes: ChangeBlock[]): StructuredPatch {
+function createFilePatch(file: DraftFile, changes: TextChangeBlock[]): StructuredPatch {
   validateBlocks(file, changes)
   const nextLines = splitLines(file.oldContent)
 
@@ -256,7 +339,7 @@ function formatFilePatch(patch: StructuredPatch): string {
   return formatted.replace('\nrename from ', '\nsimilarity index 100%\nrename from ')
 }
 
-function validateBlocks(file: DraftFile, changes: ChangeBlock[]) {
+function validateBlocks(file: DraftFile, changes: TextChangeBlock[]) {
   const oldLines = splitLines(file.oldContent)
   const newLines = splitLines(file.newContent)
   const sorted = [...changes].sort((left, right) => left.oldStart - right.oldStart)

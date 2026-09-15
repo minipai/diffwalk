@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -854,6 +855,7 @@ describe('change', () => {
     expect(result.stdout).toContain(change.path)
     expect(result.stdout).toContain('before:')
     expect(result.stdout).toContain('after:')
+    if (change.kind !== 'text') throw new Error('expected a text change')
     expect(result.stdout).toContain(change.before)
     expect(result.stdout).toContain(change.after)
   })
@@ -1814,6 +1816,225 @@ describe('removed workflow', () => {
   })
 })
 
+describe('binary captures', () => {
+  test('inspects a mixed working-tree change with text and binary files', async () => {
+    const repo = await mixedFixtureRepo()
+
+    const result = await runCli(['inspect'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files.map((file) => file.path)).toEqual(['assets/logo.png', 'greeting.ts'])
+    const binary = capture.changes.find((change) => change.kind === 'binary')!
+    expect(binary).toMatchObject({
+      kind: 'binary',
+      path: 'assets/logo.png',
+      status: 'modified',
+      before: { kind: 'binary', size: 4, hash: sha256([0, 1, 2, 3]) },
+      after: { kind: 'binary', size: 5, hash: sha256([0, 1, 2, 3, 4]) },
+    })
+  })
+
+  test('inspects a staged binary addition', async () => {
+    const repo = await mixedFixtureRepo()
+    await writeBinary(join(repo, 'assets', 'added.bin'), [0, 7, 7])
+    await git(['add', 'assets/added.bin'], repo)
+
+    const result = await runCli(['inspect', '--staged'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files).toEqual([
+      expect.objectContaining({
+        path: 'assets/added.bin',
+        status: 'added',
+        newBinary: { size: 3, hash: sha256([0, 7, 7]) },
+      }),
+    ])
+  })
+
+  test('inspects a committed range with a binary addition and deletion', async () => {
+    const repo = await binaryLifecycleRepo()
+    const commits = await gitText(['log', '--format=%H'], repo)
+    const [newer, older] = commits.trim().split('\n')
+
+    const result = await runCli(['inspect', '--from', older!, '--to', newer!], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files).toEqual([
+      expect.objectContaining({
+        path: 'fresh.bin',
+        status: 'added',
+        newBinary: { size: 2, hash: sha256([0, 4]) },
+      }),
+      expect.objectContaining({
+        path: 'gone.bin',
+        status: 'deleted',
+        oldBinary: { size: 3, hash: sha256([0, 3, 3]) },
+      }),
+    ])
+  })
+
+  test('exposes binary metadata through changes, change, and file without raw bytes', async () => {
+    const repo = await mixedFixtureRepo()
+    await runCli(['inspect'], repo)
+    const capture = await readCapture(repo)
+    const binary = capture.changes.find((change) => change.kind === 'binary')!
+    const binaryFile = capture.files.find((file) => file.path === 'assets/logo.png')!
+
+    const listed = await runCli(['changes'], repo)
+    expect(listed.exitCode).toBe(0)
+    expect(listed.stdout).toContain('assets/logo.png')
+    expect(listed.stdout).toContain('binary modified before 4 B → after 5 B')
+
+    const json = await runCli(['changes', '--json'], repo)
+    expect(json.exitCode).toBe(0)
+    const data = JSON.parse(json.stdout) as {
+      changes: {
+        id: string
+        kind: string
+        path: string
+        status: string
+        oldMode: string
+        newMode: string
+        before?: { kind: string; size: number; hash: string }
+        after?: { kind: string; size: number; hash: string }
+      }[]
+    }
+    const jsonBinary = data.changes.find((change) => change.kind === 'binary')!
+    expect(jsonBinary).toEqual({
+      kind: 'binary',
+      id: binary.id,
+      path: 'assets/logo.png',
+      status: 'modified',
+      oldMode: '100644',
+      newMode: '100644',
+      before: { kind: 'binary', size: 4, hash: sha256([0, 1, 2, 3]) },
+      after: { kind: 'binary', size: 5, hash: sha256([0, 1, 2, 3, 4]) },
+    })
+    expect(Object.keys(jsonBinary.before as object).sort()).toEqual(['hash', 'kind', 'size'])
+
+    const described = await runCli(['change', binary.id], repo)
+    expect(described.exitCode).toBe(0)
+    expect(described.stdout).toContain('assets/logo.png  binary modified')
+    expect(described.stdout).toContain('modes: 100644 → 100644')
+    expect(described.stdout).toContain(`before: binary · 4 B · sha256 ${sha256([0, 1, 2, 3])}`)
+    expect(described.stdout).toContain(`after: binary · 5 B · sha256 ${sha256([0, 1, 2, 3, 4])}`)
+
+    const after = await runCli(['file', 'assets/logo.png', '--after'], repo)
+    expect(after.exitCode).toBe(0)
+    expect(after.stdout).toContain('assets/logo.png  binary  modified  after')
+    expect(after.stdout).toContain('size: 5 B')
+    expect(after.stdout).toContain(`sha256: ${binaryFile.newBinary!.hash}`)
+
+    // The fixture's binary sides contain a NUL byte, so any raw-byte leak would surface here.
+    for (const output of [listed.stdout, json.stdout, described.stdout, after.stdout]) {
+      expect(output).not.toContain('\u0000')
+      expect(output).not.toContain('\uFFFD')
+    }
+
+    const text = await runCli(['file', 'greeting.ts', '--after'], repo)
+    expect(text.exitCode).toBe(0)
+    expect(text.stdout).toBe('Hello\nUniverse\n')
+  })
+
+  test('check covers binary changes and rejects tampered captured metadata', async () => {
+    const repo = await mixedFixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+
+    const checked = await runCli(['check'], repo)
+    expect(checked.exitCode).toBe(0)
+    expect(checked.stdout).toContain('cover')
+
+    const capture = await readCapture(repo)
+    const binary = capture.changes.find((change) => change.kind === 'binary')!
+    const textChanges = capture.changes.filter((change) => change.kind === 'text')
+    await writeExplanations(repo, everyChangeYaml(capture.captureId, textChanges))
+    const uncovered = await runCli(['check'], repo)
+    expect(uncovered.exitCode).not.toBe(0)
+    expect(uncovered.stderr).toContain(`Unassigned change IDs: ${binary.id}`)
+
+    await authorEveryChange(repo)
+    const capturePath = join(await currentWalkDir(repo), 'capture.json')
+    const persisted = JSON.parse(await readFile(capturePath, 'utf8')) as {
+      changes: { kind: string; after?: { kind: string; size: number; hash: string } }[]
+    }
+    const tampered = persisted.changes.find((change) => change.kind === 'binary')!
+    tampered.after = { ...tampered.after!, size: 99 }
+    await writeFile(capturePath, `${JSON.stringify(persisted, null, 2)}\n`)
+
+    const mismatch = await runCli(['check'], repo)
+    expect(mismatch.exitCode).not.toBe(0)
+    expect(mismatch.stderr).toContain('no longer matches captured file content')
+  })
+
+  test('exports HTML and JSON that retain the binary change card', async () => {
+    const repo = await mixedFixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const htmlPath = join(repo, 'out', 'report.html')
+    const jsonPath = join(repo, 'out', 'document.json')
+
+    const html = await runCli(['export', 'html', '--output', htmlPath], repo)
+    expect(html.exitCode).toBe(0)
+    const markup = await readFile(htmlPath, 'utf8')
+    expect(markup).toContain('assets/logo.png')
+    expect(markup).toContain('Binary · modified')
+    expect(markup).toContain('4 B')
+    expect(markup).toContain('5 B')
+
+    const json = await runCli(['export', 'json', '--output', jsonPath], repo)
+    expect(json.exitCode).toBe(0)
+    const document = JSON.parse(await readFile(jsonPath, 'utf8')) as {
+      sections: { steps: { binary?: { path: string; before?: { size: number }; after?: { size: number } }[] }[] }[]
+    }
+    const card = document.sections.flatMap((section) => section.steps).find((step) => step.binary !== undefined)!
+    expect(card.binary![0]).toMatchObject({
+      path: 'assets/logo.png',
+      before: { kind: 'binary', size: 4 },
+      after: { kind: 'binary', size: 5 },
+    })
+  })
+})
+
+async function mixedFixtureRepo(): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+  directories.push(repo)
+  await initializeRepository(repo)
+  await writeFile(join(repo, 'greeting.ts'), 'Hello\nWorld\n')
+  await mkdir(join(repo, 'assets'), { recursive: true })
+  await writeBinary(join(repo, 'assets', 'logo.png'), [0, 1, 2, 3])
+  await git(['add', '.'], repo)
+  await git(['commit', '-q', '-m', 'fixture'], repo)
+  await writeFile(join(repo, 'greeting.ts'), 'Hello\nUniverse\n')
+  await writeBinary(join(repo, 'assets', 'logo.png'), [0, 1, 2, 3, 4])
+  return repo
+}
+
+async function binaryLifecycleRepo(): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+  directories.push(repo)
+  await initializeRepository(repo)
+  await writeBinary(join(repo, 'gone.bin'), [0, 3, 3])
+  await git(['add', '.'], repo)
+  await git(['commit', '-q', '-m', 'one'], repo)
+  await rm(join(repo, 'gone.bin'))
+  await writeBinary(join(repo, 'fresh.bin'), [0, 4])
+  await git(['add', '-A'], repo)
+  await git(['commit', '-q', '-m', 'two'], repo)
+  return repo
+}
+
+async function writeBinary(path: string, bytes: number[]) {
+  await writeFile(path, new Uint8Array(bytes))
+}
+
+function sha256(bytes: number[]): string {
+  return createHash('sha256').update(new Uint8Array(bytes)).digest('hex')
+}
+
 async function initializeRepository(directory: string) {
   await git(['init', '-q'], directory)
   await git(['config', 'user.name', 'Test'], directory)
@@ -1824,4 +2045,15 @@ async function git(args: string[], cwd: string) {
   const child = Bun.spawn(['git', ...args], { cwd, stdout: 'ignore', stderr: 'pipe' })
   const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
   if (exitCode !== 0) throw new Error(stderr)
+}
+
+async function gitText(args: string[], cwd: string): Promise<string> {
+  const child = Bun.spawn(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) throw new Error(stderr)
+  return stdout
 }

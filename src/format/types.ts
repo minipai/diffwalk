@@ -1,14 +1,30 @@
+export type GitMode = '000000' | '100644' | '100755'
+
+export interface BinarySide {
+  size: number
+  hash: string
+}
+
 export interface DraftFile {
   path: string
   oldPath?: string
   status: 'added' | 'modified' | 'deleted' | 'renamed'
-  oldMode: '000000' | '100644' | '100755'
-  newMode: '000000' | '100644' | '100755'
+  oldMode: GitMode
+  newMode: GitMode
   oldContent: string
   newContent: string
+  oldBinary?: BinarySide
+  newBinary?: BinarySide
 }
 
-export interface ChangeBlock {
+export interface ChangeSide {
+  kind: 'text' | 'binary'
+  size: number
+  hash: string
+}
+
+export interface TextChangeBlock {
+  kind: 'text'
   id: string
   path: string
   oldStart: number
@@ -18,6 +34,20 @@ export interface ChangeBlock {
   before: string
   after: string
 }
+
+export interface BinaryChangeBlock {
+  kind: 'binary'
+  id: string
+  path: string
+  status: 'added' | 'modified' | 'deleted' | 'renamed'
+  oldPath?: string
+  oldMode: GitMode
+  newMode: GitMode
+  before?: ChangeSide
+  after?: ChangeSide
+}
+
+export type ChangeBlock = TextChangeBlock | BinaryChangeBlock
 
 interface CommitEndpoint {
   revision: string
@@ -51,6 +81,7 @@ export interface Explanations {
 export interface DocumentStep {
   text: string
   diff?: string
+  binary?: BinaryChangeBlock[]
   changes?: string[]
 }
 

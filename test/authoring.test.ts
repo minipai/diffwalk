@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import {
   captureIdFor,
   createExplainCapture,
   duplicatedChangeIds,
   materializeExplainDocument,
 } from '../src/authoring/capture'
-import type { CaptureSource, ExplainCapture } from '../src/format/types'
+import type { CaptureSource, DraftFile, ExplainCapture } from '../src/format/types'
 import { fileDiffStats, parseSectionPatch } from '../src/report/patches'
 
 const source: CaptureSource = {
@@ -483,6 +484,159 @@ describe('explain materialization', () => {
 
     expect(() => materializeExplainDocument(capture, allChangesAssigned(capture))).toThrow(
       'Capture contains duplicate change IDs',
+    )
+  })
+})
+
+describe('binary changes', () => {
+  function binaryFile(overrides: Partial<DraftFile> = {}): DraftFile {
+    return {
+      path: 'logo.png',
+      status: 'modified',
+      oldMode: '100644',
+      newMode: '100644',
+      oldContent: '',
+      newContent: '',
+      oldBinary: { size: 3, hash: 'a'.repeat(64) },
+      newBinary: { size: 5, hash: 'b'.repeat(64) },
+      ...overrides,
+    }
+  }
+
+  test('emits one binary change block that keeps both side identities', () => {
+    const capture = createExplainCapture([binaryFile()], source)
+
+    expect(capture.changes).toEqual([
+      {
+        kind: 'binary',
+        id: 'change-001',
+        path: 'logo.png',
+        status: 'modified',
+        oldMode: '100644',
+        newMode: '100644',
+        before: { kind: 'binary', size: 3, hash: 'a'.repeat(64) },
+        after: { kind: 'binary', size: 5, hash: 'b'.repeat(64) },
+      },
+    ])
+  })
+
+  test('keeps the identity of a text side and a binary side across a transition', () => {
+    const capture = createExplainCapture(
+      [
+        {
+          path: 'logo.png',
+          status: 'modified',
+          oldMode: '100644',
+          newMode: '100644',
+          oldContent: 'old bytes\n',
+          newContent: '',
+          newBinary: { size: 5, hash: 'b'.repeat(64) },
+        },
+      ],
+      source,
+    )
+
+    expect(capture.changes[0]).toMatchObject({
+      kind: 'binary',
+      before: {
+        kind: 'text',
+        size: Buffer.byteLength('old bytes\n', 'utf8'),
+        hash: createHash('sha256').update('old bytes\n').digest('hex'),
+      },
+      after: { kind: 'binary', size: 5, hash: 'b'.repeat(64) },
+    })
+  })
+
+  test('includes binary content identity even when both sides keep the same size', () => {
+    const same = createExplainCapture([binaryFile()], source)
+    const differentHash = createExplainCapture(
+      [binaryFile({ newBinary: { size: 5, hash: 'c'.repeat(64) } })],
+      source,
+    )
+    const differentSize = createExplainCapture(
+      [binaryFile({ newBinary: { size: 6, hash: 'b'.repeat(64) } })],
+      source,
+    )
+
+    expect(differentHash.captureId).not.toBe(same.captureId)
+    expect(differentSize.captureId).not.toBe(same.captureId)
+    expect(createExplainCapture([binaryFile()], source).captureId).toBe(same.captureId)
+  })
+
+  test('keeps the capture identity of a text-only capture stable for existing walks', () => {
+    expect(
+      captureIdFor([
+        {
+          path: 'a.ts',
+          status: 'modified',
+          ...regularModes,
+          oldContent: 'old\n',
+          newContent: 'new\n',
+        },
+      ]),
+    ).toBe('7b01637bb6902d7b475e38e88289653635981ad1e8c2484dc2b223856345edb5')
+  })
+
+  test('materializes a binary card instead of a textual patch', () => {
+    const capture = createExplainCapture([binaryFile()], source)
+    const document = materializeExplainDocument(capture, allChangesAssigned(capture))
+    const step = document.sections[0]!.steps[0]!
+
+    expect(step.diff).toBeUndefined()
+    expect(step.binary).toEqual([
+      expect.objectContaining({
+        kind: 'binary',
+        id: 'change-001',
+        path: 'logo.png',
+        status: 'modified',
+        before: { kind: 'binary', size: 3, hash: 'a'.repeat(64) },
+        after: { kind: 'binary', size: 5, hash: 'b'.repeat(64) },
+      }),
+    ])
+  })
+
+  test('materializes a step that mixes textual and binary changes', () => {
+    const capture = createExplainCapture(
+      [
+        {
+          path: 'example.ts',
+          status: 'modified',
+          ...regularModes,
+          oldContent: 'old\n',
+          newContent: 'new\n',
+        },
+        binaryFile(),
+      ],
+      source,
+    )
+    const document = materializeExplainDocument(capture, {
+      captureId: capture.captureId,
+      title: 'Mixed',
+      summary: '',
+      sections: [
+        {
+          title: 'Mixed',
+          steps: [{ text: 'Both.', changes: ['change-001', 'change-002'] }],
+        },
+      ],
+    })
+    const step = document.sections[0]!.steps[0]!
+
+    expect(step.diff).toContain('diff --git')
+    expect(step.binary).toHaveLength(1)
+    expect(step.binary![0]!.path).toBe('logo.png')
+  })
+
+  test('rejects a binary change whose captured metadata no longer matches its file', () => {
+    const capture = createExplainCapture([binaryFile()], source)
+    const explanations = allChangesAssigned(capture)
+    const tampered: ExplainCapture = structuredClone(capture)
+    const change = tampered.changes[0]!
+    if (change.kind !== 'binary') throw new Error('expected a binary change')
+    change.after = { kind: 'binary', size: 99, hash: 'c'.repeat(64) }
+
+    expect(() => materializeExplainDocument(tampered, explanations)).toThrow(
+      'no longer matches captured file content',
     )
   })
 })
