@@ -900,4 +900,73 @@ describe('binary change cards', () => {
     expect(html).not.toContain('<img src=x>')
     expect(html).toContain('assets/&lt;img src=x&gt;.png')
   })
+
+  test('shows a move to an excluded path with both paths and an explicit omitted side', () => {
+    const html = renderReport(
+      document([
+        {
+          title: 'Move',
+          steps: [
+            {
+              text: 'Moved out of scope.',
+              binary: [
+                {
+                  kind: 'binary',
+                  id: 'change-001',
+                  path: 'moved.ts',
+                  status: 'moved-to-excluded',
+                  excludedPath: 'experiments/moved.ts',
+                  oldMode: '100644',
+                  newMode: '100644',
+                  before: { kind: 'text', size: 5, hash: 'a'.repeat(64) },
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+      stubClient,
+    )
+
+    expect(html).toContain('moved.ts → experiments/moved.ts')
+    expect(html).toContain('Moved to excluded path')
+    expect(html).toContain('excluded content omitted')
+    expect(html).toContain('<dd>excluded</dd>')
+    expect(html).not.toContain('<dd>absent</dd>')
+    expect(html).not.toContain('data-diff-mount')
+  })
+
+  test('shows a move from an excluded path in reading order with both paths', () => {
+    const html = renderReport(
+      document([
+        {
+          title: 'Move',
+          steps: [
+            {
+              text: 'Moved into scope.',
+              binary: [
+                {
+                  kind: 'binary',
+                  id: 'change-001',
+                  path: 'back.ts',
+                  status: 'moved-from-excluded',
+                  excludedPath: 'experiments/moved.ts',
+                  oldMode: '100644',
+                  newMode: '100644',
+                  after: { kind: 'text', size: 5, hash: 'b'.repeat(64) },
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+      stubClient,
+    )
+
+    expect(html).toContain('experiments/moved.ts → back.ts')
+    expect(html).toContain('Moved from excluded path')
+    expect(html).toContain('excluded content omitted')
+    expect(html).toContain('<dd>excluded</dd>')
+    expect(html).not.toContain('<dd>absent</dd>')
+  })
 })

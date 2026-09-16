@@ -92,8 +92,16 @@ that exact file and never a Git pattern. Exclusions apply to working-tree captur
 (including untracked files) and to `--staged` captures, and are applied before Diffwalk
 reads or validates files, so an unsupported file outside the requested scope cannot block
 the capture.
-When a rename crosses the selection, only its in-scope side is captured: moving a file
-out of an excluded directory appears as an addition, and moving one in as a deletion.
+Selection happens in two stages. Diffwalk hands Git the literal `--` paths first, and
+Git detects renames among the changes that survive that scope. Diffwalk then drops
+`--exclude` paths from the result. Git may read excluded file contents while it looks
+for similarities, so exclusions cannot hide content from Git's rename detection, but
+Diffwalk never reads or validates an omitted side. Rename detection is a heuristic, and
+a rename that crosses an initial `--` path boundary may lose its relationship and appear
+as an ordinary addition or deletion; only `--exclude` keeps detected moves. When a
+detected rename crosses an `--exclude` boundary, the review keeps both paths and shows
+`Moved to excluded path` or `Moved from excluded path`, omits the excluded side's content
+explicitly rather than as an empty file, and drops a rename whose both sides are excluded.
 When the selection matches no changes, `inspect` stops with `Nothing to capture` instead
 of writing an empty walk. Say which paths you excluded when you share the review, since
 the review cannot show changes that were never captured.

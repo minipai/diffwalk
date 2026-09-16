@@ -45,7 +45,7 @@ function createCli(): Command {
     .option('--output <path>', 'Write capture to an explicit path')
     .option('--explanations <path>', 'Write or preserve authoring YAML at an explicit path')
     .allowExcessArguments(true)
-    .addHelpText('after', '\nLimit a working-tree capture with --staged, a `-- <path>...` list, or repeatable `--exclude <path>`. An exclusion always wins over an included path.')
+    .addHelpText('after', '\nLimit a working-tree capture with --staged, a `-- <path>...` list, or repeatable `--exclude <path>`. An exclusion always wins over an included path; a rename crossing an exclusion keeps both paths and omits the excluded side.')
     .action((_revision: string | undefined, options: Record<string, unknown>, command: Command) => {
       const positionals = inspectPositionals(command)
       return inspectChanges(

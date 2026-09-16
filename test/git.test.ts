@@ -743,7 +743,7 @@ describe('captureGitChanges selection', () => {
     expect(capture.files.map((file) => file.path)).toEqual(['other.ts', 'src/a.ts'])
   })
 
-  test('reports a rename into an excluded directory as a deletion of its in-scope side', async () => {
+  test('preserves a rename into an excluded directory as a move with both paths', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
     directories.push(directory)
     await initializeRepository(directory)
@@ -757,19 +757,22 @@ describe('captureGitChanges selection', () => {
 
     const capture = await captureGitChanges('HEAD', directory, { exclude: ['experiments'] })
 
+    // Git detects the rename before the exclusion drops the destination, so the in-scope old
+    // side keeps the move instead of degrading to a deletion.
     expect(capture.files).toEqual([
       {
         path: 'moved.ts',
-        status: 'deleted',
+        excludedPath: 'experiments/moved.ts',
+        status: 'moved-to-excluded',
         oldMode: '100644',
-        newMode: '000000',
+        newMode: '100644',
         oldContent: 'same\n',
         newContent: '',
       },
     ])
   })
 
-  test('reports a rename out of an excluded directory as an addition of its in-scope side', async () => {
+  test('preserves a rename out of an excluded directory as a move with both paths', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
     directories.push(directory)
     await initializeRepository(directory)
@@ -785,11 +788,115 @@ describe('captureGitChanges selection', () => {
     expect(capture.files).toEqual([
       {
         path: 'back.ts',
-        status: 'added',
-        oldMode: '000000',
+        excludedPath: 'experiments/moved.ts',
+        status: 'moved-from-excluded',
+        oldMode: '100644',
         newMode: '100644',
         oldContent: '',
         newContent: 'same\n',
+      },
+    ])
+  })
+
+  test('omits a rename whose both sides are excluded', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'experiments'))
+    await writeFile(join(directory, 'experiments', 'inside.ts'), 'inside\n')
+    await writeFile(join(directory, 'kept.ts'), 'kept\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['mv', 'experiments/inside.ts', 'experiments/renamed.ts'], directory)
+    await writeFile(join(directory, 'kept.ts'), 'kept changed\n')
+
+    const capture = await captureGitChanges('HEAD', directory, { exclude: ['experiments'] })
+
+    // The rename lives entirely inside the excluded directory, so the whole move is omitted
+    // and only the unrelated modification remains.
+    expect(capture.files.map((file) => file.path)).toEqual(['kept.ts'])
+  })
+
+  test('keeps a rename with neither side excluded as a normal rename', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'kept-old.ts'), 'kept\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['mv', 'kept-old.ts', 'kept-new.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, { exclude: ['experiments'] })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'kept-new.ts',
+        oldPath: 'kept-old.ts',
+        status: 'renamed',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'kept\n',
+        newContent: 'kept\n',
+      },
+    ])
+  })
+
+  test('preserves a staged rename crossing an exclusion with only the index side read', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'experiments'))
+    await writeFile(join(directory, 'moved.ts'), 'same\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['mv', 'moved.ts', 'experiments/moved.ts'], directory)
+    await git(['add', '-A'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      staged: true,
+      exclude: ['experiments'],
+    })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'moved.ts',
+        excludedPath: 'experiments/moved.ts',
+        status: 'moved-to-excluded',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'same\n',
+        newContent: '',
+      },
+    ])
+  })
+
+  test('loses a rename that crosses the initial positive path scope', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'old.ts'), 'same\n')
+    await writeFile(join(directory, 'other.ts'), 'other\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['mv', 'old.ts', 'new.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, { paths: ['old.ts'] })
+
+    // Git resolves the positive pathspec before it pairs renames, so the destination outside
+    // the scope leaves the in-scope source looking like a deletion. Only `--exclude` keeps
+    // detected moves; this limitation is documented.
+    expect(capture.files).toEqual([
+      {
+        path: 'old.ts',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: 'same\n',
+        newContent: '',
       },
     ])
   })

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { BinarySide, DraftFile, ExplainCapture } from '../../format/types'
+import { excludedSide } from '../../format/status'
 import { captureInput, readCapture } from '../input'
 import { UsageError } from '../usage'
 
@@ -14,12 +15,21 @@ export async function printFile(filePath: string, options: z.input<typeof fileOp
   validateFileSide(before, after)
   const capture = await readCapture(await captureInput({ input }))
   const file = findFile(capture, filePath)
+  rejectExcludedSide(file, before ? 'old' : 'new')
   const side = before ? file.oldBinary : file.newBinary
   if (side !== undefined) {
     printBinarySide(file, before ? 'before' : 'after', side)
     return
   }
   process.stdout.write(before ? file.oldContent : file.newContent)
+}
+
+// An excluded side was never read into the capture, so printing it would show an empty file
+// instead of the omission it is.
+function rejectExcludedSide(file: DraftFile, side: 'old' | 'new'): void {
+  if (excludedSide(file.status) === side) {
+    throw new UsageError(`The ${side === 'old' ? 'before' : 'after'} side of ${file.path} is excluded from this capture`)
+  }
 }
 
 function validateFileSide(before: boolean, after: boolean): void {

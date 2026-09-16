@@ -13,13 +13,14 @@ import type {
   Explanations,
   TextChangeBlock,
 } from '../format/types'
+import { excludedSide, isMovedStatus } from '../format/status'
 
 export function createExplainCapture(files: DraftFile[], source: CaptureSource): ExplainCapture {
   let nextId = 1
   const changes: ChangeBlock[] = []
 
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
-    if (file.oldBinary !== undefined || file.newBinary !== undefined) {
+    if (file.oldBinary !== undefined || file.newBinary !== undefined || isMovedStatus(file.status)) {
       changes.push(binaryChangeBlock(file, changeId(nextId++)))
       continue
     }
@@ -65,6 +66,7 @@ function binaryChangeBlock(file: DraftFile, id: string): BinaryChangeBlock {
     path: file.path,
     status: file.status,
     ...(file.oldPath === undefined ? {} : { oldPath: file.oldPath }),
+    ...(file.excludedPath === undefined ? {} : { excludedPath: file.excludedPath }),
     oldMode: file.oldMode,
     newMode: file.newMode,
     ...(before === undefined ? {} : { before }),
@@ -73,9 +75,14 @@ function binaryChangeBlock(file: DraftFile, id: string): BinaryChangeBlock {
 }
 
 // Every existing side has an identity, whether its bytes decode as text or stay binary, so a
-// text-to-binary or binary-to-text transition keeps both sides instead of dropping one.
+// text-to-binary or binary-to-text transition keeps both sides instead of dropping one. A
+// side omitted by an exclusion is absent here too, but its status says why, so a renderer
+// never mistakes it for an empty file.
 function changeSide(file: DraftFile, side: 'old' | 'new'): ChangeSide | undefined {
-  const absent = side === 'old' ? file.status === 'added' : file.status === 'deleted'
+  const absent =
+    side === 'old'
+      ? file.status === 'added' || excludedSide(file.status) === 'old'
+      : file.status === 'deleted' || excludedSide(file.status) === 'new'
   if (absent) return undefined
 
   const binary = side === 'old' ? file.oldBinary : file.newBinary
@@ -98,6 +105,12 @@ export function captureIdFor(files: DraftFile[], includeModes = true): string {
     hash.update('\0')
     hash.update(file.oldPath ?? '')
     hash.update('\0')
+    // Only a rename crossing an exclusion has an excluded path, so files without one keep
+    // the capture ID they had before this field existed.
+    if (file.excludedPath !== undefined) {
+      hash.update(`excluded:${file.excludedPath}`)
+      hash.update('\0')
+    }
     if (includeModes) {
       hash.update(file.oldMode)
       hash.update('\0')
@@ -216,13 +229,14 @@ function materializeStep(
 // confirms the captured sizes, hashes, status, and modes still describe it.
 function validateBinaryChange(change: BinaryChangeBlock, filesByPath: Map<string, DraftFile>): void {
   const file = findFile(filesByPath, change.path)
-  if (file.oldBinary === undefined && file.newBinary === undefined) {
+  if (file.oldBinary === undefined && file.newBinary === undefined && !isMovedStatus(file.status)) {
     throw new Error(`Change block no longer matches captured file content: ${change.id}`)
   }
   const expected = binaryChangeBlock(file, change.id)
   if (
     expected.status !== change.status ||
     expected.oldPath !== change.oldPath ||
+    expected.excludedPath !== change.excludedPath ||
     expected.oldMode !== change.oldMode ||
     expected.newMode !== change.newMode ||
     JSON.stringify(expected.before) !== JSON.stringify(change.before) ||

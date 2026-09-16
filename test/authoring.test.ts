@@ -640,3 +640,97 @@ describe('binary changes', () => {
     )
   })
 })
+
+describe('cross-exclusion moves', () => {
+  const movedToExcluded: DraftFile = {
+    path: 'moved.ts',
+    excludedPath: 'experiments/moved.ts',
+    status: 'moved-to-excluded',
+    ...regularModes,
+    oldContent: 'same\n',
+    newContent: '',
+  }
+
+  const movedFromExcluded: DraftFile = {
+    path: 'back.ts',
+    excludedPath: 'experiments/moved.ts',
+    status: 'moved-from-excluded',
+    ...regularModes,
+    oldContent: '',
+    newContent: 'same\n',
+  }
+
+  test('keeps the included side and names the excluded one instead of showing it empty', () => {
+    const capture = createExplainCapture([movedToExcluded], source)
+    const change = capture.changes[0]!
+
+    expect(change).toEqual({
+      kind: 'binary',
+      id: 'change-001',
+      path: 'moved.ts',
+      status: 'moved-to-excluded',
+      excludedPath: 'experiments/moved.ts',
+      oldMode: '100644',
+      newMode: '100644',
+      before: {
+        kind: 'text',
+        size: 5,
+        hash: createHash('sha256').update('same\n').digest('hex'),
+      },
+    })
+    expect(change).not.toHaveProperty('after')
+  })
+
+  test('keeps the destination side when a rename arrives from an excluded path', () => {
+    const capture = createExplainCapture([movedFromExcluded], source)
+    const change = capture.changes[0]!
+
+    expect(change).toEqual({
+      kind: 'binary',
+      id: 'change-001',
+      path: 'back.ts',
+      status: 'moved-from-excluded',
+      excludedPath: 'experiments/moved.ts',
+      oldMode: '100644',
+      newMode: '100644',
+      after: {
+        kind: 'text',
+        size: 5,
+        hash: createHash('sha256').update('same\n').digest('hex'),
+      },
+    })
+    expect(change).not.toHaveProperty('before')
+  })
+
+  test('materializes the move block so the rendered review keeps both paths', () => {
+    const capture = createExplainCapture([movedToExcluded], source)
+    const document = materializeExplainDocument(capture, allChangesAssigned(capture))
+
+    expect(document.sections[0]!.steps[0]!.binary).toEqual([
+      expect.objectContaining({
+        status: 'moved-to-excluded',
+        path: 'moved.ts',
+        excludedPath: 'experiments/moved.ts',
+      }),
+    ])
+  })
+
+  test('captureId distinguishes the omitted path from an ordinary deletion', () => {
+    const moved = createExplainCapture([movedToExcluded], source).captureId
+    const deleted = createExplainCapture(
+      [
+        {
+          path: 'moved.ts',
+          status: 'deleted',
+          oldMode: '100644',
+          newMode: '000000',
+          oldContent: 'same\n',
+          newContent: '',
+        },
+      ],
+      source,
+    ).captureId
+
+    expect(moved).not.toBe(deleted)
+  })
+})

@@ -5,10 +5,22 @@ export interface BinarySide {
   hash: string
 }
 
+// A rename whose destination or source is a literal exclusion keeps the detected move but
+// omits the excluded side, so the status records the direction instead of degrading the
+// change to a plain addition or deletion.
+export type FileStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'moved-to-excluded'
+  | 'moved-from-excluded'
+
 export interface DraftFile {
   path: string
   oldPath?: string
-  status: 'added' | 'modified' | 'deleted' | 'renamed'
+  excludedPath?: string
+  status: FileStatus
   oldMode: GitMode
   newMode: GitMode
   oldContent: string
@@ -39,8 +51,9 @@ export interface BinaryChangeBlock {
   kind: 'binary'
   id: string
   path: string
-  status: 'added' | 'modified' | 'deleted' | 'renamed'
+  status: FileStatus
   oldPath?: string
+  excludedPath?: string
   oldMode: GitMode
   newMode: GitMode
   before?: ChangeSide
