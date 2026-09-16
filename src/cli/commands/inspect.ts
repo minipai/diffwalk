@@ -19,6 +19,7 @@ const inspectOptionsSchema = z.object({
   base: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
+  exclude: z.array(z.string()).default([]),
   output: z.string().optional(),
   explanations: z.string().optional(),
 })
@@ -29,16 +30,18 @@ export async function inspectChanges(
   options: z.input<typeof inspectOptionsSchema>,
   paths: string[] = [],
 ): Promise<void> {
-  const { base, from, to, staged, output, explanations } = inspectOptionsSchema.parse(options)
-  validateCaptureOptions(revision, { base, from, to, staged }, paths)
+  const { base, from, to, staged, exclude, output, explanations } = inspectOptionsSchema.parse(options)
+  validateCaptureOptions(revision, { base, from, to, staged, exclude }, paths)
+  validateSelectionPaths(paths, exclude)
   const capturedAt = new Date().toISOString()
-  const capture = await captureChanges(revision, { base, from, to, staged }, paths, capturedAt)
+  const capture = await captureChanges(revision, { base, from, to, staged, exclude }, paths, capturedAt)
+  validateSelection(capture, paths, exclude)
   await saveCapture(capture, { output, explanations }, capturedAt)
 }
 
 function validateCaptureOptions(
   revision: string | undefined,
-  { base, from, to, staged }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged'>,
+  { base, from, to, staged, exclude }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged' | 'exclude'>,
   paths: string[],
 ): void {
   if (from !== undefined || to !== undefined) {
@@ -51,6 +54,9 @@ function validateCaptureOptions(
     if (paths.length > 0) {
       throw new UsageError('Path limiting applies only to working-tree captures')
     }
+    if (exclude.length > 0) {
+      throw new UsageError('--exclude applies only to working-tree captures')
+    }
     if (staged) {
       throw new UsageError('Do not combine --staged with --from/--to')
     }
@@ -61,15 +67,34 @@ function validateCaptureOptions(
     if (paths.length > 0) {
       throw new UsageError('Path limiting applies only to working-tree captures')
     }
+    if (exclude.length > 0) {
+      throw new UsageError('--exclude applies only to working-tree captures')
+    }
     if (staged) {
       throw new UsageError('Do not combine --staged with a positional commit revision')
     }
   }
 }
 
+function validateSelection(capture: ExplainCapture, paths: string[], exclude: string[]): void {
+  if ((paths.length > 0 || exclude.length > 0) && capture.files.length === 0) {
+    throw new UsageError(
+      'Nothing to capture: the selected paths and --exclude values match no working-tree changes',
+    )
+  }
+}
+
+// Git reads an empty literal pathspec as "match everything", so a missing shell variable
+// would silently invert the selection instead of failing. Reject empty values at the boundary.
+function validateSelectionPaths(paths: string[], exclude: string[]): void {
+  if ([...paths, ...exclude].some((path) => path === '')) {
+    throw new UsageError('Selection paths and --exclude values must not be empty')
+  }
+}
+
 async function captureChanges(
   revision: string | undefined,
-  { base, from, to, staged }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged'>,
+  { base, from, to, staged, exclude }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged' | 'exclude'>,
   paths: string[],
   capturedAt: string,
 ): Promise<ExplainCapture> {
@@ -93,7 +118,7 @@ async function captureChanges(
     })
   } else {
     const resolvedBase = base ?? 'HEAD'
-    const git = await captureGitChanges(resolvedBase, process.cwd(), { staged, paths })
+    const git = await captureGitChanges(resolvedBase, process.cwd(), { staged, paths, exclude })
     return createExplainCapture(git.files, {
       kind: 'working-tree',
       from: { revision: resolvedBase, commit: git.baseCommit },

@@ -73,11 +73,30 @@ publication tokens:
 Capture selected working-tree changes:
 
 ```bash
-diffwalk inspect --staged             # staged changes only
-diffwalk inspect -- src/a.ts src/b.ts # selected paths
-diffwalk inspect --staged -- src/a.ts  # both
-diffwalk inspect --base main          # working tree relative to main
+diffwalk inspect --staged                     # staged changes only
+diffwalk inspect -- src/a.ts src/b.ts         # selected paths
+diffwalk inspect --staged -- src/a.ts         # both
+diffwalk inspect --base main                  # working tree relative to main
+diffwalk inspect --exclude experiments        # omit a file or directory
+diffwalk inspect --exclude notes.md --exclude experiments
+diffwalk inspect --exclude src/legacy -- src  # exclusion wins inside a selected path
 ```
+
+`--exclude` is repeatable and takes literal file or directory paths relative to the
+repository root. A directory excludes everything under it on path boundaries, so
+`--exclude experiments` also omits `experiments/old.ts` but not `experiments.ts`.
+Positive paths after `--` and `--exclude` values combine: a change is captured when it
+matches the `--` list (or that list is empty) and matches no `--exclude` value, so an
+exclusion always wins. Both selections are literal, so `--exclude 'notes[1].md'` names
+that exact file and never a Git pattern. Exclusions apply to working-tree captures
+(including untracked files) and to `--staged` captures, and are applied before Diffwalk
+reads or validates files, so an unsupported file outside the requested scope cannot block
+the capture.
+When a rename crosses the selection, only its in-scope side is captured: moving a file
+out of an excluded directory appears as an addition, and moving one in as a deletion.
+When the selection matches no changes, `inspect` stops with `Nothing to capture` instead
+of writing an empty walk. Say which paths you excluded when you share the review, since
+the review cannot show changes that were never captured.
 
 Or capture committed changes without checking out either revision:
 
@@ -86,8 +105,8 @@ diffwalk inspect <commit>                # commit relative to its first parent
 diffwalk inspect --from main --to feature # compare two committed revisions
 ```
 
-Revision captures ignore local changes and cannot be limited by path. Single-commit
-inspection requires a parent, so it does not support root commits.
+Revision captures ignore local changes and cannot be limited by path or `--exclude`.
+Single-commit inspection requires a parent, so it does not support root commits.
 
 `.diffwalk/current` selects the walk used by later commands. Capturing the same source
 and contents reuses it; a different capture creates a new walk and preserves previous walks.

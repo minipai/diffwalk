@@ -691,6 +691,194 @@ describe('captureGitChanges selection', () => {
     expect(capture.files).toEqual([])
   })
 
+  test('excludes named files and directories from a working-tree capture', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'experiments'))
+    await writeFile(join(directory, 'experiments', 'inside.ts'), 'inside old\n')
+    await writeFile(join(directory, 'experiments.ts'), 'sibling old\n')
+    await writeFile(join(directory, 'notes.md'), 'notes old\n')
+    await writeFile(join(directory, 'kept.ts'), 'kept old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'experiments', 'inside.ts'), 'inside new\n')
+    await writeFile(join(directory, 'experiments.ts'), 'sibling new\n')
+    await writeFile(join(directory, 'notes.md'), 'notes new\n')
+    await writeFile(join(directory, 'kept.ts'), 'kept new\n')
+    await writeFile(join(directory, 'experiments', 'untracked.ts'), 'untracked\n')
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      exclude: ['experiments', 'notes.md'],
+    })
+
+    // `experiments` excludes the tracked directory contents and its untracked file, but
+    // not the sibling `experiments.ts`: the match is literal, on path boundaries.
+    expect(capture.files.map((file) => file.path)).toEqual(['experiments.ts', 'kept.ts'])
+  })
+
+  test('applies exclusions after positive paths so an exclusion always wins', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'src', 'nested'), { recursive: true })
+    await writeFile(join(directory, 'src', 'a.ts'), 'a old\n')
+    await writeFile(join(directory, 'src', 'skip.ts'), 'skip old\n')
+    await writeFile(join(directory, 'src', 'nested', 'deep.ts'), 'deep old\n')
+    await writeFile(join(directory, 'other.ts'), 'other old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'src', 'a.ts'), 'a new\n')
+    await writeFile(join(directory, 'src', 'skip.ts'), 'skip new\n')
+    await writeFile(join(directory, 'src', 'nested', 'deep.ts'), 'deep new\n')
+    await writeFile(join(directory, 'other.ts'), 'other new\n')
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      paths: ['src', 'other.ts'],
+      exclude: ['src/skip.ts', 'src/nested'],
+    })
+
+    expect(capture.files.map((file) => file.path)).toEqual(['other.ts', 'src/a.ts'])
+  })
+
+  test('reports a rename into an excluded directory as a deletion of its in-scope side', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'experiments'))
+    await writeFile(join(directory, 'experiments', 'kept.ts'), 'kept\n')
+    await writeFile(join(directory, 'moved.ts'), 'same\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['mv', 'moved.ts', 'experiments/moved.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, { exclude: ['experiments'] })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'moved.ts',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: 'same\n',
+        newContent: '',
+      },
+    ])
+  })
+
+  test('reports a rename out of an excluded directory as an addition of its in-scope side', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'experiments'))
+    await writeFile(join(directory, 'experiments', 'moved.ts'), 'same\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['mv', 'experiments/moved.ts', 'back.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, { exclude: ['experiments'] })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'back.ts',
+        status: 'added',
+        oldMode: '000000',
+        newMode: '100644',
+        oldContent: '',
+        newContent: 'same\n',
+      },
+    ])
+  })
+
+  test('does not read or reject unsupported files that an exclusion omits', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'experiments'))
+    await symlink('one', join(directory, 'experiments', 'link'))
+    await writeFile(join(directory, 'script.sh'), '#!/bin/sh\n')
+    await writeFile(join(directory, 'kept.ts'), 'kept old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await unlink(join(directory, 'experiments', 'link'))
+    await symlink('two', join(directory, 'experiments', 'link'))
+    await chmod(join(directory, 'script.sh'), 0o755)
+    await writeFile(join(directory, 'kept.ts'), 'kept new\n')
+
+    // Both the symlink (unsupported type) and the mode-only change are outside the
+    // requested scope, so they must not be read or validated.
+    const capture = await captureGitChanges('HEAD', directory, {
+      exclude: ['experiments', 'script.sh'],
+    })
+
+    expect(capture.files.map((file) => file.path)).toEqual(['kept.ts'])
+    await expect(captureGitChanges('HEAD', directory)).rejects.toThrow('Unsupported Git file type')
+  })
+
+  test('treats exclusion paths literally, including special characters', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    for (const name of ['star*file.ts', 'starXfile.ts', 'q?mark.ts', 'brack[et].ts', 'sp ace.ts']) {
+      await writeFile(join(directory, name), `${name} old\n`)
+    }
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    for (const name of ['star*file.ts', 'starXfile.ts', 'q?mark.ts', 'brack[et].ts', 'sp ace.ts']) {
+      await writeFile(join(directory, name), `${name} new\n`)
+    }
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      exclude: ['star*file.ts', 'q?mark.ts', 'brack[et].ts', 'sp ace.ts'],
+    })
+
+    // `star*file.ts` excludes only that literal name, so the glob-similar `starXfile.ts` stays.
+    expect(capture.files.map((file) => file.path)).toEqual(['starXfile.ts'])
+  })
+
+  test('applies an exclusion to a staged capture, including a spaced filename', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'sp ace.ts'), 'old\n')
+    await writeFile(join(directory, 'kept.ts'), 'old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'sp ace.ts'), 'new\n')
+    await writeFile(join(directory, 'kept.ts'), 'new\n')
+    await git(['add', '.'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      staged: true,
+      exclude: ['sp ace.ts'],
+    })
+
+    expect(capture.files.map((file) => file.path)).toEqual(['kept.ts'])
+  })
+
+  test('returns an empty capture when every change is excluded', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'tracked.ts'), 'old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'tracked.ts'), 'new\n')
+    await writeFile(join(directory, 'untracked.ts'), 'untracked\n')
+
+    const capture = await captureGitChanges('HEAD', directory, { exclude: ['.'] })
+
+    expect(capture.files).toEqual([])
+  })
+
   test('captures a staged rename with both sides', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
     directories.push(directory)

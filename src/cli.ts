@@ -41,10 +41,11 @@ function createCli(): Command {
     .option('--base <revision>', 'Git base to diff against')
     .option('--from <revision>', 'Committed revision range start')
     .option('--to <revision>', 'Committed revision range end')
+    .option('--exclude <path>', 'Exclude a literal file or directory; repeatable', collectExclude, [])
     .option('--output <path>', 'Write capture to an explicit path')
     .option('--explanations <path>', 'Write or preserve authoring YAML at an explicit path')
     .allowExcessArguments(true)
-    .addHelpText('after', '\nLimit a working-tree capture with --staged or a `-- <path>...` list.')
+    .addHelpText('after', '\nLimit a working-tree capture with --staged, a `-- <path>...` list, or repeatable `--exclude <path>`. An exclusion always wins over an included path.')
     .action((_revision: string | undefined, options: Record<string, unknown>, command: Command) => {
       const positionals = inspectPositionals(command)
       return inspectChanges(
@@ -149,6 +150,10 @@ function validateRevisionCount(count: number, hasPathSeparator: boolean): void {
       ? 'Pass at most one revision before `--`'
       : 'Pass at most one revision; separate paths from options with `--`')
   }
+}
+
+function collectExclude(path: string, paths: string[]): string[] {
+  return [...paths, path]
 }
 
 function reportError(error: unknown): void {

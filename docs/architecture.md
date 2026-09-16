@@ -114,9 +114,10 @@ exact corresponding diffs in a deliberate order.
 - `src/format/schema.ts`: boundary-only Zod schemas for the machine-owned capture and the author-edited
   explanations, plus the version 1 ExplainDocument and its optional attribution metadata.
 - `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked text
-  and binary files from an immutable Git base commit, optionally reading the index or
-  limiting the capture to named paths. A text side keeps its UTF-8 content; a binary side
-  keeps only its byte size and SHA-256 content hash.
+  and binary files from an immutable Git base commit, optionally reading the index and
+  limiting the capture to literal selected paths or away from literal excluded paths,
+  with Git applying every exclusion before any file is read. A text side keeps its UTF-8
+  content; a binary side keeps only its byte size and SHA-256 content hash.
 - `src/authoring/capture.ts`: derives text change blocks, file-level binary change blocks,
   and the content `captureId`, and materializes exact section patches from capture plus
   explanations. Text-only files hash into `captureId` exactly as before binary support, so
