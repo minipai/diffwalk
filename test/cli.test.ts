@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { captureIdFor } from '../src/authoring/capture'
@@ -651,12 +651,14 @@ describe('inspect', () => {
     expect(check.stdout).toContain(`capture ${capture.captureId.slice(0, 12)}`)
   })
 
-  test('rejects path limiting and --staged outside working-tree captures', async () => {
+  test('rejects path limiting, --exclude, and --staged outside working-tree captures', async () => {
     const repo = await committedFixtureRepo()
 
     for (const args of [
       ['inspect', 'HEAD', '--', 'committed.ts'],
       ['inspect', '--from', 'HEAD^1', '--to', 'HEAD', '--', 'committed.ts'],
+      ['inspect', 'HEAD', '--exclude', 'committed.ts'],
+      ['inspect', '--from', 'HEAD^1', '--to', 'HEAD', '--exclude', 'committed.ts'],
       ['inspect', '--staged', 'HEAD'],
       ['inspect', '--staged', '--from', 'HEAD^1', '--to', 'HEAD'],
       ['inspect', 'HEAD', 'extra'],
@@ -665,6 +667,198 @@ describe('inspect', () => {
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr.length).toBeGreaterThan(0)
     }
+  })
+
+  test('excludes named files and directories from a working-tree capture', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await mkdir(join(repo, 'experiments'))
+    await writeFile(join(repo, 'experiments', 'exp.ts'), 'exp old\n')
+    await writeFile(join(repo, 'notes.md'), 'notes old\n')
+    await writeFile(join(repo, 'kept.ts'), 'kept old\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+
+    await writeFile(join(repo, 'experiments', 'exp.ts'), 'exp new\n')
+    await writeFile(join(repo, 'experiments', 'untracked.ts'), 'untracked\n')
+    await writeFile(join(repo, 'notes.md'), 'notes new\n')
+    await writeFile(join(repo, 'kept.ts'), 'kept new\n')
+
+    const result = await runCli(['inspect', '--exclude', 'experiments', '--exclude', 'notes.md'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['kept.ts'])
+  })
+
+  test('combines --exclude with paths after -- and lets the exclusion win', async () => {
+    const repo = await fixtureRepo()
+    await mkdir(join(repo, 'src'))
+    await writeFile(join(repo, 'src', 'skip.ts'), 'skip\n')
+    await writeFile(join(repo, 'src', 'kept.ts'), 'kept\n')
+
+    const combined = await runCli(['inspect', '--exclude', 'src/skip.ts', '--', 'src', 'greeting.ts'], repo)
+    expect(combined.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['greeting.ts', 'src/kept.ts'])
+  })
+
+  test('treats an exclusion with special characters as a literal path', async () => {
+    const repo = await fixtureRepo()
+    await writeFile(join(repo, 'notes[1].md'), 'notes\n')
+    await writeFile(join(repo, 'notesA.md'), 'other\n')
+
+    const result = await runCli(['inspect', '--exclude', 'notes[1].md'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual([
+      'greeting.ts',
+      'notesA.md',
+      'untracked.ts',
+    ])
+  })
+
+  test('rejects an empty selection instead of writing a walk', async () => {
+    const repo = await fixtureRepo()
+
+    const excludedEverything = await runCli(['inspect', '--exclude', '.'], repo)
+    expect(excludedEverything.exitCode).not.toBe(0)
+    expect(excludedEverything.stderr).toContain('Nothing to capture')
+
+    const noMatchingPath = await runCli(['inspect', '--', 'nonexistent.ts'], repo)
+    expect(noMatchingPath.exitCode).not.toBe(0)
+    expect(noMatchingPath.stderr).toContain('Nothing to capture')
+
+    expect(existsSync(diffwalkDir(repo))).toBe(false)
+  })
+
+  test('rejects empty selection values instead of silently changing scope', async () => {
+    const repo = await fixtureRepo()
+
+    for (const args of [
+      ['inspect', '--exclude', ''],
+      ['inspect', '--exclude='],
+      ['inspect', '--', ''],
+    ]) {
+      const result = await runCli(args, repo)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('must not be empty')
+    }
+    expect(existsSync(diffwalkDir(repo))).toBe(false)
+  })
+
+  test('excludes an untracked file by exact name', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['inspect', '--exclude', 'untracked.ts'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['greeting.ts'])
+  })
+
+  test('lets an exact exclusion protect an unsupported file inside a selected path', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await mkdir(join(repo, 'experiments'))
+    await symlink('one', join(repo, 'experiments', 'link'))
+    await writeFile(join(repo, 'experiments', 'other.ts'), 'other old\n')
+    await writeFile(join(repo, 'kept.ts'), 'kept old\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+
+    await rm(join(repo, 'experiments', 'link'))
+    await symlink('two', join(repo, 'experiments', 'link'))
+    await writeFile(join(repo, 'experiments', 'other.ts'), 'other new\n')
+    await writeFile(join(repo, 'kept.ts'), 'kept new\n')
+
+    const result = await runCli(
+      ['inspect', '--exclude', 'experiments/link', '--', 'experiments', 'kept.ts'],
+      repo,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual([
+      'experiments/other.ts',
+      'kept.ts',
+    ])
+  })
+
+  test('captures only the in-scope side of a rename crossing an excluded directory', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await mkdir(join(repo, 'experiments'))
+    await writeFile(join(repo, 'moved.ts'), 'same\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+
+    await git(['mv', 'moved.ts', 'experiments/moved.ts'], repo)
+
+    const result = await runCli(['inspect', '--exclude', 'experiments'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files).toEqual([
+      {
+        path: 'moved.ts',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: 'same\n',
+        newContent: '',
+      },
+    ])
+  })
+
+  test('excludes an unsupported file so an unrelated capture can succeed', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await mkdir(join(repo, 'experiments'))
+    await symlink('one', join(repo, 'experiments', 'link'))
+    await writeFile(join(repo, 'kept.ts'), 'kept old\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+
+    await rm(join(repo, 'experiments', 'link'))
+    await symlink('two', join(repo, 'experiments', 'link'))
+    await writeFile(join(repo, 'kept.ts'), 'kept new\n')
+
+    const blocked = await runCli(['inspect'], repo)
+    expect(blocked.exitCode).not.toBe(0)
+    expect(blocked.stderr).toContain('Unsupported Git file type')
+
+    const excluded = await runCli(['inspect', '--exclude', 'experiments'], repo)
+    expect(excluded.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['kept.ts'])
+  })
+
+  test('exposes --exclude in inspect help', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['inspect', '--help'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('--exclude <path>')
+    expect(result.stdout).toContain('An exclusion always wins')
+  })
+
+  test('--exclude composes with --staged', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'first.ts'), 'first old\n')
+    await writeFile(join(repo, 'second.ts'), 'second old\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+
+    await writeFile(join(repo, 'first.ts'), 'first new\n')
+    await writeFile(join(repo, 'second.ts'), 'second new\n')
+    await git(['add', '.'], repo)
+
+    const result = await runCli(['inspect', '--staged', '--exclude', 'first.ts'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['second.ts'])
   })
 })
 

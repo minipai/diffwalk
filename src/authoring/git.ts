@@ -21,6 +21,7 @@ export interface GitCapture {
 export interface CaptureGitChangesOptions {
   staged?: boolean
   paths?: string[]
+  exclude?: string[]
 }
 
 export interface GitRevisionCapture extends GitCapture {
@@ -45,15 +46,16 @@ export async function captureGitChanges(
   cwd = process.cwd(),
   options: CaptureGitChangesOptions = {},
 ): Promise<GitCapture> {
-  const { staged = false, paths = [] } = options
+  const { staged = false, paths = [], exclude = [] } = options
   const root = (await gitText(['rev-parse', '--show-toplevel'], cwd)).trim()
   const baseCommit = (
     await gitText(['rev-parse', '--verify', '--end-of-options', `${base}^{commit}`], root)
   ).trim()
-  const pathEnvironment = paths.length > 0 ? { GIT_LITERAL_PATHSPECS: '1' } : {}
+  const pathspecs = selectionPathspecs(paths, exclude)
+  const pathEnvironment = pathspecs.length > 0 ? { GIT_LITERAL_PATHSPECS: '0' } : {}
   const changes = parseGitChanges(
     await gitBytes(
-      ['diff', '--raw', '-z', '--find-renames', ...(staged ? ['--cached'] : []), baseCommit, '--', ...paths],
+      ['diff', '--raw', '-z', '--find-renames', ...(staged ? ['--cached'] : []), baseCommit, '--', ...pathspecs],
       root,
       pathEnvironment,
     ),
@@ -119,7 +121,7 @@ export async function captureGitChanges(
   if (!staged) {
     const untracked = splitNulls(
       await gitBytes(
-        ['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z', '--', ...paths],
+        ['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z', '--', ...pathspecs],
         root,
         pathEnvironment,
       ),
@@ -407,6 +409,16 @@ function hashBytes(bytes: Uint8Array): string {
 function splitNulls(bytes: Uint8Array): string[] {
   const value = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   return value === '' ? [] : value.slice(0, value.endsWith('\0') ? -1 : undefined).split('\0')
+}
+
+// Positive paths and exclusions are both literal, so special characters name a file rather
+// than a Git pattern, and a directory matches everything it contains. Git applies every
+// exclusion after the positive paths, so an exclusion always wins over a `--` path.
+function selectionPathspecs(paths: string[], exclude: string[]): string[] {
+  return [
+    ...paths.map((path) => `:(literal)${path}`),
+    ...exclude.map((path) => `:(exclude,literal)${path}`),
+  ]
 }
 
 function parseGitChanges(bytes: Uint8Array): GitChange[] {
