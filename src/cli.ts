@@ -41,19 +41,16 @@ function createCli(): Command {
     .option('--base <revision>', 'Git base to diff against')
     .option('--from <revision>', 'Committed revision range start')
     .option('--to <revision>', 'Committed revision range end')
-    .option('--exclude <path>', 'Exclude a literal file or directory; repeatable', collectExclude, [])
+    .option('--path <path>', 'Limit a working-tree capture to a literal file or directory; repeatable, not with --pathspec', collectOption, [])
+    .option('--pathspec <expression>', 'Limit a working-tree capture with a Git pathspec expression; repeatable, not with --path', collectOption, [])
+    .option('--exclude <path>', 'Exclude a literal file or directory; repeatable', collectOption, [])
     .option('--output <path>', 'Write capture to an explicit path')
     .option('--explanations <path>', 'Write or preserve authoring YAML at an explicit path')
     .allowExcessArguments(true)
-    .addHelpText('after', '\nLimit a working-tree capture with --staged, a `-- <path>...` list, or repeatable `--exclude <path>`. An exclusion always wins over an included path; a rename crossing an exclusion keeps both paths and omits the excluded side.')
-    .action((_revision: string | undefined, options: Record<string, unknown>, command: Command) => {
-      const positionals = inspectPositionals(command)
-      return inspectChanges(
-        positionals.revision,
-        options,
-        positionals.paths,
-      )
-    })
+    .addHelpText('after', '\nLimit a working-tree capture with repeatable `--path <path>` for literal paths or repeatable `--pathspec <expression>` for Git pathspecs; the two are mutually exclusive. Quote pathspec expressions so the shell does not expand them:\n  diffwalk inspect --pathspec \':(glob)src/**/*.ts\'\n  diffwalk inspect --pathspec \':(exclude)pnpm-lock.yaml\'\nRepeatable `--exclude <path>` drops literal paths after Git scope selection and composes with either mode. An exclusion always wins over an included path; a rename crossing an exclusion keeps both paths and omits the excluded side.')
+    .action((_revision: string | undefined, options: Record<string, unknown>, command: Command) =>
+      inspectChanges(inspectRevision(command), options),
+    )
 
   cli
     .command('walks')
@@ -132,28 +129,42 @@ function createCli(): Command {
   return cli
 }
 
-function inspectPositionals(command: Command): { revision: string | undefined; paths: string[] } {
-  const operands = command.args
-  const separator = process.argv.indexOf('--', 2)
-  if (separator === -1) {
-    validateRevisionCount(operands.length, false)
-    return { revision: operands[0], paths: [] }
+function inspectRevision(command: Command): string | undefined {
+  if (hasPathSeparator(process.argv)) {
+    throw new UsageError(
+      'Path selection no longer uses `-- <path>...`; use repeatable `--path <path>` for literal paths or `--pathspec <expression>` for Git pathspecs',
+    )
   }
-  const paths = process.argv.slice(separator + 1)
-  validateRevisionCount(operands.length - paths.length, true)
-  return { revision: operands.length > paths.length ? operands[0] : undefined, paths }
+  if (command.args.length > 1) {
+    throw new UsageError('Pass at most one revision; select changes with `--path` or `--pathspec`')
+  }
+  return command.args[0]
 }
 
-function validateRevisionCount(count: number, hasPathSeparator: boolean): void {
-  if (count > 1) {
-    throw new UsageError(hasPathSeparator
-      ? 'Pass at most one revision before `--`'
-      : 'Pass at most one revision; separate paths from options with `--`')
+// The old `-- <path>...` selection is gone. Commander consumes a `--` that follows a
+// value-taking option as that option's value, so only a bare `--` that is not a value is
+// the removed path separator.
+function hasPathSeparator(argv: string[]): boolean {
+  const valueOptions = new Set([
+    '--base',
+    '--from',
+    '--to',
+    '--path',
+    '--pathspec',
+    '--exclude',
+    '--output',
+    '--explanations',
+  ])
+  for (let index = 2; index < argv.length; index++) {
+    const token = argv[index]!
+    if (token === '--') return true
+    if (valueOptions.has(token)) index++
   }
+  return false
 }
 
-function collectExclude(path: string, paths: string[]): string[] {
-  return [...paths, path]
+function collectOption(value: string, values: string[]): string[] {
+  return [...values, value]
 }
 
 function reportError(error: unknown): void {

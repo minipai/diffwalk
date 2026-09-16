@@ -16,23 +16,32 @@ explained.
      working-tree changes relative to `HEAD`. Use `--base <revision>` when the user
      names a different working-tree base.
    - Add `--staged` to capture the index instead of the working tree. Limit a
-     working-tree capture with literal paths after `--`, with repeatable
-     `--exclude <path>`, or both, for example `diffwalk inspect --staged -- src/a.ts`
-     or `diffwalk inspect --exclude experiments --exclude notes.md`. Paths are
-     literal file or directory names relative to the repository root: there is no
-     Git pathspec magic, `--exclude experiments` omits the whole directory, and an
-     exclusion always wins over a `--` path. Selection applies only to local captures
-     (the working tree or the index); commit and range captures reject it. When the
-     selection matches no changes, `inspect` stops with `Nothing to capture`. Prefer
-     `--exclude` over listing every included path.
-   - Selection runs in two stages: Git sees the literal `--` paths and detects renames
-     first, then Diffwalk drops `--exclude` paths. Git may read excluded content to detect
-     similarities, but Diffwalk never reads or validates the omitted side. A detected
-     rename crossing an exclusion keeps both paths and is reported as `Moved to excluded
-     path` or `Moved from excluded path`, with the excluded side marked `excluded` and no
-     content; explain that move instead of describing it as an addition or deletion. A
-     rename with both sides excluded is omitted. A rename crossing an initial `--` path
-     boundary can lose its relationship because Git filters before it detects renames.
+     working-tree capture with repeatable `--path <path>` for literal paths,
+     repeatable `--pathspec <expression>` for Git pathspecs, repeatable
+     `--exclude <path>`, or a selection option plus `--exclude`. For example,
+     `diffwalk inspect --staged --path src/a.ts`,
+     `diffwalk inspect --pathspec ':(glob)src/**/*.ts'`, or
+     `diffwalk inspect --pathspec ':(glob)src/**/*.ts' --exclude src/legacy`.
+     `--path` and `--pathspec` are mutually exclusive. `--path` values are literal
+     file or directory names relative to the repository root with Git pathspec magic
+     disabled, so a leading `:` or `*`, `?`, `[` stays literal and
+     `--path 'notes[1].md'` names that exact file. `--pathspec` values go to Git
+     directly, so quote them and use Git pathspec syntax: `:(glob)src/**/*.ts` for a
+     glob and `:(exclude)pnpm-lock.yaml` to drop a file. Selection applies only to
+     local captures (the working tree or the index); commit and range captures reject
+     it. When the selection matches no changes, `inspect` stops with
+     `Nothing to capture`. Prefer `--exclude` over listing every included path.
+   - Selection runs in two stages: Git sees the `--path` or `--pathspec` scope and
+     detects renames first, then Diffwalk drops literal `--exclude` paths. An exclusion
+     pathspec is part of the initial Git scope, not the later `--exclude` step. Git may
+     read excluded content to detect similarities, but Diffwalk never reads or validates
+     the omitted side. A detected rename crossing an `--exclude` keeps both paths and is
+     reported as `Moved to excluded path` or `Moved from excluded path`, with the
+     excluded side marked `excluded` and no content; explain that move instead of
+     describing it as an addition or deletion. A rename with both sides excluded is
+     omitted. A rename crossing an initial `--path` or `--pathspec` boundary, or whose
+     destination an exclusion pathspec drops, can lose its relationship because Git
+     filters before it detects renames.
    - Run `diffwalk inspect <commit>` for one commit relative to its first parent. A
      root commit has no first parent, so use an explicit range instead.
    - Run `diffwalk inspect --from <revision> --to <revision>` for a committed range.
@@ -183,8 +192,9 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
   Diffwalk reports it. Symbolic links and non-file Git paths are still rejected at
   capture time; do not bypass that boundary.
   If the reported files are outside the requested review scope, rerun
-  `inspect -- <path>...` to include only the relevant files, or rerun
-  `inspect --exclude <path>...` to drop the irrelevant ones, and continue. Use
+  `inspect --path <path>...` or `inspect --pathspec <expression>...` to include only the
+  relevant files, or rerun `inspect --exclude <path>...` to drop the irrelevant ones, and
+  continue. Use
   `--staged` only when the requested review scope is the index. Always state which
   paths you excluded or omitted: an omission is intentional, and reviewers cannot see
   changes that were never captured. Do not change files, staging, or Git ignore rules
@@ -210,7 +220,7 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
 ## Commands
 
 ```bash
-diffwalk inspect [revision] [--staged] [--base <revision>] [--from <revision> --to <revision>] [--exclude <path>...] [--output <capture-path>] [--explanations <yaml-path>] [-- <path>...]
+diffwalk inspect [revision] [--staged] [--base <revision>] [--from <revision> --to <revision>] [--path <path>...] [--pathspec <expression>...] [--exclude <path>...] [--output <capture-path>] [--explanations <yaml-path>]
 diffwalk walks
 diffwalk use <walk-id>
 diffwalk delete <walk-id>

@@ -672,7 +672,7 @@ describe('captureGitChanges selection', () => {
     ])
   })
 
-  test('treats -- paths literally instead of applying Git pathspec magic', async () => {
+  test('treats literal --path values literally instead of applying Git pathspec magic', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
     directories.push(directory)
     await initializeRepository(directory)
@@ -1025,6 +1025,219 @@ describe('captureGitChanges selection', () => {
     await expect(captureGitChanges('HEAD', directory, { staged: true })).rejects.toThrow(
       'File mode changes are not supported: script.sh',
     )
+  })
+})
+
+describe('captureGitChanges pathspec selection', () => {
+  test('selects tracked and untracked files with a Git glob pathspec', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'src', 'nested'), { recursive: true })
+    await writeFile(join(directory, 'src', 'a.ts'), 'a old\n')
+    await writeFile(join(directory, 'src', 'nested', 'deep.ts'), 'deep old\n')
+    await writeFile(join(directory, 'other.md'), 'other old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'src', 'a.ts'), 'a new\n')
+    await writeFile(join(directory, 'src', 'nested', 'deep.ts'), 'deep new\n')
+    await writeFile(join(directory, 'src', 'untracked.ts'), 'untracked\n')
+    await writeFile(join(directory, 'other.md'), 'other new\n')
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      pathspecs: [':(glob)src/**/*.ts'],
+    })
+
+    expect(capture.files.map((file) => file.path)).toEqual([
+      'src/a.ts',
+      'src/nested/deep.ts',
+      'src/untracked.ts',
+    ])
+  })
+
+  test('selects everything except an excluded pathspec, tracked and untracked', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'tracked.ts'), 'tracked old\n')
+    await writeFile(join(directory, 'notes.md'), 'notes old\n')
+    await writeFile(join(directory, 'pnpm-lock.yaml'), 'lock old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'tracked.ts'), 'tracked new\n')
+    await writeFile(join(directory, 'notes.md'), 'notes new\n')
+    await writeFile(join(directory, 'pnpm-lock.yaml'), 'lock new\n')
+    await writeFile(join(directory, 'untracked.ts'), 'untracked\n')
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      pathspecs: [':(exclude)pnpm-lock.yaml'],
+    })
+
+    expect(capture.files.map((file) => file.path)).toEqual([
+      'notes.md',
+      'tracked.ts',
+      'untracked.ts',
+    ])
+  })
+
+  test('combines a positive glob with exclusion magic in one scope', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'src', 'legacy'), { recursive: true })
+    await writeFile(join(directory, 'src', 'a.ts'), 'a old\n')
+    await writeFile(join(directory, 'src', 'legacy', 'b.ts'), 'b old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'src', 'a.ts'), 'a new\n')
+    await writeFile(join(directory, 'src', 'legacy', 'b.ts'), 'b new\n')
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      pathspecs: [':(glob)src/**/*.ts', ':(exclude)src/legacy'],
+    })
+
+    expect(capture.files.map((file) => file.path)).toEqual(['src/a.ts'])
+  })
+
+  test('selects a whole directory with a plain pathspec, including untracked files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'src'))
+    await writeFile(join(directory, 'src', 'a.ts'), 'a old\n')
+    await writeFile(join(directory, 'other.ts'), 'other old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'src', 'a.ts'), 'a new\n')
+    await writeFile(join(directory, 'src', 'untracked.ts'), 'untracked\n')
+    await writeFile(join(directory, 'other.ts'), 'other new\n')
+
+    const capture = await captureGitChanges('HEAD', directory, { pathspecs: ['src'] })
+
+    expect(capture.files.map((file) => file.path)).toEqual(['src/a.ts', 'src/untracked.ts'])
+  })
+
+  test('returns an empty capture when a pathspec matches nothing', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'tracked.ts'), 'old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'tracked.ts'), 'new\n')
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      pathspecs: [':(glob)missing/**'],
+    })
+
+    expect(capture.files).toEqual([])
+  })
+
+  test('rejects an invalid pathspec expression with the Git error', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'tracked.ts'), 'old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'tracked.ts'), 'new\n')
+
+    await expect(
+      captureGitChanges('HEAD', directory, { pathspecs: [':(bogus)x'] }),
+    ).rejects.toThrow(/pathspec magic/i)
+  })
+
+  test('loses a rename that leaves a positive pathspec scope', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'src'))
+    await writeFile(join(directory, 'src', 'old.ts'), 'same\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await mkdir(join(directory, 'dest'))
+    await git(['mv', 'src/old.ts', 'dest/new.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, { pathspecs: ['src'] })
+
+    // Git resolves the scope before it pairs renames, so the destination outside the
+    // pathspec leaves the in-scope source looking like a deletion.
+    expect(capture.files).toEqual([
+      {
+        path: 'src/old.ts',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: 'same\n',
+        newContent: '',
+      },
+    ])
+  })
+
+  test('loses a rename whose destination an exclusion pathspec drops early', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'moved.ts'), 'same\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await mkdir(join(directory, 'experiments'))
+    await git(['mv', 'moved.ts', 'experiments/moved.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      pathspecs: [':(exclude)experiments'],
+    })
+
+    expect(capture.files).toEqual([
+      {
+        path: 'moved.ts',
+        status: 'deleted',
+        oldMode: '100644',
+        newMode: '000000',
+        oldContent: 'same\n',
+        newContent: '',
+      },
+    ])
+  })
+
+  test('keeps a rename crossing a later literal --exclude when both sides pass the pathspec', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await mkdir(join(directory, 'src'))
+    await writeFile(join(directory, 'src', 'moved.ts'), 'same\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await mkdir(join(directory, 'src', 'experiments'))
+    await git(['mv', 'src/moved.ts', 'src/experiments/moved.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory, {
+      pathspecs: [':(glob)src/**/*.ts'],
+      exclude: ['src/experiments'],
+    })
+
+    // Both sides survive the initial glob scope, so Git pairs the rename and the later
+    // literal exclusion preserves the move with both paths.
+    expect(capture.files).toEqual([
+      {
+        path: 'src/moved.ts',
+        excludedPath: 'src/experiments/moved.ts',
+        status: 'moved-to-excluded',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: 'same\n',
+        newContent: '',
+      },
+    ])
   })
 })
 

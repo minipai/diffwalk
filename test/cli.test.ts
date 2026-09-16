@@ -594,10 +594,10 @@ describe('inspect', () => {
     ])
   })
 
-  test('limits a working-tree capture to the paths after --', async () => {
+  test('limits a working-tree capture to a literal --path', async () => {
     const repo = await fixtureRepo()
 
-    const result = await runCli(['inspect', '--', 'untracked.ts'], repo)
+    const result = await runCli(['inspect', '--path', 'untracked.ts'], repo)
 
     expect(result.exitCode).toBe(0)
     const capture = await readCapture(repo)
@@ -608,7 +608,7 @@ describe('inspect', () => {
   test('captures multiple paths and treats an option-like path literally', async () => {
     const repo = await fixtureRepo()
 
-    const multiple = await runCli(['inspect', '--', 'greeting.ts', 'untracked.ts'], repo)
+    const multiple = await runCli(['inspect', '--path', 'greeting.ts', '--path', 'untracked.ts'], repo)
     expect(multiple.exitCode).toBe(0)
     expect((await readCapture(repo)).files.map((file) => file.path)).toEqual([
       'greeting.ts',
@@ -616,7 +616,7 @@ describe('inspect', () => {
     ])
 
     await writeFile(join(repo, '--staged'), 'content\n')
-    const optionLike = await runCli(['inspect', '--', '--staged'], repo)
+    const optionLike = await runCli(['inspect', '--path=--staged'], repo)
     expect(optionLike.exitCode).toBe(0)
     expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['--staged'])
   })
@@ -625,7 +625,7 @@ describe('inspect', () => {
     const repo = await fixtureRepo()
     await git(['add', 'greeting.ts'], repo)
 
-    const result = await runCli(['inspect', '--staged', '--', 'greeting.ts'], repo)
+    const result = await runCli(['inspect', '--staged', '--path', 'greeting.ts'], repo)
 
     expect(result.exitCode).toBe(0)
     const capture = await readCapture(repo)
@@ -635,12 +635,12 @@ describe('inspect', () => {
   test('a path-limited capture keeps a deterministic identity and passes check', async () => {
     const repo = await fixtureRepo()
 
-    const first = await runCli(['inspect', '--', 'greeting.ts'], repo)
+    const first = await runCli(['inspect', '--path', 'greeting.ts'], repo)
     expect(first.exitCode).toBe(0)
     const walk = await readCurrentWalkId(repo)
     const capture = await readCapture(repo)
 
-    const second = await runCli(['inspect', '--', 'greeting.ts'], repo)
+    const second = await runCli(['inspect', '--path', 'greeting.ts'], repo)
     expect(second.exitCode).toBe(0)
     expect(second.stdout).toContain('Working tree is unchanged; kept current walk')
     expect(await readCurrentWalkId(repo)).toBe(walk)
@@ -655,8 +655,10 @@ describe('inspect', () => {
     const repo = await committedFixtureRepo()
 
     for (const args of [
-      ['inspect', 'HEAD', '--', 'committed.ts'],
-      ['inspect', '--from', 'HEAD^1', '--to', 'HEAD', '--', 'committed.ts'],
+      ['inspect', 'HEAD', '--path', 'committed.ts'],
+      ['inspect', 'HEAD', '--pathspec', 'committed.ts'],
+      ['inspect', '--from', 'HEAD^1', '--to', 'HEAD', '--path', 'committed.ts'],
+      ['inspect', '--from', 'HEAD^1', '--to', 'HEAD', '--pathspec', 'committed.ts'],
       ['inspect', 'HEAD', '--exclude', 'committed.ts'],
       ['inspect', '--from', 'HEAD^1', '--to', 'HEAD', '--exclude', 'committed.ts'],
       ['inspect', '--staged', 'HEAD'],
@@ -691,13 +693,16 @@ describe('inspect', () => {
     expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['kept.ts'])
   })
 
-  test('combines --exclude with paths after -- and lets the exclusion win', async () => {
+  test('combines --exclude with --path and lets the exclusion win', async () => {
     const repo = await fixtureRepo()
     await mkdir(join(repo, 'src'))
     await writeFile(join(repo, 'src', 'skip.ts'), 'skip\n')
     await writeFile(join(repo, 'src', 'kept.ts'), 'kept\n')
 
-    const combined = await runCli(['inspect', '--exclude', 'src/skip.ts', '--', 'src', 'greeting.ts'], repo)
+    const combined = await runCli(
+      ['inspect', '--exclude', 'src/skip.ts', '--path', 'src', '--path', 'greeting.ts'],
+      repo,
+    )
     expect(combined.exitCode).toBe(0)
     expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['greeting.ts', 'src/kept.ts'])
   })
@@ -724,7 +729,7 @@ describe('inspect', () => {
     expect(excludedEverything.exitCode).not.toBe(0)
     expect(excludedEverything.stderr).toContain('Nothing to capture')
 
-    const noMatchingPath = await runCli(['inspect', '--', 'nonexistent.ts'], repo)
+    const noMatchingPath = await runCli(['inspect', '--path', 'nonexistent.ts'], repo)
     expect(noMatchingPath.exitCode).not.toBe(0)
     expect(noMatchingPath.stderr).toContain('Nothing to capture')
 
@@ -737,7 +742,10 @@ describe('inspect', () => {
     for (const args of [
       ['inspect', '--exclude', ''],
       ['inspect', '--exclude='],
-      ['inspect', '--', ''],
+      ['inspect', '--path', ''],
+      ['inspect', '--path='],
+      ['inspect', '--pathspec', ''],
+      ['inspect', '--pathspec='],
     ]) {
       const result = await runCli(args, repo)
       expect(result.exitCode).not.toBe(0)
@@ -772,7 +780,7 @@ describe('inspect', () => {
     await writeFile(join(repo, 'kept.ts'), 'kept new\n')
 
     const result = await runCli(
-      ['inspect', '--exclude', 'experiments/link', '--', 'experiments', 'kept.ts'],
+      ['inspect', '--exclude', 'experiments/link', '--path', 'experiments', '--path', 'kept.ts'],
       repo,
     )
 
@@ -915,14 +923,180 @@ describe('inspect', () => {
     expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['kept.ts'])
   })
 
-  test('exposes --exclude in inspect help', async () => {
+  test('exposes --path, --pathspec, and --exclude in inspect help', async () => {
     const repo = await fixtureRepo()
 
     const result = await runCli(['inspect', '--help'], repo)
 
     expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('--path <path>')
+    expect(result.stdout).toContain('--pathspec <expression>')
     expect(result.stdout).toContain('--exclude <path>')
     expect(result.stdout).toContain('An exclusion always wins')
+    expect(result.stdout).toContain(":(glob)src/**/*.ts")
+    expect(result.stdout).toContain(':(exclude)pnpm-lock.yaml')
+  })
+
+  test('selects changes with a Git pathspec expression', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['inspect', '--pathspec', ':(glob)greet*.ts'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['greeting.ts'])
+  })
+
+  test('selects every tracked and untracked change except a Git exclusion pathspec', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['inspect', '--pathspec', ':(exclude)greeting.ts'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['untracked.ts'])
+  })
+
+  test('rejects an invalid pathspec expression with the Git error', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['inspect', '--pathspec', ':(bogus)x'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toMatch(/pathspec magic/i)
+    expect(existsSync(diffwalkDir(repo))).toBe(false)
+  })
+
+  test('rejects an empty pathspec match instead of writing a walk', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['inspect', '--pathspec', ':(glob)nothing/**'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('Nothing to capture')
+    expect(existsSync(diffwalkDir(repo))).toBe(false)
+  })
+
+  test('rejects mixed --path and --pathspec before capture', async () => {
+    const repo = await fixtureRepo()
+
+    for (const args of [
+      ['inspect', '--path', 'greeting.ts', '--pathspec', ':(glob)*.ts'],
+      ['inspect', '--pathspec', ':(glob)*.ts', '--path', 'greeting.ts'],
+    ]) {
+      const result = await runCli(args, repo)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('Do not combine --path with --pathspec')
+    }
+    expect(existsSync(diffwalkDir(repo))).toBe(false)
+  })
+
+  test('pins every global pathspec mode regardless of the caller environment', async () => {
+    const repo = await fixtureRepo()
+
+    const exclusion = await runCli(
+      ['inspect', '--pathspec', ':(exclude)greeting.ts'],
+      repo,
+      { GIT_LITERAL_PATHSPECS: '1', GIT_GLOB_PATHSPECS: '1' },
+    )
+    expect(exclusion.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['untracked.ts'])
+
+    const literal = await runCli(['inspect', '--path', 'greeting.ts'], repo, {
+      GIT_GLOB_PATHSPECS: '1',
+      GIT_LITERAL_PATHSPECS: '1',
+    })
+    expect(literal.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['greeting.ts'])
+  })
+
+  test('guides old -- path selection to --path instead of capturing it', async () => {
+    const repo = await fixtureRepo()
+
+    for (const args of [
+      ['inspect', '--', 'greeting.ts'],
+      ['inspect', 'HEAD', '--', 'committed.ts'],
+    ]) {
+      const result = await runCli(args, repo)
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('--path')
+      expect(result.stderr).toContain('--pathspec')
+    }
+    expect(existsSync(diffwalkDir(repo))).toBe(false)
+  })
+
+  test('selects a literal filename with special characters using --path', async () => {
+    const repo = await fixtureRepo()
+    await writeFile(join(repo, 'notes[1].md'), 'notes old\n')
+    await writeFile(join(repo, 'notesA.md'), 'other old\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'add notes'], repo)
+    await writeFile(join(repo, 'notes[1].md'), 'notes new\n')
+    await writeFile(join(repo, 'notesA.md'), 'other new\n')
+
+    const result = await runCli(['inspect', '--path', 'notes[1].md'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['notes[1].md'])
+  })
+
+  test('composes --exclude with --pathspec and keeps the exclusion literal', async () => {
+    const repo = await fixtureRepo()
+    await mkdir(join(repo, 'src', 'legacy'), { recursive: true })
+    await writeFile(join(repo, 'src', 'a.ts'), 'a old\n')
+    await writeFile(join(repo, 'src', 'legacy', 'b.ts'), 'b old\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'src fixture'], repo)
+    await writeFile(join(repo, 'src', 'a.ts'), 'a new\n')
+    await writeFile(join(repo, 'src', 'legacy', 'b.ts'), 'b new\n')
+
+    const result = await runCli(
+      ['inspect', '--pathspec', ':(glob)src/**/*.ts', '--exclude', 'src/legacy'],
+      repo,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['src/a.ts'])
+  })
+
+  test('drops an untracked file with --exclude under a pathspec scope', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(
+      ['inspect', '--pathspec', ':(glob)*.ts', '--exclude', 'untracked.ts'],
+      repo,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['greeting.ts'])
+  })
+
+  test('treats a bare -- value as a literal path instead of the old syntax', async () => {
+    const repo = await fixtureRepo()
+
+    const result = await runCli(['inspect', '--path', '--'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('Nothing to capture')
+    expect(result.stderr).not.toContain('no longer uses')
+  })
+
+  test('--pathspec composes with --staged', async () => {
+    const repo = await fixtureRepo()
+    await mkdir(join(repo, 'src'))
+    await writeFile(join(repo, 'src', 'first.ts'), 'first old\n')
+    await writeFile(join(repo, 'src', 'second.ts'), 'second old\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'src fixture'], repo)
+    await writeFile(join(repo, 'src', 'first.ts'), 'first new\n')
+    await writeFile(join(repo, 'src', 'second.ts'), 'second new\n')
+    await git(['add', '.'], repo)
+
+    const result = await runCli(
+      ['inspect', '--staged', '--pathspec', ':(glob)src/first.ts'],
+      repo,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files.map((file) => file.path)).toEqual(['src/first.ts'])
   })
 
   test('--exclude composes with --staged', async () => {
