@@ -115,12 +115,13 @@ exact corresponding diffs in a deliberate order.
   explanations, plus the version 1 ExplainDocument and its optional attribution metadata.
 - `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked text
   and binary files from an immutable Git base commit, optionally reading the index and
-  limiting the capture to literal selected paths or away from literal excluded paths.
-  Positive paths narrow the diff before Git pairs renames; exclusions drop paths from the
-  result, before any file is read, so a detected rename crossing an exclusion keeps both
-  paths while only the included side is read. A text side keeps its UTF-8 content; a binary
-  side keeps only its byte size and SHA-256 content hash. Git itself may read excluded
-  content while detecting renames.
+  limiting the capture with literal `--path` values or Git `--pathspec` expressions, and
+  dropping literal `--exclude` paths. Literal paths disable Git pathspec magic while
+  pathspec expressions keep it; both narrow the diff before Git pairs renames. Exclusions
+  drop paths from the result, before any file is read, so a detected rename crossing an
+  exclusion keeps both paths while only the included side is read. A text side keeps its
+  UTF-8 content; a binary side keeps only its byte size and SHA-256 content hash. Git itself
+  may read excluded content while detecting renames.
 - `src/format/status.ts`: names the direction of a rename that crosses an exclusion and
   labels the omitted side.
 - `src/authoring/capture.ts`: derives text change blocks, file-level binary change blocks,

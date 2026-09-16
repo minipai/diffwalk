@@ -21,6 +21,7 @@ export interface GitCapture {
 export interface CaptureGitChangesOptions {
   staged?: boolean
   paths?: string[]
+  pathspecs?: string[]
   exclude?: string[]
 }
 
@@ -46,18 +47,31 @@ export async function captureGitChanges(
   cwd = process.cwd(),
   options: CaptureGitChangesOptions = {},
 ): Promise<GitCapture> {
-  const { staged = false, paths = [], exclude = [] } = options
+  const { staged = false, paths = [], pathspecs = [], exclude = [] } = options
   const root = (await gitText(['rev-parse', '--show-toplevel'], cwd)).trim()
   const baseCommit = (
     await gitText(['rev-parse', '--verify', '--end-of-options', `${base}^{commit}`], root)
   ).trim()
-  // Positive paths narrow the diff before Git pairs renames. Exclusions stay out of the
-  // pathspec: Git must still see both sides of a rename so the move can be preserved, and
-  // the excluded side is dropped after detection, before Diffwalk reads any content.
-  const pathEnvironment = paths.length > 0 ? { GIT_LITERAL_PATHSPECS: '1' } : {}
+  // Scope selection reaches Git before it pairs renames. Literal `--path` values disable Git
+  // pathspec magic so special characters stay literal; `--pathspec` expressions keep Git's
+  // pathspec semantics, including exclusion magic. Every global pathspec mode is pinned so an
+  // inherited `GIT_*PATHSPECS` value cannot change the selection. Diffwalk's literal
+  // `--exclude` stays out of the pathspec: Git must still see both sides of a rename so the
+  // move can be preserved, and the excluded side is dropped after detection, before Diffwalk
+  // reads any content.
+  const scope = pathspecs.length > 0 ? pathspecs : paths
+  const pathEnvironment =
+    scope.length === 0
+      ? {}
+      : {
+          GIT_LITERAL_PATHSPECS: pathspecs.length > 0 ? '0' : '1',
+          GIT_GLOB_PATHSPECS: '0',
+          GIT_NOGLOB_PATHSPECS: '0',
+          GIT_ICASE_PATHSPECS: '0',
+        }
   const changes = parseGitChanges(
     await gitBytes(
-      ['diff', '--raw', '-z', '--find-renames', ...(staged ? ['--cached'] : []), baseCommit, '--', ...paths],
+      ['diff', '--raw', '-z', '--find-renames', ...(staged ? ['--cached'] : []), baseCommit, '--', ...scope],
       root,
       pathEnvironment,
     ),
@@ -76,7 +90,7 @@ export async function captureGitChanges(
   if (!staged) {
     const untracked = splitNulls(
       await gitBytes(
-        ['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z', '--', ...paths],
+        ['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z', '--', ...scope],
         root,
         pathEnvironment,
       ),

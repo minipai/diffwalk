@@ -73,35 +73,53 @@ publication tokens:
 Capture selected working-tree changes:
 
 ```bash
-diffwalk inspect --staged                     # staged changes only
-diffwalk inspect -- src/a.ts src/b.ts         # selected paths
-diffwalk inspect --staged -- src/a.ts         # both
-diffwalk inspect --base main                  # working tree relative to main
-diffwalk inspect --exclude experiments        # omit a file or directory
+diffwalk inspect --staged                          # staged changes only
+diffwalk inspect --path src/a.ts --path src/b.ts   # selected literal paths
+diffwalk inspect --staged --path src/a.ts          # both
+diffwalk inspect --base main                       # working tree relative to main
+diffwalk inspect --exclude experiments             # omit a file or directory
 diffwalk inspect --exclude notes.md --exclude experiments
-diffwalk inspect --exclude src/legacy -- src  # exclusion wins inside a selected path
+diffwalk inspect --exclude src/legacy --path src   # exclusion wins inside a selected path
+diffwalk inspect --pathspec ':(glob)src/**/*.ts'   # Git glob pathspec
+diffwalk inspect --pathspec ':(exclude)pnpm-lock.yaml'  # Git exclusion pathspec
+diffwalk inspect --pathspec ':(glob)src/**/*.ts' --exclude src/legacy
 ```
 
+`--path` is repeatable and takes literal file or directory paths relative to the
+repository root. Diffwalk disables Git pathspec magic for these values, so `*`, `?`,
+`[`, and a leading `:` name literal filenames; `--path 'notes[1].md'` selects that
+exact file. A directory selects everything under it on path boundaries.
+
+`--pathspec` is repeatable and hands each expression to Git as a pathspec, so Git's
+pathspec semantics apply. `:(glob)src/**/*.ts` selects matching files with a glob, and
+`:(exclude)pnpm-lock.yaml` drops a file from the scope. Pass the expression directly
+after the option and quote it so the shell does not expand it before Git receives it.
+Because the expression reaches Git, an exclusion pathspec is part of the initial Git
+scope. `--path` and `--pathspec` are mutually exclusive; choose one selection mode per
+capture.
+
 `--exclude` is repeatable and takes literal file or directory paths relative to the
-repository root. A directory excludes everything under it on path boundaries, so
-`--exclude experiments` also omits `experiments/old.ts` but not `experiments.ts`.
-Positive paths after `--` and `--exclude` values combine: a change is captured when it
-matches the `--` list (or that list is empty) and matches no `--exclude` value, so an
-exclusion always wins. Both selections are literal, so `--exclude 'notes[1].md'` names
-that exact file and never a Git pattern. Exclusions apply to working-tree captures
-(including untracked files) and to `--staged` captures, and are applied before Diffwalk
-reads or validates files, so an unsupported file outside the requested scope cannot block
-the capture.
-Selection happens in two stages. Diffwalk hands Git the literal `--` paths first, and
-Git detects renames among the changes that survive that scope. Diffwalk then drops
+repository root. It composes with either selection mode. A directory excludes everything
+under it on path boundaries, so `--exclude experiments` also omits `experiments/old.ts`
+but not `experiments.ts`. The scope and `--exclude` values combine: a change is captured
+when it matches the scope (or the scope is empty) and matches no `--exclude` value, so an
+exclusion always wins. `--exclude` values are always literal, so `--exclude
+'notes[1].md'` names that exact file and never a Git pattern. Exclusions apply to
+working-tree captures (including untracked files) and to `--staged` captures, and are
+applied before Diffwalk reads or validates files, so an unsupported file outside the
+requested scope cannot block the capture.
+Selection happens in two stages. Diffwalk hands Git the `--path` or `--pathspec` scope
+first, and Git detects renames among the changes that survive it. Diffwalk then drops
 `--exclude` paths from the result. Git may read excluded file contents while it looks
 for similarities, so exclusions cannot hide content from Git's rename detection, but
 Diffwalk never reads or validates an omitted side. Rename detection is a heuristic, and
-a rename that crosses an initial `--` path boundary may lose its relationship and appear
-as an ordinary addition or deletion; only `--exclude` keeps detected moves. When a
-detected rename crosses an `--exclude` boundary, the review keeps both paths and shows
-`Moved to excluded path` or `Moved from excluded path`, omits the excluded side's content
-explicitly rather than as an empty file, and drops a rename whose both sides are excluded.
+a rename that crosses an initial selection boundary may lose its relationship and appear
+as an ordinary addition or deletion; only `--exclude` keeps detected moves, and only when
+both sides survived the initial scope. This includes an exclusion pathspec, which Git
+applies as part of the initial scope. When a detected rename crosses an `--exclude`
+boundary, the review keeps both paths and shows `Moved to excluded path` or `Moved from
+excluded path`, omits the excluded side's content explicitly rather than as an empty file,
+and drops a rename whose both sides are excluded.
 When the selection matches no changes, `inspect` stops with `Nothing to capture` instead
 of writing an empty walk. Say which paths you excluded when you share the review, since
 the review cannot show changes that were never captured.
@@ -113,8 +131,9 @@ diffwalk inspect <commit>                # commit relative to its first parent
 diffwalk inspect --from main --to feature # compare two committed revisions
 ```
 
-Revision captures ignore local changes and cannot be limited by path or `--exclude`.
-Single-commit inspection requires a parent, so it does not support root commits.
+Revision captures ignore local changes and cannot be limited by `--path`, `--pathspec`,
+or `--exclude`. Single-commit inspection requires a parent, so it does not support root
+commits.
 
 `.diffwalk/current` selects the walk used by later commands. Capturing the same source
 and contents reuses it; a different capture creates a new walk and preserves previous walks.

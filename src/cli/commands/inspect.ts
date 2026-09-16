@@ -19,6 +19,8 @@ const inspectOptionsSchema = z.object({
   base: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
+  path: z.array(z.string()).default([]),
+  pathspec: z.array(z.string()).default([]),
   exclude: z.array(z.string()).default([]),
   output: z.string().optional(),
   explanations: z.string().optional(),
@@ -28,22 +30,35 @@ type InspectOptions = z.infer<typeof inspectOptionsSchema>
 export async function inspectChanges(
   revision: string | undefined,
   options: z.input<typeof inspectOptionsSchema>,
-  paths: string[] = [],
 ): Promise<void> {
-  const { base, from, to, staged, exclude, output, explanations } = inspectOptionsSchema.parse(options)
-  validateCaptureOptions(revision, { base, from, to, staged, exclude }, paths)
-  validateSelectionPaths(paths, exclude)
+  const { base, from, to, staged, path, pathspec, exclude, output, explanations } =
+    inspectOptionsSchema.parse(options)
+  validateSelectionMode(path, pathspec)
+  validateCaptureOptions(revision, { base, from, to, staged, exclude }, path, pathspec)
+  validateSelectionValues(path, pathspec, exclude)
   const capturedAt = new Date().toISOString()
-  const capture = await captureChanges(revision, { base, from, to, staged, exclude }, paths, capturedAt)
-  validateSelection(capture, paths, exclude)
+  const capture = await captureChanges(
+    revision,
+    { base, from, to, staged, path, pathspec, exclude },
+    capturedAt,
+  )
+  validateSelection(capture, path, pathspec, exclude)
   await saveCapture(capture, { output, explanations }, capturedAt)
+}
+
+function validateSelectionMode(paths: string[], pathspecs: string[]): void {
+  if (paths.length > 0 && pathspecs.length > 0) {
+    throw new UsageError('Do not combine --path with --pathspec; choose one selection mode')
+  }
 }
 
 function validateCaptureOptions(
   revision: string | undefined,
   { base, from, to, staged, exclude }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged' | 'exclude'>,
   paths: string[],
+  pathspecs: string[],
 ): void {
+  const limitsSelection = paths.length > 0 || pathspecs.length > 0
   if (from !== undefined || to !== undefined) {
     if (from === undefined || to === undefined) {
       throw new UsageError('Pass both --from and --to for a committed revision range')
@@ -51,7 +66,7 @@ function validateCaptureOptions(
     if (base !== undefined || revision !== undefined) {
       throw new UsageError('Do not combine --from/--to with --base or a positional revision')
     }
-    if (paths.length > 0) {
+    if (limitsSelection) {
       throw new UsageError('Path limiting applies only to working-tree captures')
     }
     if (exclude.length > 0) {
@@ -64,7 +79,7 @@ function validateCaptureOptions(
     if (base !== undefined) {
       throw new UsageError('Do not combine a positional commit revision with --base')
     }
-    if (paths.length > 0) {
+    if (limitsSelection) {
       throw new UsageError('Path limiting applies only to working-tree captures')
     }
     if (exclude.length > 0) {
@@ -76,26 +91,41 @@ function validateCaptureOptions(
   }
 }
 
-function validateSelection(capture: ExplainCapture, paths: string[], exclude: string[]): void {
-  if ((paths.length > 0 || exclude.length > 0) && capture.files.length === 0) {
+function validateSelection(
+  capture: ExplainCapture,
+  paths: string[],
+  pathspecs: string[],
+  exclude: string[],
+): void {
+  if (
+    (paths.length > 0 || pathspecs.length > 0 || exclude.length > 0) &&
+    capture.files.length === 0
+  ) {
     throw new UsageError(
-      'Nothing to capture: the selected paths and --exclude values match no working-tree changes',
+      'Nothing to capture: the selected paths, pathspecs, and --exclude values match no working-tree changes',
     )
   }
 }
 
-// Git reads an empty literal pathspec as "match everything", so a missing shell variable
-// would silently invert the selection instead of failing. Reject empty values at the boundary.
-function validateSelectionPaths(paths: string[], exclude: string[]): void {
-  if ([...paths, ...exclude].some((path) => path === '')) {
-    throw new UsageError('Selection paths and --exclude values must not be empty')
+// Git reads an empty pathspec as "match everything", so a missing shell variable would
+// silently invert the selection instead of failing. Reject empty values at the boundary.
+function validateSelectionValues(paths: string[], pathspecs: string[], exclude: string[]): void {
+  if ([...paths, ...pathspecs, ...exclude].some((value) => value === '')) {
+    throw new UsageError('Selection paths, pathspecs, and --exclude values must not be empty')
   }
 }
 
 async function captureChanges(
   revision: string | undefined,
-  { base, from, to, staged, exclude }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged' | 'exclude'>,
-  paths: string[],
+  {
+    base,
+    from,
+    to,
+    staged,
+    path,
+    pathspec,
+    exclude,
+  }: Pick<InspectOptions, 'base' | 'from' | 'to' | 'staged' | 'path' | 'pathspec' | 'exclude'>,
   capturedAt: string,
 ): Promise<ExplainCapture> {
   if (from !== undefined && to !== undefined) {
@@ -118,7 +148,12 @@ async function captureChanges(
     })
   } else {
     const resolvedBase = base ?? 'HEAD'
-    const git = await captureGitChanges(resolvedBase, process.cwd(), { staged, paths, exclude })
+    const git = await captureGitChanges(resolvedBase, process.cwd(), {
+      staged,
+      paths: path,
+      pathspecs: pathspec,
+      exclude,
+    })
     return createExplainCapture(git.files, {
       kind: 'working-tree',
       from: { revision: resolvedBase, commit: git.baseCommit },
