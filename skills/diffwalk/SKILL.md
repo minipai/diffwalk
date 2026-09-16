@@ -25,6 +25,14 @@ explained.
      (the working tree or the index); commit and range captures reject it. When the
      selection matches no changes, `inspect` stops with `Nothing to capture`. Prefer
      `--exclude` over listing every included path.
+   - Selection runs in two stages: Git sees the literal `--` paths and detects renames
+     first, then Diffwalk drops `--exclude` paths. Git may read excluded content to detect
+     similarities, but Diffwalk never reads or validates the omitted side. A detected
+     rename crossing an exclusion keeps both paths and is reported as `Moved to excluded
+     path` or `Moved from excluded path`, with the excluded side marked `excluded` and no
+     content; explain that move instead of describing it as an addition or deletion. A
+     rename with both sides excluded is omitted. A rename crossing an initial `--` path
+     boundary can lose its relationship because Git filters before it detects renames.
    - Run `diffwalk inspect <commit>` for one commit relative to its first parent. A
      root commit has no first parent, so use an explicit range instead.
    - Run `diffwalk inspect --from <revision> --to <revision>` for a committed range.
@@ -190,6 +198,11 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
   captured metadata. Diffwalk does not generate binary patches or image previews, so
   explain a binary change from its identity rather than expecting its contents in the
   diff. Never reconstruct the missing bytes or paste them into `text`.
+- A rename crossing an `--exclude` boundary is also a file-level card: it keeps both
+  paths and one side, reports `Moved to excluded path` or `Moved from excluded path`, and
+  marks the omitted side `excluded`. The omitted content is not in the capture, so treat
+  the card as the move it is and disclose the omission in your explanation instead of
+  treating it as a deleted or added file.
 - Treat a pure rename as a real assignable change. Diffwalk renders it as a move rather
   than an empty textual diff.
 - The capture contains full file contents. Treat it as potentially sensitive and do not publish or send it without the user's authorization.

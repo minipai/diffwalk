@@ -783,7 +783,7 @@ describe('inspect', () => {
     ])
   })
 
-  test('captures only the in-scope side of a rename crossing an excluded directory', async () => {
+  test('preserves a rename into an excluded directory as a move with both paths', async () => {
     const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
     directories.push(repo)
     await initializeRepository(repo)
@@ -800,13 +800,96 @@ describe('inspect', () => {
     expect((await readCapture(repo)).files).toEqual([
       {
         path: 'moved.ts',
-        status: 'deleted',
+        excludedPath: 'experiments/moved.ts',
+        status: 'moved-to-excluded',
         oldMode: '100644',
-        newMode: '000000',
+        newMode: '100644',
         oldContent: 'same\n',
         newContent: '',
       },
     ])
+    const changes = await runCli(['changes'], repo)
+    expect(changes.stdout).toContain('Moved to excluded path')
+    expect(changes.stdout).toContain('moved.ts → experiments/moved.ts')
+    expect(changes.stdout).toContain('after excluded')
+  })
+
+  test('preserves a staged rename out of an excluded directory as a move with both paths', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await mkdir(join(repo, 'experiments'))
+    await writeFile(join(repo, 'experiments', 'moved.ts'), 'same\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+
+    await git(['mv', 'experiments/moved.ts', 'back.ts'], repo)
+    await git(['add', '-A'], repo)
+
+    const result = await runCli(['inspect', '--staged', '--exclude', 'experiments'], repo)
+
+    expect(result.exitCode).toBe(0)
+    expect((await readCapture(repo)).files).toEqual([
+      {
+        path: 'back.ts',
+        excludedPath: 'experiments/moved.ts',
+        status: 'moved-from-excluded',
+        oldMode: '100644',
+        newMode: '100644',
+        oldContent: '',
+        newContent: 'same\n',
+      },
+    ])
+    const changes = await runCli(['changes'], repo)
+    expect(changes.stdout).toContain('Moved from excluded path')
+    expect(changes.stdout).toContain('experiments/moved.ts → back.ts')
+    expect(changes.stdout).toContain('before excluded')
+  })
+
+  test('renders a cross-exclusion move with both paths and an explicit omitted side', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await mkdir(join(repo, 'experiments'))
+    await writeFile(join(repo, 'moved.ts'), 'same\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+
+    await git(['mv', 'moved.ts', 'experiments/moved.ts'], repo)
+    await runCli(['inspect', '--exclude', 'experiments'], repo)
+    await authorEveryChange(repo)
+    const output = join(repo, 'out', 'report.html')
+
+    const result = await runCli(['export', 'html', '--output', output], repo)
+
+    expect(result.exitCode).toBe(0)
+    const html = await readFile(output, 'utf8')
+    expect(html).toContain('Moved to excluded path')
+    expect(html).toContain('moved.ts → experiments/moved.ts')
+    expect(html).toContain('excluded content omitted')
+    expect(html).toContain('<dd>excluded</dd>')
+    expect(html).not.toContain('<dd>absent</dd>')
+  })
+
+  test('refuses to print the omitted side of a cross-exclusion move', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await mkdir(join(repo, 'experiments'))
+    await writeFile(join(repo, 'moved.ts'), 'same\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+
+    await git(['mv', 'moved.ts', 'experiments/moved.ts'], repo)
+    await runCli(['inspect', '--exclude', 'experiments'], repo)
+
+    const before = await runCli(['file', 'moved.ts', '--before'], repo)
+    expect(before.exitCode).toBe(0)
+    expect(before.stdout).toBe('same\n')
+
+    const after = await runCli(['file', 'moved.ts', '--after'], repo)
+    expect(after.exitCode).not.toBe(0)
+    expect(after.stderr).toContain('excluded from this capture')
   })
 
   test('excludes an unsupported file so an unrelated capture can succeed', async () => {

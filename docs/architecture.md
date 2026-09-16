@@ -115,13 +115,19 @@ exact corresponding diffs in a deliberate order.
   explanations, plus the version 1 ExplainDocument and its optional attribution metadata.
 - `src/authoring/git.ts`: captures staged, unstaged, deleted, renamed, and untracked text
   and binary files from an immutable Git base commit, optionally reading the index and
-  limiting the capture to literal selected paths or away from literal excluded paths,
-  with Git applying every exclusion before any file is read. A text side keeps its UTF-8
-  content; a binary side keeps only its byte size and SHA-256 content hash.
+  limiting the capture to literal selected paths or away from literal excluded paths.
+  Positive paths narrow the diff before Git pairs renames; exclusions drop paths from the
+  result, before any file is read, so a detected rename crossing an exclusion keeps both
+  paths while only the included side is read. A text side keeps its UTF-8 content; a binary
+  side keeps only its byte size and SHA-256 content hash. Git itself may read excluded
+  content while detecting renames.
+- `src/format/status.ts`: names the direction of a rename that crosses an exclusion and
+  labels the omitted side.
 - `src/authoring/capture.ts`: derives text change blocks, file-level binary change blocks,
   and the content `captureId`, and materializes exact section patches from capture plus
-  explanations. Text-only files hash into `captureId` exactly as before binary support, so
-  existing captures and their explanations stay matched.
+  explanations. A rename crossing an exclusion becomes a file-level move block that keeps
+  the included side and names the excluded one. Text-only files hash into `captureId`
+  exactly as before binary support, so existing captures and their explanations stay matched.
 - `src/cli/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.
 - `src/cli/commands/`: each command owns its option schema and validates inputs before
   calling internal logic. `cli.ts` registers commands and forwards their arguments.

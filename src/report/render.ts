@@ -1,4 +1,5 @@
 import type { ExplainDocument, BinaryChangeBlock } from '../format/types'
+import { excludedSide, movedPathLabel, movedStatusLabel } from '../format/status'
 import { faviconDataUrl } from './favicon'
 import { renderMarkdown } from './markdown'
 import { fileDiffLabel, fileDiffStats, parseSectionPatch } from './patches'
@@ -211,21 +212,34 @@ function parseStepDiff(diff: string, sectionTitle: string): FileDiffMetadata[] {
 }
 
 // A binary change has no patch to render, so its card carries the identity a reader needs:
-// the path, the status, and each existing side's kind, byte size, and content hash.
+// the path, the status, and each existing side's kind, byte size, and content hash. A rename
+// crossing an exclusion keeps both paths and names the omitted side instead of showing it as
+// an empty or absent file.
 function renderBinaryCard(change: BinaryChangeBlock): string {
-  const label = change.oldPath && change.oldPath !== change.path ? `${change.oldPath} → ${change.path}` : change.path
+  const label =
+    change.excludedPath === undefined
+      ? change.oldPath && change.oldPath !== change.path
+        ? `${change.oldPath} → ${change.path}`
+        : change.path
+      : movedPathLabel(change.status, change.path, change.excludedPath)
+  const moved = movedStatusLabel(change.status)
+  const stats = moved === undefined ? `Binary · ${change.status}` : `${moved} · excluded content omitted`
+  const excluded = excludedSide(change.status)
   return `<div class="file file-binary">
-  <div class="file-summary">${escapeHtml(label)} <span class="file-stats">Binary · ${escapeHtml(change.status)}</span></div>
+  <div class="file-summary">${escapeHtml(label)} <span class="file-stats">${escapeHtml(stats)}</span></div>
   <dl class="binary-sides">
-    ${renderBinarySide('Before', change.before)}
-    ${renderBinarySide('After', change.after)}
+    ${renderBinarySide('Before', change.before, excluded === 'old')}
+    ${renderBinarySide('After', change.after, excluded === 'new')}
   </dl>
 </div>`
 }
 
-function renderBinarySide(label: string, side: BinaryChangeBlock['before']): string {
-  const detail =
-    side === undefined ? 'absent' : `${side.kind} · ${side.size} B · sha256 ${side.hash}`
+function renderBinarySide(label: string, side: BinaryChangeBlock['before'], excluded: boolean): string {
+  const detail = excluded
+    ? 'excluded'
+    : side === undefined
+      ? 'absent'
+      : `${side.kind} · ${side.size} B · sha256 ${side.hash}`
   return `<div class="binary-side"><dt>${label}</dt><dd>${escapeHtml(detail)}</dd></div>`
 }
 

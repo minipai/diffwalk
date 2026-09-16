@@ -35,8 +35,8 @@ interface GitChange {
   kind: string
   path: string
   oldPath?: string
-  oldMode: DraftFile['oldMode']
-  newMode: DraftFile['newMode']
+  oldMode: string
+  newMode: string
 }
 
 const supportedGitModes = new Set(['000000', '100644', '100755'])
@@ -51,11 +51,13 @@ export async function captureGitChanges(
   const baseCommit = (
     await gitText(['rev-parse', '--verify', '--end-of-options', `${base}^{commit}`], root)
   ).trim()
-  const pathspecs = selectionPathspecs(paths, exclude)
-  const pathEnvironment = pathspecs.length > 0 ? { GIT_LITERAL_PATHSPECS: '0' } : {}
+  // Positive paths narrow the diff before Git pairs renames. Exclusions stay out of the
+  // pathspec: Git must still see both sides of a rename so the move can be preserved, and
+  // the excluded side is dropped after detection, before Diffwalk reads any content.
+  const pathEnvironment = paths.length > 0 ? { GIT_LITERAL_PATHSPECS: '1' } : {}
   const changes = parseGitChanges(
     await gitBytes(
-      ['diff', '--raw', '-z', '--find-renames', ...(staged ? ['--cached'] : []), baseCommit, '--', ...pathspecs],
+      ['diff', '--raw', '-z', '--find-renames', ...(staged ? ['--cached'] : []), baseCommit, '--', ...paths],
       root,
       pathEnvironment,
     ),
@@ -66,67 +68,21 @@ export async function captureGitChanges(
   const files: DraftFile[] = []
 
   for (const change of changes) {
-    if (change.kind === 'R') {
-      files.push(
-        draftFile({
-          path: change.path,
-          oldPath: change.oldPath,
-          status: 'renamed',
-          oldMode: change.oldMode,
-          newMode: change.newMode,
-          oldSide: await gitFile(baseCommit, change.oldPath!, root),
-          newSide: await newContentFor(change.path),
-        }),
-      )
-    } else if (change.kind === 'M') {
-      const oldSide = await gitFile(baseCommit, change.path, root)
-      const newSide = await newContentFor(change.path)
-      validateFileModeChange(change.path, change.oldMode, change.newMode, oldSide, newSide)
-      files.push(
-        draftFile({
-          path: change.path,
-          status: 'modified',
-          oldMode: change.oldMode,
-          newMode: change.newMode,
-          oldSide,
-          newSide,
-        }),
-      )
-    } else if (change.kind === 'A') {
-      files.push(
-        draftFile({
-          path: change.path,
-          status: 'added',
-          oldMode: change.oldMode,
-          newMode: change.newMode,
-          newSide: await newContentFor(change.path),
-        }),
-      )
-    } else if (change.kind === 'D') {
-      files.push(
-        draftFile({
-          path: change.path,
-          status: 'deleted',
-          oldMode: change.oldMode,
-          newMode: change.newMode,
-          oldSide: await gitFile(baseCommit, change.path, root),
-        }),
-      )
-    } else {
-      throw new Error(`Unsupported Git change status: ${change.kind}`)
-    }
+    const file = await draftChange(change, { baseCommit, root, newContentFor, exclude })
+    if (file !== undefined) files.push(file)
   }
 
   const filesByPath = new Map(files.map((file) => [file.path, file]))
   if (!staged) {
     const untracked = splitNulls(
       await gitBytes(
-        ['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z', '--', ...pathspecs],
+        ['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z', '--', ...paths],
         root,
         pathEnvironment,
       ),
     )
     for (const path of untracked) {
+      if (isExcluded(path, exclude)) continue
       const existing = filesByPath.get(path)
       if (existing !== undefined) {
         if (existing.status !== 'deleted') continue
@@ -172,6 +128,113 @@ export async function captureGitChanges(
   }
 }
 
+async function draftChange(
+  change: GitChange,
+  context: {
+    baseCommit: string
+    root: string
+    newContentFor: (path: string) => Promise<CapturedSide>
+    exclude: string[]
+  },
+): Promise<DraftFile | undefined> {
+  const { baseCommit, root, newContentFor, exclude } = context
+  if (change.kind === 'R') {
+    const oldExcluded = isExcluded(change.oldPath!, exclude)
+    const newExcluded = isExcluded(change.path, exclude)
+    if (oldExcluded && newExcluded) return undefined
+    const { oldMode, newMode } = supportedModes(change)
+    if (newExcluded) {
+      return draftFile({
+        path: change.oldPath!,
+        excludedPath: change.path,
+        status: 'moved-to-excluded',
+        oldMode,
+        newMode,
+        oldSide: await gitFile(baseCommit, change.oldPath!, root),
+      })
+    }
+    if (oldExcluded) {
+      return draftFile({
+        path: change.path,
+        excludedPath: change.oldPath!,
+        status: 'moved-from-excluded',
+        oldMode,
+        newMode,
+        newSide: await newContentFor(change.path),
+      })
+    }
+    return draftFile({
+      path: change.path,
+      oldPath: change.oldPath,
+      status: 'renamed',
+      oldMode,
+      newMode,
+      oldSide: await gitFile(baseCommit, change.oldPath!, root),
+      newSide: await newContentFor(change.path),
+    })
+  }
+
+  // Excluded paths are dropped before any type check or read, so an unsupported file that
+  // the selection omits never blocks the capture.
+  if (isExcluded(change.path, exclude)) return undefined
+  const { oldMode, newMode } = supportedModes(change)
+  if (change.kind === 'M') {
+    const oldSide = await gitFile(baseCommit, change.path, root)
+    const newSide = await newContentFor(change.path)
+    validateFileModeChange(change.path, oldMode, newMode, oldSide, newSide)
+    return draftFile({
+      path: change.path,
+      status: 'modified',
+      oldMode,
+      newMode,
+      oldSide,
+      newSide,
+    })
+  }
+  if (change.kind === 'A') {
+    return draftFile({
+      path: change.path,
+      status: 'added',
+      oldMode,
+      newMode,
+      newSide: await newContentFor(change.path),
+    })
+  }
+  if (change.kind === 'D') {
+    return draftFile({
+      path: change.path,
+      status: 'deleted',
+      oldMode,
+      newMode,
+      oldSide: await gitFile(baseCommit, change.path, root),
+    })
+  }
+  throw new Error(`Unsupported Git change status: ${change.kind}`)
+}
+
+// Git describes the file type in the mode field. Only regular files are supported; symbolic
+// links and submodules are rejected here, after exclusions have had their say.
+function supportedModes(change: GitChange): { oldMode: DraftFile['oldMode']; newMode: DraftFile['newMode'] } {
+  if (!supportedGitModes.has(change.oldMode) || !supportedGitModes.has(change.newMode)) {
+    throw new Error(`Unsupported Git file type: ${change.path}`)
+  }
+  return {
+    oldMode: change.oldMode as DraftFile['oldMode'],
+    newMode: change.newMode as DraftFile['newMode'],
+  }
+}
+
+// Exclusions name literal files or directories relative to the repository root. A directory
+// covers everything under it on path boundaries, and "." is the whole repository. Comparing
+// strings directly keeps names with glob characters literal.
+function isExcluded(path: string, exclude: string[]): boolean {
+  return exclude.some((candidate) => {
+    const name = candidate.startsWith('./') ? candidate.slice(2) : candidate
+    if (name === '' || name === '.') return true
+    return path === name || path.startsWith(name.endsWith('/') ? name : `${name}/`)
+  })
+}
+
 export async function captureGitRevisionChanges(
   from: string,
   to: string,
@@ -186,10 +249,11 @@ export async function captureGitRevisionChanges(
   const files: DraftFile[] = []
 
   for (const change of changes) {
+    const { oldMode, newMode } = supportedModes(change)
     const oldSide = change.kind === 'A' ? undefined : await gitFile(fromCommit, change.oldPath ?? change.path, root)
     const newSide = change.kind === 'D' ? undefined : await gitFile(toCommit, change.path, root)
     if (change.kind === 'M') {
-      validateFileModeChange(change.path, change.oldMode, change.newMode, oldSide!, newSide!)
+      validateFileModeChange(change.path, oldMode, newMode, oldSide!, newSide!)
     }
     files.push(
       draftFile({
@@ -203,8 +267,8 @@ export async function captureGitRevisionChanges(
               : change.kind === 'A'
                 ? 'added'
                 : 'deleted',
-        oldMode: change.oldMode,
-        newMode: change.newMode,
+        oldMode,
+        newMode,
         oldSide,
         newSide,
       }),
@@ -268,6 +332,7 @@ function validateFileModeChange(
 function draftFile(input: {
   path: string
   oldPath?: string
+  excludedPath?: string
   status: DraftFile['status']
   oldMode: DraftFile['oldMode']
   newMode: DraftFile['newMode']
@@ -277,6 +342,7 @@ function draftFile(input: {
   return {
     path: input.path,
     ...(input.oldPath === undefined ? {} : { oldPath: input.oldPath }),
+    ...(input.excludedPath === undefined ? {} : { excludedPath: input.excludedPath }),
     status: input.status,
     oldMode: input.oldMode,
     newMode: input.newMode,
@@ -411,16 +477,6 @@ function splitNulls(bytes: Uint8Array): string[] {
   return value === '' ? [] : value.slice(0, value.endsWith('\0') ? -1 : undefined).split('\0')
 }
 
-// Positive paths and exclusions are both literal, so special characters name a file rather
-// than a Git pattern, and a directory matches everything it contains. Git applies every
-// exclusion after the positive paths, so an exclusion always wins over a `--` path.
-function selectionPathspecs(paths: string[], exclude: string[]): string[] {
-  return [
-    ...paths.map((path) => `:(literal)${path}`),
-    ...exclude.map((path) => `:(exclude,literal)${path}`),
-  ]
-}
-
 function parseGitChanges(bytes: Uint8Array): GitChange[] {
   const fields = splitNulls(bytes)
   const changes: GitChange[] = []
@@ -434,15 +490,12 @@ function parseGitChanges(bytes: Uint8Array): GitChange[] {
     const firstPath = requireField(fields[index++], header)
     const oldPath = kind === 'R' ? firstPath : undefined
     const path = kind === 'R' ? requireField(fields[index++], header) : firstPath
-    if (!supportedGitModes.has(oldMode!) || !supportedGitModes.has(newMode!)) {
-      throw new Error(`Unsupported Git file type: ${path}`)
-    }
     changes.push({
       kind: kind!,
       path,
       oldPath,
-      oldMode: oldMode as DraftFile['oldMode'],
-      newMode: newMode as DraftFile['newMode'],
+      oldMode: oldMode!,
+      newMode: newMode!,
     })
   }
 

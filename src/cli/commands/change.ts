@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import type { BinaryChangeBlock, ChangeBlock, ExplainCapture, TextChangeBlock } from '../../format/types'
+import { excludedSide } from '../../format/status'
 import { captureInput, readCapture } from '../input'
-import { binarySideLine, coordinates } from '../output'
+import { binarySideLine, changePathLabel, changeStatusLabel, coordinates } from '../output'
 
 const changeOptionsSchema = z.object({
   input: z.string().optional(),
@@ -33,10 +34,11 @@ function printChangeDetails(change: ChangeBlock): void {
 }
 
 function printBinaryChange(change: BinaryChangeBlock): void {
-  process.stdout.write(`${change.id}  ${change.path}  binary ${change.status}
+  const excluded = excludedSide(change.status)
+  process.stdout.write(`${change.id}  ${changePathLabel(change)}  ${changeStatusLabel(change.status)}
 modes: ${change.oldMode} → ${change.newMode}
-${binarySideLine('before', change.before)}
-${binarySideLine('after', change.after)}
+${binarySideLine('before', change.before, excluded === 'old')}
+${binarySideLine('after', change.after, excluded === 'new')}
 `)
 }
 

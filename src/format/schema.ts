@@ -3,6 +3,15 @@ import type { ExplainCapture, ExplainDocument, Explanations } from './types'
 
 const gitModeSchema = z.enum(['000000', '100644', '100755'])
 
+const fileStatusSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'moved-to-excluded',
+  'moved-from-excluded',
+])
+
 const binarySideSchema = z
   .object({
     size: z.number().int().nonnegative(),
@@ -15,7 +24,8 @@ export const draftFileSchema = z.preprocess(
   z.object({
     path: z.string().min(1),
     oldPath: z.string().min(1).optional(),
-    status: z.enum(['added', 'modified', 'deleted', 'renamed']),
+    excludedPath: z.string().min(1).optional(),
+    status: fileStatusSchema,
     oldMode: gitModeSchema,
     newMode: gitModeSchema,
     oldContent: z.string(),
@@ -52,8 +62,9 @@ export const binaryChangeBlockSchema = z
     kind: z.literal('binary'),
     id: z.string().min(1),
     path: z.string().min(1),
-    status: z.enum(['added', 'modified', 'deleted', 'renamed']),
+    status: fileStatusSchema,
     oldPath: z.string().min(1).optional(),
+    excludedPath: z.string().min(1).optional(),
     oldMode: gitModeSchema,
     newMode: gitModeSchema,
     before: changeSideSchema.optional(),
