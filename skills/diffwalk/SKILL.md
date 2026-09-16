@@ -18,7 +18,9 @@ explained.
    - Add `--staged` to capture the index instead of the working tree, or list paths
      after `--` to limit the capture to them, for example
      `diffwalk inspect --staged -- src/a.ts`. Path limiting applies only to
-     working-tree captures.
+     working-tree captures. Paths are literal file or directory names relative to
+     the repository root; there is no `--exclude` option or Git pathspec magic.
+     To omit unrelated files, list the files or directories that belong in the review.
    - Run `diffwalk inspect <commit>` for one commit relative to its first parent. A
      root commit has no first parent, so use an explicit range instead.
    - Run `diffwalk inspect --from <revision> --to <revision>` for a committed range.
@@ -168,6 +170,12 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
   changes. A chmod-only change has no representable explanation block, so stop when
   Diffwalk reports it. Symbolic links and non-file Git paths are still rejected at
   capture time; do not bypass that boundary.
+  If the reported files are outside the requested review scope, rerun
+  `inspect -- <path>...` with the relevant files or directories and continue.
+  Use `--staged` only when the requested review scope is the index. State what was
+  omitted; do not change files, staging, or Git ignore rules to make capture succeed.
+  If unsupported files belong to the requested scope, report the limitation rather
+  than silently omitting them.
 - Binary files are represented at file level, not by their bytes. The capture records
   the path, status, modes, and each side's byte size and SHA-256 hash; the review shows
   a metadata card instead of a patch. A side counts as binary when its bytes contain a
