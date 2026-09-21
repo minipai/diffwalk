@@ -76,8 +76,7 @@ function renderReportBody(
     <label><input type="radio" name="layout" value="unified" ${layout === 'unified' ? 'checked' : ''}> Unified</label>
     <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
   </form>`
-  const foldAll = `<button type="button" class="fold-all" data-fold-all aria-label="Fold all review sections"><span data-fold-all-label>Fold all</span></button>`
-  const readingControls = `<div class="review-controls">${layoutForm}${foldAll}</div>`
+  const readingControls = `<div class="review-controls">${layoutForm}</div>`
   const reviewMap = renderReviewMap(
     document.sections.map((section, index) => ({
       title: section.title,
@@ -178,7 +177,7 @@ function renderSection(
   <div class="file-summary">${label} <span class="file-stats">Renamed · content unchanged</span></div>
 </div>`
         }
-        return `<details class="file" open>
+        return `<details class="file">
   <summary class="file-summary">${label} <span class="file-stats">+${stats.additions} −${stats.deletions}</span></summary>
   <div class="file-diff" data-diff-mount="${index}-${stepIndex}-${fileIndex}"></div>
 </details>`
@@ -195,7 +194,7 @@ function renderSection(
 
   const markup = `<section class="section" id="${target.fragment}" data-section-index="${index}" data-target-kind="section">
   <details class="section-fold" open>
-    <summary class="section-title" tabindex="-1"><button type="button" class="section-toggle" aria-expanded="true" aria-controls="${target.fragment}" aria-label="Toggle section ${sectionIndex(index)}: ${escapeHtml(section.title)}"><span class="section-toggle-arrow" aria-hidden="true">▾</span> <span class="section-title-index">${sectionIndex(index)}</span></button><a class="section-title-text" href="#${target.fragment}">${escapeHtml(section.title)}</a></summary>
+    <summary class="section-title" tabindex="-1"><button type="button" class="section-toggle" aria-expanded="true" aria-controls="${target.fragment}" aria-label="Toggle section ${sectionIndex(index)}: ${escapeHtml(section.title)}"><span class="section-toggle-arrow" aria-hidden="true">▾</span> <span class="section-title-index">${sectionIndex(index)}</span></button><a class="section-title-text" href="#${target.fragment}">${escapeHtml(section.title)}</a><span class="section-fold-controls"><button type="button" class="section-fold-all" data-section-fold-all="unfold" aria-label="Unfold all in section ${sectionIndex(index)}">Unfold all</button><button type="button" class="section-fold-all" data-section-fold-all="fold" aria-label="Fold all in section ${sectionIndex(index)}">Fold all</button></span></summary>
 ${steps.join('\n')}
   </details>
 </section>`
@@ -488,7 +487,10 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 .section-title-index { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; }
 .section-title-text { min-width: 0; color: inherit; text-decoration: none; }
 .section-title-text:hover { text-decoration: underline; }
-.section-toggle:focus-visible, .section-title-text:focus-visible, .permalink:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.section-fold-controls { display: flex; gap: 6px; margin-left: auto; font-size: 12px; font-weight: 500; }
+.section-fold-all { border: 1px solid #cbd7cd; border-radius: 5px; padding: 4px 7px; color: #4d6654; background: #f7faf7; cursor: pointer; font: inherit; white-space: nowrap; }
+.section-fold-all:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
+.section-toggle:focus-visible, .section-title-text:focus-visible, .section-fold-all:focus-visible, .permalink:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .section-fold > summary::-webkit-details-marker { display: none; }
 .section-fold[open] > summary { border-bottom-color: var(--border); }
 .prose { color: #3c4d41; font-size: 14px; }

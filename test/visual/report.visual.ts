@@ -59,20 +59,26 @@ test.describe('report visuals', () => {
     await expect(page.locator('nav')).toHaveScreenshot('review-map.png')
   })
 
-  // Keyboard focus styling was previously asserted as the `.fold-all:focus-visible`
-  // stylesheet text. Tab reaches the fold control first, so a keyboard-driven focus
+  // Keyboard focus styling is asserted on the section-local fold control.
+  // Tab reaches the section control first, so a keyboard-driven focus
   // captures the real ring instead of the rule that draws it.
   test('keyboard focus ring on the fold control', async ({ page }) => {
+    await page.locator('.section-title-text').first().focus()
     await page.keyboard.press('Tab')
     const focused = await page.evaluate(() => document.activeElement?.className ?? '')
-    if (!focused.includes('fold-all')) {
+    if (!focused.includes('section-fold-all')) {
       throw new Error(`Expected the fold control to receive focus, got ${focused}`)
     }
-    await expect(page.locator('nav')).toHaveScreenshot('focused-control.png')
+    await expect(page.locator('main .section').first()).toHaveScreenshot('focused-control.png')
   })
 
   // One section captures the title row, prose measure, and the file fold.
   test('section', async ({ page }) => {
+    await page.locator('main .section').first().locator('details.section-fold').evaluate((element) => {
+      ;(element as HTMLDetailsElement).open = true
+      for (const detail of element.querySelectorAll<HTMLDetailsElement>('details.file')) detail.open = true
+    })
+    await expect(page.locator('main .section').first().locator('.step-text')).toBeVisible()
     await expect(page.locator('main .section').first()).toHaveScreenshot('section.png')
   })
 
@@ -116,6 +122,10 @@ test.describe('report visuals', () => {
   })
 
   test('print report', async ({ page }) => {
+    await page.locator('details').evaluateAll((details) => {
+      for (const detail of details) (detail as HTMLDetailsElement).open = true
+    })
+    await expect(page.locator('main .step-text').first()).toBeVisible()
     await page.emulateMedia({ media: 'print' })
     await expect(page).toHaveScreenshot('print.png', { fullPage: true })
   })
