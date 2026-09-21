@@ -338,16 +338,16 @@ describe('renderReport shell', () => {
     expect(html).toContain('value="unified" checked')
   })
 
-  test('the review map carries one global fold control after the layout toggle', () => {
+  test('each open section has local fold controls and files start collapsed', () => {
     const html = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
-    const form = html.indexOf('data-layout-form')
-    const fold = html.indexOf('data-fold-all')
-    const label = html.indexOf('>Review map<')
 
-    expect(fold).toBeGreaterThan(form)
-    expect(label).toBeGreaterThan(fold)
-    expect(html).toContain('aria-label="Fold all review sections"')
-    expect(html).toContain('data-fold-all-label>Fold all<')
+    expect(html).not.toContain('data-fold-all')
+    expect(html).toContain('data-section-fold-all="unfold"')
+    expect(html).toContain('data-section-fold-all="fold"')
+    expect(html).toContain('aria-label="Unfold all in section 01"')
+    expect(html).toContain('aria-label="Fold all in section 01"')
+    expect(html).toContain('<details class="section-fold" open>')
+    expect(html).toContain('<details class="file">')
   })
 
   test('review map lists every section in document order with zero-padded anchors and counts', () => {
