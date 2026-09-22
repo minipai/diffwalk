@@ -36,10 +36,12 @@ export function mountReport(
   const initialRender = new Promise<void>((resolve) => (finishInitialRender = resolve))
   wireSectionFolds()
   wireFragments(initialRender)
-  const mountedDiffs = mountDiffs(data, layout, createFileDiff)
+  const overflow = initialOverflow()
+  const mountedDiffs = mountDiffs(data, layout, overflow, createFileDiff)
   void mountedDiffs.initialRender.then(finishInitialRender)
   const { mounted } = mountedDiffs
   wireLayout(mounted)
+  wireWrap(mounted)
   prepareForPrint()
 }
 
@@ -55,6 +57,12 @@ function initialLayout(): 'split' | 'unified' {
   const form = document.querySelector<HTMLFormElement>('[data-layout-form]')
   const checked = form?.querySelector<HTMLInputElement>('input[name="layout"]:checked')
   return checked?.value === 'unified' ? 'unified' : 'split'
+}
+
+function initialOverflow(): 'scroll' | 'wrap' {
+  const form = document.querySelector<HTMLFormElement>('[data-wrap-form]')
+  const checked = form?.querySelector<HTMLInputElement>('input[name="wrap"]')
+  return checked?.checked ? 'wrap' : 'scroll'
 }
 
 function isNarrowViewport(): boolean {
@@ -81,10 +89,12 @@ function showStepError(mount: ReportDiffMount, error: unknown) {
 
 function baseOptions(
   diffStyle: 'split' | 'unified',
+  overflow: 'scroll' | 'wrap',
   onPostRender?: FileDiffOptions<undefined>['onPostRender'],
 ) {
   return {
     diffStyle,
+    overflow,
     themeType: 'light',
     disableFileHeader: true,
     onPostRender,
@@ -94,6 +104,7 @@ function baseOptions(
 function mountDiffs(
   data: ReportData,
   layout: 'split' | 'unified',
+  overflow: 'scroll' | 'wrap',
   createFileDiff: FileDiffFactory,
 ): { mounted: MountedDiff[]; initialRender: Promise<void> } {
   const mounted: MountedDiff[] = []
@@ -130,7 +141,7 @@ function mountDiffs(
       )
       try {
         const instance = createFileDiff(
-          baseOptions(layout, (_node, _instance, phase) => {
+          baseOptions(layout, overflow, (_node, _instance, phase) => {
             if (phase === 'mount') finishRender()
           }),
         )
@@ -320,6 +331,18 @@ function wireFragments(initialRender: Promise<void>) {
   void initialRender.then(() => {
     rendersComplete = true
     queueFinalReveal()
+  })
+}
+
+function wireWrap(mounted: MountedDiff[]) {
+  const form = document.querySelector<HTMLFormElement>('[data-wrap-form]')
+  form?.addEventListener('change', (event) => {
+    if (!(event.target as Element).matches('input[name="wrap"]')) return
+    const overflow = (event.target as HTMLInputElement).checked ? 'wrap' : 'scroll'
+    for (const { fileDiff, instance } of mounted) {
+      instance.setOptions({ ...instance.options, overflow })
+      instance.render({ fileDiff, forceRender: true })
+    }
   })
 }
 

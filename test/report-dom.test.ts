@@ -180,6 +180,20 @@ function submitLayout(dom: Window, value: 'split' | 'unified') {
   )
 }
 
+function overflowMode(dom: Window, index: number) {
+  const shadow = fileDiffShadow(dom, index)
+  return shadow?.querySelector('pre')?.getAttribute('data-overflow') ?? null
+}
+
+function toggleWrap(dom: Window, on: boolean) {
+  const doc = dom.document as unknown as Document
+  const input = doc.querySelector<HTMLInputElement>('input[name="wrap"]')
+  input!.checked = on
+  input!.dispatchEvent(
+    new dom.window.Event('change', { bubbles: true, cancelable: true }) as unknown as Event,
+  )
+}
+
 function diffContainers(dom: Window) {
   const doc = dom.document as unknown as Document
   return [...doc.querySelectorAll('.file-diff diffs-container')]
@@ -821,6 +835,32 @@ describe('report browser client', () => {
     fold.open = true
     expect(button.getAttribute('aria-expanded')).toBe('true')
   })
+
+  test(
+    'wrap toggle flips overflow on the same instances',
+    async () => {
+      const html = renderReport(
+        document([section(simplePatch('one', 'one!'), 'Wrap section')]),
+        clientBundle,
+      )
+      const dom = loadReport(html)
+
+      runReportClient()
+
+      await waitFor(() => mountedCount(dom) === 1, 90000)
+      await waitForQuiescent(dom)
+      expect(overflowMode(dom, 0)).toBe('scroll')
+
+      const before = diffContainers(dom)
+      toggleWrap(dom, true)
+      await waitFor(() => overflowMode(dom, 0) === 'wrap', 30000)
+      expectSameContainers(before, diffContainers(dom))
+
+      toggleWrap(dom, false)
+      await waitFor(() => overflowMode(dom, 0) === 'scroll', 30000)
+    },
+    120000,
+  )
 
   test(
     'narrow viewport defaults split reports to unified but preserves explicit switching',
