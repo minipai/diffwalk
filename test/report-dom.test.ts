@@ -795,10 +795,13 @@ describe('report browser client', () => {
     expect(title.tagName).toBe('A')
     expect(title.textContent).toBe('Linked title')
     expect(title.tabIndex).toBe(0)
-    expect(stepLink.textContent).toBe('LINK')
+    expect(stepLink.getAttribute('href')).toBe(`#${stepLink.closest('.step')!.id}`)
+    expect(stepLink.querySelector('svg')).not.toBeNull()
     expect(stepLink.tabIndex).toBe(0)
     expect(doc.querySelector('[data-copy-fragment]')).toBeNull()
-    expect(doc.querySelector('a[href="#change-001"]')).toBeNull()
+    expect(doc.querySelector<HTMLAnchorElement>('a[href="#change-001"]')?.textContent).toBe(
+      'change-001',
+    )
 
     button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event)
     expect(fold.open).toBe(false)
