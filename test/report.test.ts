@@ -442,7 +442,7 @@ describe('renderReport shell', () => {
     expect(html).not.toContain('id="section-0-step-0-file-0"')
   })
 
-  test('section titles and step markers are links while change targets stay empty', () => {
+  test('section titles and step markers are links while change targets name themselves', () => {
     const value = document([{
       title: 'Linkable',
       steps: [{ text: 'A linkable step.', diff: simplePatch(), changes: ['change-001'] }],
@@ -452,10 +452,11 @@ describe('renderReport shell', () => {
 
     expect(html).toContain(`<a class="section-title-text" href="#${target.fragment}">Linkable</a>`)
     expect(html).toContain(
-      `<a class="permalink" href="#${target.steps[0]!.fragment}" aria-label="Permalink to step 1 in Linkable">LINK</a>`,
+      `<a class="permalink" href="#${target.steps[0]!.fragment}" aria-label="Permalink to step 1 in Linkable"><svg class="permalink-icon"`,
     )
-    expect(html).toContain('id="change-001" data-target-kind="change"></span>')
-    expect(html).not.toContain('href="#change-001"')
+    expect(html).toContain(
+      '<a class="change-target" id="change-001" data-target-kind="change" href="#change-001">change-001</a>',
+    )
     expect(html).not.toContain('data-copy-fragment')
   })
 

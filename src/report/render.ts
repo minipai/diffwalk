@@ -153,11 +153,11 @@ function renderSection(
       .filter((change) => change.canonical)
       .map(
         (change) =>
-          `<span class="change-target" id="${change.fragment}" data-target-kind="change"></span>`,
+          `<a class="change-target" id="${change.fragment}" data-target-kind="change" href="#${change.fragment}">${escapeHtml(change.id)}</a>`,
       )
       .join('')
     const actions = `<div class="step-actions">
-    ${renderPermalink(stepTarget.fragment, `Permalink to step ${stepIndex + 1} in ${section.title}`, 'LINK')}${changeTargets}
+    ${renderPermalink(stepTarget.fragment, `Permalink to step ${stepIndex + 1} in ${section.title}`, linkIcon)}${changeTargets}
   </div>`
     if (step.diff === undefined && step.binary === undefined) {
       return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}</div>`
@@ -266,8 +266,12 @@ ${links}
 </nav>`
 }
 
-function renderPermalink(fragment: string, label: string, text: string): string {
-  return `<a class="permalink" href="#${fragment}" aria-label="${escapeHtml(label)}">${escapeHtml(text)}</a>`
+// The link glyph is markup, not text, so the caller owns the escaping.
+const linkIcon =
+  '<svg class="permalink-icon" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.4 9.6 9.6 6.4"/><path d="M7 4.4 8.6 2.8a3 3 0 0 1 4.6 3.8l-1.8 1.8"/><path d="M9 11.6 7.4 13.2a3 3 0 0 1-4.6-3.8l1.8-1.8"/></g></svg>'
+
+function renderPermalink(fragment: string, label: string, content: string): string {
+  return `<a class="permalink" href="#${fragment}" aria-label="${escapeHtml(label)}">${content}</a>`
 }
 
 function pluralize(count: number, noun: string): string {
@@ -495,12 +499,11 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 .section-fold[open] > summary { border-bottom-color: var(--border); }
 .prose { color: #3c4d41; font-size: 14px; }
 .step { position: relative; scroll-margin-top: 18px; }
-.step-actions { position: absolute; top: 8px; right: 12px; z-index: 2; }
-.step-text { max-width: 900px; padding: 8px 68px 8px 20px; font-size: 17px; }
-.permalink { display: block; padding: 2px 3px; color: #98a29c; font: 600 10px/20px ui-monospace, SFMono-Regular, Menlo, monospace; text-decoration: none; }
-.permalink:hover, .permalink:focus-visible { color: var(--accent); }
-.change-target { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; scroll-margin-top: 18px; }
-.step:not(:has(.step-text)) .step-files { padding-right: 68px; }
+.step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 8px 20px 0; }
+.step-text { max-width: 900px; padding: 4px 20px 8px; font-size: 17px; }
+.permalink, .change-target { display: inline-flex; align-items: center; border-radius: 5px; padding: 2px 6px; color: #98a29c; font: 600 10px/14px ui-monospace, SFMono-Regular, Menlo, monospace; text-decoration: none; }
+.permalink:hover, .permalink:focus-visible, .change-target:hover, .change-target:focus-visible { color: var(--accent); background: #eef5ef; }
+.change-target { scroll-margin-top: 18px; }
 .prose strong { color: #142c1d; }
 .step-files { padding: 12px; display: grid; gap: 9px; }
 .step + .step { border-top: 1px solid #e3ebe5; }
@@ -627,7 +630,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .section-fold > summary { font-size: 17px; }
 }
 @media print {
-  .layout-form, .permalink { display: none; }
+  .layout-form, .permalink, .change-target { display: none; }
   .review-map { display: none; }
   .review-workspace { display: block; }
   .report-cover { box-shadow: none; break-inside: avoid; }
