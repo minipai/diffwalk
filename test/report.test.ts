@@ -365,6 +365,22 @@ describe('renderReport shell', () => {
     expect(html).toContain('value="unified" checked')
   })
 
+  test('wrap checkbox rides alongside the layout radio and defaults to off', () => {
+    const html = renderReport(document([section(simplePatch(), 'Wrap')]), stubClient)
+
+    expect(html).toContain('data-wrap-form')
+    expect(html).toContain('name="wrap"')
+    expect(html).not.toContain('name="wrap" checked')
+  })
+
+  test('wrapped lines are preselected when requested', () => {
+    const html = renderReport(document([section(simplePatch(), 'Wrap')]), stubClient, {
+      wrap: true,
+    })
+
+    expect(html).toContain('name="wrap" checked')
+  })
+
   test('each open section has local fold controls and files start collapsed', () => {
     const html = renderReport(document([section(simplePatch(), 'Plain')]), stubClient)
 
