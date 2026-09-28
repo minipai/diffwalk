@@ -585,21 +585,24 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   color: #314439;
   background: #f3f7f3;
 }
-.file-with-copy { position: relative; }
-.file-summary-content { display: flex; align-items: baseline; gap: 10px; min-width: 0; width: 100%; padding-right: 58px; }
+.file-with-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.file-summary-content { display: flex; align-items: baseline; gap: 10px; min-width: 0; width: 100%; }
 .file-name { min-width: 0; overflow-wrap: anywhere; }
-.copy-path-form { position: absolute; top: 7px; right: 10px; margin: 0; }
+.copy-path-form { margin: 7px 10px 0 6px; }
 .copy-path { flex: none; padding: 2px 6px; border: 1px solid #bdcbbf; border-radius: 4px; color: #53665a; background: #f3f7f3; font: 11px/1.3 ui-sans-serif, sans-serif; cursor: pointer; }
 .copy-path:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
 .file > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
 .file > summary::-webkit-details-marker { display: none; }
-.file > summary::before { content: "▸ "; }
-.file[open] > summary::before { content: "▾ "; }
-.file-stats { float: right; color: #6d7d72; }
+.file > summary::before { flex: none; content: "▸"; }
+.file[open] > summary::before { content: "▾"; }
+.file-stats { flex: none; margin-left: auto; color: #6d7d72; white-space: nowrap; }
 .binary-sides { display: grid; gap: 4px; margin: 0; padding: 10px 12px; border-top: 1px solid #d2ddd4; }
 .binary-side { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .binary-side dt { color: #7e8d82; font-weight: 600; }
@@ -645,6 +648,8 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .layout-form label { padding: 4px 7px; font-size: 11px; }
   .fold-all { padding: 4px 7px; font-size: 11px; }
   .section-fold > summary { font-size: 17px; }
+  .copy-path-form { margin-right: 6px; }
+  .copy-path { padding-inline: 5px; }
 }
 @media print {
   .layout-form, .permalink { display: none; }
