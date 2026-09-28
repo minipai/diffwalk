@@ -173,14 +173,18 @@ function renderSection(
         const pureRename = file.type === 'rename-pure' && file.hunks.length === 0
         const label = escapeHtml(fileDiffLabel(file))
         if (pureRename) {
-          return `<div class="file file-static">
-  <div class="file-summary">${label} <span class="file-stats">Renamed · content unchanged</span></div>
+          return `<div class="file-with-copy"><div class="file file-static">
+  <div class="file-summary">${renderFileLabel(label, 'Renamed · content unchanged')}</div>
+</div>
+  ${renderCopyForm(file.name)}
 </div>`
         }
-        return `<details class="file">
-  <summary class="file-summary">${label} <span class="file-stats">+${stats.additions} −${stats.deletions}</span></summary>
+        return `<div class="file-with-copy"><details class="file">
+  <summary class="file-summary">${renderFileLabel(label, `+${stats.additions} −${stats.deletions}`)}</summary>
   <div class="file-diff" data-diff-mount="${index}-${stepIndex}-${fileIndex}"></div>
-</details>`
+</details>
+  ${renderCopyForm(file.name)}
+</div>`
       })
       .join('\n')
 
@@ -224,13 +228,23 @@ function renderBinaryCard(change: BinaryChangeBlock): string {
   const moved = movedStatusLabel(change.status)
   const stats = moved === undefined ? `Binary · ${change.status}` : `${moved} · excluded content omitted`
   const excluded = excludedSide(change.status)
-  return `<div class="file file-binary">
-  <div class="file-summary">${escapeHtml(label)} <span class="file-stats">${escapeHtml(stats)}</span></div>
+  return `<div class="file-with-copy"><div class="file file-binary">
+  <div class="file-summary">${renderFileLabel(escapeHtml(label), stats)}</div>
   <dl class="binary-sides">
     ${renderBinarySide('Before', change.before, excluded === 'old')}
     ${renderBinarySide('After', change.after, excluded === 'new')}
   </dl>
+</div>
+  ${renderCopyForm(change.path)}
 </div>`
+}
+
+function renderFileLabel(label: string, stats: string): string {
+  return `<div class="file-summary-content"><span class="file-name">${label}</span> <span class="file-stats">${escapeHtml(stats)}</span></div>`
+}
+
+function renderCopyForm(path: string): string {
+  return `<form class="copy-path-form" data-copy-path-form><button type="submit" class="copy-path" data-copy-path="${escapeHtml(path)}" aria-label="Copy relative path ${escapeHtml(path)}">Copy</button></form>`
 }
 
 function renderBinarySide(label: string, side: BinaryChangeBlock['before'], excluded: boolean): string {
@@ -490,7 +504,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 .section-fold-controls { display: flex; gap: 6px; margin-left: auto; font-size: 12px; font-weight: 500; }
 .section-fold-all { border: 1px solid #cbd7cd; border-radius: 5px; padding: 4px 7px; color: #4d6654; background: #f7faf7; cursor: pointer; font: inherit; white-space: nowrap; }
 .section-fold-all:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
-.section-toggle:focus-visible, .section-title-text:focus-visible, .section-fold-all:focus-visible, .permalink:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.section-toggle:focus-visible, .section-title-text:focus-visible, .section-fold-all:focus-visible, .copy-path:focus-visible, .permalink:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .section-fold > summary::-webkit-details-marker { display: none; }
 .section-fold[open] > summary { border-bottom-color: var(--border); }
 .prose { color: #3c4d41; font-size: 14px; }
@@ -571,6 +585,12 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   color: #314439;
   background: #f3f7f3;
 }
+.file-with-copy { position: relative; }
+.file-summary-content { display: flex; align-items: baseline; gap: 10px; min-width: 0; width: 100%; padding-right: 58px; }
+.file-name { min-width: 0; overflow-wrap: anywhere; }
+.copy-path-form { position: absolute; top: 7px; right: 10px; margin: 0; }
+.copy-path { flex: none; padding: 2px 6px; border: 1px solid #bdcbbf; border-radius: 4px; color: #53665a; background: #f3f7f3; font: 11px/1.3 ui-sans-serif, sans-serif; cursor: pointer; }
+.copy-path:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
 .file > summary {
   cursor: pointer;
   list-style: none;

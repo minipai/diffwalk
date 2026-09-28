@@ -174,6 +174,31 @@ describe('renderReport shell', () => {
     expect(html).toContain('data-diff-mount="0-0-0"')
   })
 
+  test('renders an accessible relative-path copy form beside each file name', () => {
+    const html = renderReport(
+      document([
+        section(
+          [
+            'diff --git a/src/file.ts b/src/file.ts',
+            '--- a/src/file.ts',
+            '+++ b/src/file.ts',
+            '@@ -1 +1 @@',
+            '-old',
+            '+new',
+            '',
+          ].join('\n'),
+          'Copy path',
+        ),
+      ]),
+      stubClient,
+    )
+
+    expect(html).toContain('<form class="copy-path-form" data-copy-path-form>')
+    expect(html).toContain('data-copy-path="src/file.ts"')
+    expect(html).toContain('aria-label="Copy relative path src/file.ts"')
+    expect(html).not.toContain('data-copy-path="/home/')
+  })
+
   test('steps interleave text and diffs in the order they were authored', () => {
     const html = renderReport(
       document([
