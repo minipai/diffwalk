@@ -846,7 +846,7 @@ describe('report browser client', () => {
 
     expect(writes).toEqual(['src/file.ts'])
     expect(fold.open).toBe(true)
-    expect(button.textContent).toBe('Copied')
+    expect(button.dataset.copyState).toBe('copied')
     expect(button.getAttribute('aria-label')).toBe('Copied relative path src/file.ts')
   })
 
@@ -863,7 +863,7 @@ describe('report browser client', () => {
     button.form!.requestSubmit()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(button.textContent).toBe('Copy')
+    expect(button.dataset.copyState).toBe('ready')
     expect(button.getAttribute('aria-label')).toBe('Copy relative path example.ts')
   })
 

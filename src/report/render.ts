@@ -174,16 +174,14 @@ function renderSection(
         const label = escapeHtml(fileDiffLabel(file))
         if (pureRename) {
           return `<div class="file-with-copy"><div class="file file-static">
-  <div class="file-summary">${renderFileLabel(label, 'Renamed · content unchanged')}</div>
+  <div class="file-summary">${renderFileLabel(label, 'Renamed · content unchanged', file.name)}</div>
 </div>
-  ${renderCopyForm(file.name)}
 </div>`
         }
         return `<div class="file-with-copy"><details class="file">
-  <summary class="file-summary">${renderFileLabel(label, `+${stats.additions} −${stats.deletions}`)}</summary>
+  <summary class="file-summary">${renderFileLabel(label, `+${stats.additions} −${stats.deletions}`, file.name)}</summary>
   <div class="file-diff" data-diff-mount="${index}-${stepIndex}-${fileIndex}"></div>
 </details>
-  ${renderCopyForm(file.name)}
 </div>`
       })
       .join('\n')
@@ -229,22 +227,21 @@ function renderBinaryCard(change: BinaryChangeBlock): string {
   const stats = moved === undefined ? `Binary · ${change.status}` : `${moved} · excluded content omitted`
   const excluded = excludedSide(change.status)
   return `<div class="file-with-copy"><div class="file file-binary">
-  <div class="file-summary">${renderFileLabel(escapeHtml(label), stats)}</div>
+  <div class="file-summary">${renderFileLabel(escapeHtml(label), stats, change.path)}</div>
   <dl class="binary-sides">
     ${renderBinarySide('Before', change.before, excluded === 'old')}
     ${renderBinarySide('After', change.after, excluded === 'new')}
   </dl>
 </div>
-  ${renderCopyForm(change.path)}
 </div>`
 }
 
-function renderFileLabel(label: string, stats: string): string {
-  return `<div class="file-summary-content"><span class="file-name">${label}</span> <span class="file-stats">${escapeHtml(stats)}</span></div>`
+function renderFileLabel(label: string, stats: string, path: string): string {
+  return `<div class="file-summary-content"><span class="file-name">${label}</span> <span class="file-stats">${escapeHtml(stats)}</span>${renderCopyForm(path)}</div>`
 }
 
 function renderCopyForm(path: string): string {
-  return `<form class="copy-path-form" data-copy-path-form><button type="submit" class="copy-path" data-copy-path="${escapeHtml(path)}" aria-label="Copy relative path ${escapeHtml(path)}">Copy</button></form>`
+  return `<form class="copy-path-form" data-copy-path-form><button type="submit" class="copy-path" data-copy-path="${escapeHtml(path)}" data-copy-state="ready" aria-label="Copy relative path ${escapeHtml(path)}" title="Copy relative path"><span class="copy-icon copy-icon-copy" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M5 5V3.5A1.5 1.5 0 0 1 6.5 2h6A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H11"/><rect x="2" y="5" width="9" height="9" rx="1.5"/></svg></span><span class="copy-icon copy-icon-success" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="m3 8 3 3 7-7"/></svg></span></button></form>`
 }
 
 function renderBinarySide(label: string, side: BinaryChangeBlock['before'], excluded: boolean): string {
@@ -585,11 +582,16 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   color: #314439;
   background: #f3f7f3;
 }
-.file-with-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.file-with-copy { min-width: 0; }
 .file-summary-content { display: flex; align-items: baseline; gap: 10px; min-width: 0; width: 100%; }
 .file-name { min-width: 0; overflow-wrap: anywhere; }
-.copy-path-form { margin: 7px 10px 0 6px; }
-.copy-path { flex: none; padding: 2px 6px; border: 1px solid #bdcbbf; border-radius: 4px; color: #53665a; background: #f3f7f3; font: 11px/1.3 ui-sans-serif, sans-serif; cursor: pointer; }
+.copy-path-form { display: inline-flex; flex: none; margin: 0; }
+.copy-path { display: inline-grid; place-items: center; width: 23px; height: 21px; padding: 3px; border: 1px solid #bdcbbf; border-radius: 4px; color: #53665a; background: #f3f7f3; cursor: pointer; }
+.copy-icon { display: block; width: 14px; height: 14px; }
+.copy-icon svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.4; }
+.copy-icon-success { display: none; }
+.copy-path[data-copy-state="copied"] .copy-icon-copy { display: none; }
+.copy-path[data-copy-state="copied"] .copy-icon-success { display: block; color: var(--accent); }
 .copy-path:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
 .file > summary {
   display: flex;
@@ -648,8 +650,8 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .layout-form label { padding: 4px 7px; font-size: 11px; }
   .fold-all { padding: 4px 7px; font-size: 11px; }
   .section-fold > summary { font-size: 17px; }
-  .copy-path-form { margin-right: 6px; }
-  .copy-path { padding-inline: 5px; }
+  .file-summary-content { gap: 7px; }
+  .copy-path { width: 22px; height: 20px; }
 }
 @media print {
   .layout-form, .permalink { display: none; }

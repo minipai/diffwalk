@@ -290,6 +290,7 @@ function wireSectionFolds() {
 
 function wireCopyPaths() {
   document.querySelectorAll<HTMLFormElement>('[data-copy-path-form]').forEach((form) => {
+    form.addEventListener('click', (event) => event.stopPropagation())
     form.addEventListener('submit', async (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -303,10 +304,10 @@ function wireCopyPaths() {
       } catch {
         return
       }
-      button.textContent = 'Copied'
+      button.dataset.copyState = 'copied'
       button.setAttribute('aria-label', `Copied relative path ${path}`)
       setTimeout(() => {
-        button.textContent = 'Copy'
+        button.dataset.copyState = 'ready'
         button.setAttribute('aria-label', `Copy relative path ${path}`)
       }, 1500)
     })

@@ -196,6 +196,8 @@ describe('renderReport shell', () => {
     expect(html).toContain('<form class="copy-path-form" data-copy-path-form>')
     expect(html).toContain('data-copy-path="src/file.ts"')
     expect(html).toContain('aria-label="Copy relative path src/file.ts"')
+    expect(html).toContain('class="copy-icon copy-icon-copy"')
+    expect(html).not.toContain('>Copy</button>')
     expect(html).not.toContain('data-copy-path="/home/')
   })
 
