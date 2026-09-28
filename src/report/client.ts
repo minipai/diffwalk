@@ -35,6 +35,7 @@ export function mountReport(
   let finishInitialRender!: () => void
   const initialRender = new Promise<void>((resolve) => (finishInitialRender = resolve))
   wireSectionFolds()
+  wireCopyPaths()
   wireFragments(initialRender)
   const mountedDiffs = mountDiffs(data, layout, createFileDiff)
   void mountedDiffs.initialRender.then(finishInitialRender)
@@ -283,6 +284,31 @@ function wireSectionFolds() {
         details.open = open
       }
       button.focus({ preventScroll: true })
+    })
+  })
+}
+
+function wireCopyPaths() {
+  document.querySelectorAll<HTMLFormElement>('[data-copy-path-form]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const button = form.querySelector<HTMLButtonElement>('[data-copy-path]')
+      if (!button) return
+      event.preventDefault()
+      const path = button.dataset.copyPath
+      if (path === undefined) return
+      try {
+        await navigator.clipboard.writeText(path)
+      } catch {
+        return
+      }
+      button.textContent = 'Copied'
+      button.setAttribute('aria-label', `Copied relative path ${path}`)
+      setTimeout(() => {
+        button.textContent = 'Copy'
+        button.setAttribute('aria-label', `Copy relative path ${path}`)
+      }, 1500)
     })
   })
 }

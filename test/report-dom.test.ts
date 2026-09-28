@@ -14,11 +14,11 @@ afterEach(() => {
   windows.splice(0).forEach((dom) => dom.happyDOM.cancelAsync())
 })
 
-function simplePatch(oldLine = 'old', newLine = 'new'): string {
+function simplePatch(oldLine = 'old', newLine = 'new', path = 'example.ts'): string {
   return [
-    'diff --git a/example.ts b/example.ts',
-    '--- a/example.ts',
-    '+++ b/example.ts',
+    `diff --git a/${path} b/${path}`,
+    `--- a/${path}`,
+    `+++ b/${path}`,
     '@@ -1 +1 @@',
     `-${oldLine}`,
     `+${newLine}`,
@@ -820,6 +820,51 @@ describe('report browser client', () => {
     expect(button.getAttribute('aria-expanded')).toBe('false')
     fold.open = true
     expect(button.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  test('copies a relative file path through a form without toggling its file fold', async () => {
+    const dom = loadReport(renderReport(document([section(simplePatch('old', 'new', 'src/file.ts'), 'Copy path')]), clientBundle))
+    const writes: string[] = []
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (value: string) => writes.push(value) },
+    })
+    const doc = dom.document as unknown as Document
+    runReportClient()
+
+    const fold = doc.querySelector<HTMLDetailsElement>('details.file')!
+    fold.open = true
+    const form = doc.querySelector<HTMLFormElement>('[data-copy-path-form]')!
+    const button = form.querySelector<HTMLButtonElement>('button')!
+    expect(form.method).toBe('get')
+    expect(button.type).toBe('submit')
+    expect(button.getAttribute('aria-label')).toBe('Copy relative path src/file.ts')
+
+    button.focus()
+    form.requestSubmit()
+    await waitFor(() => writes.length === 1)
+
+    expect(writes).toEqual(['src/file.ts'])
+    expect(fold.open).toBe(true)
+    expect(button.textContent).toBe('Copied')
+    expect(button.getAttribute('aria-label')).toBe('Copied relative path src/file.ts')
+  })
+
+  test('does not show copy success when the clipboard rejects the write', async () => {
+    const dom = loadReport(renderReport(document([section(simplePatch(), 'Copy failure')]), clientBundle))
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async () => { throw new Error('clipboard unavailable') } },
+    })
+    const doc = dom.document as unknown as Document
+    runReportClient()
+
+    const button = doc.querySelector<HTMLButtonElement>('[data-copy-path]')!
+    button.form!.requestSubmit()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(button.textContent).toBe('Copy')
+    expect(button.getAttribute('aria-label')).toBe('Copy relative path example.ts')
   })
 
   test(
