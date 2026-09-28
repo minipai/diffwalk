@@ -583,19 +583,19 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   background: #f3f7f3;
 }
 .file-with-copy { min-width: 0; }
-.file-summary-content { display: flex; align-items: baseline; gap: 10px; min-width: 0; width: 100%; }
+.file-summary-content { display: flex; align-items: center; gap: 10px; min-width: 0; width: 100%; line-height: 1.35; }
 .file-name { min-width: 0; overflow-wrap: anywhere; }
 .copy-path-form { display: inline-flex; flex: none; margin: 0; }
-.copy-path { display: inline-grid; place-items: center; width: 23px; height: 21px; padding: 3px; border: 1px solid #bdcbbf; border-radius: 4px; color: #53665a; background: #f3f7f3; cursor: pointer; }
+.copy-path { display: inline-grid; place-items: center; width: 23px; height: 21px; padding: 3px; border: 0; border-radius: 4px; color: #53665a; background: transparent; cursor: pointer; line-height: 1; }
 .copy-icon { display: block; width: 14px; height: 14px; }
 .copy-icon svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.4; }
 .copy-icon-success { display: none; }
 .copy-path[data-copy-state="copied"] .copy-icon-copy { display: none; }
 .copy-path[data-copy-state="copied"] .copy-icon-success { display: block; color: var(--accent); }
-.copy-path:hover { color: var(--accent); border-color: #8eaa95; background: #eef5ef; }
+.copy-path:hover { color: var(--accent); background: #eef5ef; }
 .file > summary {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   cursor: pointer;
   list-style: none;
