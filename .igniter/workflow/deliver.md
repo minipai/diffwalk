@@ -1,8 +1,9 @@
 # Deliver
 
 Deliver one owner-approved checkpoint to `main` through GitHub. The pull
-request, required `Project check`, native rebase auto-merge, and landed commit
-are one delivery; do not stop after opening the pull request.
+request, required `Project check`, native rebase auto-merge, landed commit,
+and production website deployments are one delivery; do not stop after opening
+the pull request or merging it.
 
 ## Prepare
 
@@ -36,12 +37,30 @@ are one delivery; do not stop after opening the pull request.
 - If `main` advances before merge, rebase onto the new `origin/main`, rerun
   `pnpm check`, push with `--force-with-lease`, and watch the replacement check.
 
+## Publish the websites
+
+- After merge, fetch and verify the landed commit on `origin/main`. Deploy
+  from that clean landed revision, never from unmerged feature changes.
+- Use the Cloudflare and Wrangler skills. Read credentials from environment
+  variables; keep authentication noninteractive and never print tokens.
+- Run `pnpm run deploy` to build and deploy the `diffwalk-reports` Worker and
+  shared report assets at `https://review.diffwalk.dev`.
+- Run `pnpm exec wrangler deploy --config website/wrangler.jsonc` to deploy
+  the `diffwalk-site` website at `https://diffwalk.dev`.
+- Verify the homepage and an existing published review over HTTPS, including
+  the delivered feature and its shared assets. Use read-only checks; do not
+  create or delete production review data for deployment verification.
+- Record both deployment version IDs, source commit, production URLs, and
+  verification results. A failed deployment or verification leaves delivery
+  incomplete; report the concrete blocker.
+
 ## Finish
 
 After merge, fetch and verify that remote `main` contains the landed commit.
 Record the pull request URL, accepted checkpoint, any rebased checkpoint,
 successful check run, auto-merge result, landed commit, final lineage,
-working-tree state, remaining owner actions, and blockers or `none`.
+website deployment versions and verification, working-tree state, remaining
+owner actions, and blockers or `none`.
 
-Do not deploy the Cloudflare Worker or publish the npm package unless the owner
-separately authorizes it.
+Do not publish the npm package or run infrastructure provisioning unless the
+owner separately authorizes it.
