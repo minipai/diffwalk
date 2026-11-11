@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { lstat, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import type { BinarySide, DraftFile } from '../format/types'
+import { isMovedStatus } from '../format/status'
 
 // A captured file side is text when its bytes decode as UTF-8, and binary otherwise.
 // Binary sides keep only an identity: byte size and a content hash, never the bytes.
@@ -16,6 +17,7 @@ export interface GitCapture {
   root: string
   baseCommit: string
   files: DraftFile[]
+  patch?: string
 }
 
 export interface CaptureGitChangesOptions {
@@ -87,15 +89,16 @@ export async function captureGitChanges(
   }
 
   const filesByPath = new Map(files.map((file) => [file.path, file]))
+  let untrackedPaths: string[] = []
   if (!staged) {
-    const untracked = splitNulls(
+    untrackedPaths = splitNulls(
       await gitBytes(
         ['ls-files', '--others', '--exclude-standard', '--exclude=.diffwalk/', '-z', '--', ...scope],
         root,
         pathEnvironment,
       ),
     )
-    for (const path of untracked) {
+    for (const path of untrackedPaths) {
       if (isExcluded(path, exclude)) continue
       const existing = filesByPath.get(path)
       if (existing !== undefined) {
@@ -135,11 +138,171 @@ export async function captureGitChanges(
     }
   }
 
+  const captured = [...filesByPath.values()].sort((left, right) => left.path.localeCompare(right.path))
+  const patch = await captureWorkingTreePatch(
+    baseCommit,
+    root,
+    captured,
+    staged,
+    new Set(untrackedPaths),
+  )
+
   return {
     root,
     baseCommit,
-    files: [...filesByPath.values()].sort((left, right) => left.path.localeCompare(right.path)),
+    files: captured,
+    ...(patch === undefined ? {} : { patch }),
   }
+}
+
+// Git patch output is pinned so user configuration cannot change the captured blocks, and
+// textconv is off because Diffwalk's binary detection, not a converter, decides what is text.
+const patchOptions = [
+  '--no-ext-diff',
+  '--no-textconv',
+  '--no-color',
+  '--patch',
+  '--diff-algorithm=myers',
+  '--inter-hunk-context=0',
+  '--unified=3',
+  // Diffwalk already decided these files are UTF-8 text, so -diff attributes must not turn
+  // them into a binary notice. --text does not reverse --no-textconv.
+  '--text',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+] as const
+
+const literalPathEnvironment = {
+  GIT_LITERAL_PATHSPECS: '1',
+  GIT_GLOB_PATHSPECS: '0',
+  GIT_NOGLOB_PATHSPECS: '0',
+  GIT_ICASE_PATHSPECS: '0',
+}
+
+async function captureWorkingTreePatch(
+  baseCommit: string,
+  root: string,
+  files: DraftFile[],
+  staged: boolean,
+  untrackedPaths: Set<string>,
+): Promise<string | undefined> {
+  const paths = patchPaths(files)
+  if (paths.length === 0) return undefined
+
+  if (staged) {
+    return captureFilePatches(['--cached', baseCommit], files, root)
+  }
+
+  // Preserve tracked rename identities before adding untracked files. A new file can
+  // occupy a rename's old path; adding it to this index would change that rename's patch.
+  const additions = files.filter((file) => file.status === 'added' && untrackedPaths.has(file.path))
+  const tracked = files.filter((file) => !additions.includes(file))
+  const scratch = await mkdtemp(join(tmpdir(), 'diffwalk-patch-'))
+  try {
+    const indexFile = join(scratch, 'index')
+    const environment = { ...literalPathEnvironment, GIT_INDEX_FILE: indexFile }
+    const indexPath = (await gitText(['rev-parse', '--git-path', 'index'], root)).trim()
+    const realIndex = isAbsolute(indexPath) ? indexPath : resolve(root, indexPath)
+    try {
+      await copyFile(realIndex, indexFile)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      await gitBytes(['read-tree', '--empty'], root, environment)
+    }
+    const recreated = patchPaths(tracked).filter((path) => untrackedPaths.has(path) &&
+      !additions.some((file) => file.path === path))
+    if (recreated.length > 0) {
+      await gitBytes(['add', '--intent-to-add', '--', ...recreated], root, environment)
+    }
+    const trackedPatch = await captureFilePatches([baseCommit], tracked, root, environment)
+    const addedPatch = await captureAddedPatch(additions, root, scratch)
+    return [trackedPatch, addedPatch].filter((patch) => patch !== undefined).join('\n') || undefined
+  } finally {
+    await rm(scratch, { recursive: true, force: true })
+  }
+}
+
+// Stage untracked additions in an isolated index/object store so Git applies clean
+// filters, while comparing with an empty tree even when their paths exist in HEAD.
+async function captureAddedPatch(
+  files: DraftFile[],
+  root: string,
+  scratch: string,
+): Promise<string | undefined> {
+  const paths = patchPaths(files)
+  if (paths.length === 0) return undefined
+  const objects = join(scratch, 'objects')
+  await mkdir(objects)
+  const environment = {
+    ...literalPathEnvironment,
+    GIT_INDEX_FILE: join(scratch, 'additions-index'),
+    GIT_OBJECT_DIRECTORY: objects,
+  }
+  await gitBytes(['read-tree', '--empty'], root, environment)
+  await gitBytes(['add', '--', ...paths], root, environment)
+  const emptyTree = (await gitText(['hash-object', '-w', '-t', 'tree', '--stdin'], root, environment)).trim()
+  return captureFilePatches(['--cached', emptyTree], files, root, environment)
+}
+
+// Raw capture already decided which paths are renames. Do not let the later addition of
+// untracked paths (or a reduced path set) pair deletions and additions differently.
+async function captureFilePatches(
+  revisions: string[],
+  files: DraftFile[],
+  root: string,
+  environment: NodeJS.ProcessEnv = literalPathEnvironment,
+): Promise<string | undefined> {
+  const patches: string[] = []
+  const ordinaryPaths = patchPaths(files.filter((file) => file.status !== 'renamed'))
+  if (ordinaryPaths.length > 0) {
+    const patch = await capturedPatch(
+      ['diff', ...patchOptions, '--no-renames', ...revisions, '--', ...ordinaryPaths],
+      root,
+      environment,
+    )
+    if (patch !== undefined) patches.push(patch)
+  }
+  for (const file of files) {
+    if (file.status !== 'renamed') continue
+    const paths = patchPaths([file])
+    if (paths.length === 0) continue
+    const patch = await capturedPatch(
+      ['diff', ...patchOptions, '--find-renames', ...revisions, '--', ...paths],
+      root,
+      environment,
+    )
+    if (patch !== undefined) patches.push(patch)
+  }
+  return patches.length === 0 ? undefined : patches.join('\n')
+}
+
+// Only text files that produce change blocks need a patch. Binary and cross-exclusion moves
+// become binary cards, and an excluded path never enters this list, so its content is never
+// read into the capture.
+function patchPaths(files: DraftFile[]): string[] {
+  const paths = new Set<string>()
+  for (const file of files) {
+    if (
+      file.oldBinary !== undefined ||
+      file.newBinary !== undefined ||
+      isMovedStatus(file.status)
+    ) {
+      continue
+    }
+    if (file.status === 'renamed' && file.oldPath !== undefined) paths.add(file.oldPath)
+    paths.add(file.path)
+  }
+  return [...paths].sort()
+}
+
+async function capturedPatch(
+  args: string[],
+  root: string,
+  environment: NodeJS.ProcessEnv = literalPathEnvironment,
+): Promise<string | undefined> {
+  const bytes = await gitBytes(args, root, environment)
+  if (bytes.byteLength === 0) return undefined
+  return decodeText(bytes, 'git diff --patch')
 }
 
 async function draftChange(
@@ -297,7 +460,18 @@ export async function captureGitRevisionChanges(
     toRevision: to,
     fromCommit,
     toCommit,
+    ...(await revisionPatch(fromCommit, toCommit, files, root)),
   }
+}
+
+async function revisionPatch(
+  fromCommit: string,
+  toCommit: string,
+  files: DraftFile[],
+  root: string,
+): Promise<{ patch?: string }> {
+  const patch = await captureFilePatches([fromCommit, toCommit], files, root)
+  return patch === undefined ? {} : { patch }
 }
 
 export async function commitForRevision(revision: string, root = process.cwd()): Promise<string> {

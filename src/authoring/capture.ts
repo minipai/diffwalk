@@ -14,10 +14,21 @@ import type {
   TextChangeBlock,
 } from '../format/types'
 import { excludedSide, isMovedStatus } from '../format/status'
+import {
+  buildStepPatch,
+  changeBlocksFromPatch,
+  parseGitPatch,
+  type ParsedPatchFile,
+} from './patch'
 
-export function createExplainCapture(files: DraftFile[], source: CaptureSource): ExplainCapture {
+export function createExplainCapture(
+  files: DraftFile[],
+  source: CaptureSource,
+  patch?: string,
+): ExplainCapture {
   let nextId = 1
   const changes: ChangeBlock[] = []
+  const patchFiles = patch === undefined ? undefined : patchFilesByPath(patch)
 
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
     if (file.oldBinary !== undefined || file.newBinary !== undefined || isMovedStatus(file.status)) {
@@ -25,7 +36,7 @@ export function createExplainCapture(files: DraftFile[], source: CaptureSource):
       continue
     }
 
-    const fileChanges = changeBlocks(file).map((change) => ({
+    const fileChanges = (patchFiles === undefined ? changeBlocks(file) : blocksFromPatch(patchFiles, file)).map((change) => ({
       kind: 'text' as const,
       id: changeId(nextId++),
       path: file.path,
@@ -54,7 +65,23 @@ export function createExplainCapture(files: DraftFile[], source: CaptureSource):
     source,
     files,
     changes,
+    ...(patch === undefined || patch === '' ? {} : { patch }),
   }
+}
+
+function patchFilesByPath(patch: string): Map<string, ParsedPatchFile> {
+  return new Map(parseGitPatch(patch).map((file) => [file.path, file]))
+}
+
+function blocksFromPatch(
+  patchFiles: Map<string, ParsedPatchFile>,
+  file: DraftFile,
+): Omit<TextChangeBlock, 'kind' | 'id' | 'path'>[] {
+  const parsed = patchFiles.get(file.path)
+  if (parsed === undefined) {
+    throw new Error(`Captured patch is missing file: ${file.path}`)
+  }
+  return changeBlocksFromPatch(parsed)
 }
 
 function binaryChangeBlock(file: DraftFile, id: string): BinaryChangeBlock {
@@ -161,11 +188,14 @@ export function materializeExplainDocument(
   validateCapturePair(capture, explanations)
   const filesByPath = new Map(capture.files.map((file) => [file.path, file]))
   const changesById = new Map(capture.changes.map((change) => [change.id, change]))
+  const patchFiles = capture.patch === undefined ? undefined : patchFilesByPath(capture.patch)
 
   const shown = new Set<string>()
   const sections = explanations.sections.map((section) => ({
     title: section.title,
-    steps: section.steps.map((step) => materializeStep(step, filesByPath, changesById, shown)),
+    steps: section.steps.map((step) =>
+      materializeStep(step, filesByPath, changesById, shown, patchFiles),
+    ),
   }))
 
   validateChangeCoverage(capture.changes, shown)
@@ -185,6 +215,7 @@ function materializeStep(
   filesByPath: Map<string, DraftFile>,
   changesById: Map<string, ChangeBlock>,
   shown: Set<string>,
+  patchFiles: Map<string, ParsedPatchFile> | undefined,
 ): DocumentStep {
   if (step.changes === undefined) {
     return { text: step.text }
@@ -211,14 +242,31 @@ function materializeStep(
     }
 
     const patches: StructuredPatch[] = []
+    const patchTexts: string[] = []
     for (const [path, fileChanges] of changesByPath) {
       const file = findFile(filesByPath, path)
-      patches.push(createFilePatch(file, fileChanges))
+      if (patchFiles === undefined) {
+        patches.push(createFilePatch(file, fileChanges))
+        continue
+      }
+      // The CLI still has the captured snapshots, so keep checking the selected blocks
+      // against them. The patch builder itself only needs the Git patch.
+      validateBlocks(file, fileChanges)
+      const parsed = patchFiles.get(path)
+      if (parsed === undefined) {
+        throw new Error(`Captured patch is missing file: ${path}`)
+      }
+      patchTexts.push(buildStepPatch(file, parsed, fileChanges))
     }
+
+    const diff = [
+      ...patches.map(formatFilePatch),
+      ...patchTexts,
+    ].join('\n')
 
     return {
       text: step.text,
-      ...(patches.length === 0 ? {} : { diff: patches.map(formatFilePatch).join('\n') }),
+      ...(diff === '' ? {} : { diff }),
       ...(binaryChanges.length === 0 ? {} : { binary: binaryChanges }),
       changes: step.changes,
     }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { captureIdFor } from '../src/authoring/capture'
@@ -454,6 +454,46 @@ describe('inspect', () => {
     )
     expect(check.exitCode).toBe(0)
     expect(check.stdout).toContain('OK:')
+  })
+
+  test('refuses to overwrite a same-identity capture with different change blocks', async () => {
+    const repo = await fixtureRepo()
+    const output = await mkdtemp(join(tmpdir(), 'diffwalk-out-'))
+    directories.push(output)
+    const capturePath = join(output, 'capture.json')
+    const explanationsPath = join(output, 'explanations.yaml')
+    const inspect = await runCli(
+      ['inspect', '--output', capturePath, '--explanations', explanationsPath],
+      repo,
+    )
+    expect(inspect.exitCode).toBe(0)
+
+    // A capture from another decomposition keeps the same snapshot identity while moving
+    // the block boundaries, so the retained explanations would silently bind to new lines.
+    const retained = JSON.parse(await readFile(capturePath, 'utf8')) as {
+      changes: Record<string, unknown>[]
+    }
+    retained.changes[0] = {
+      ...retained.changes[0],
+      oldStart: 1,
+      oldCount: 2,
+      newStart: 1,
+      newCount: 2,
+      before: 'Hello\nWorld\n',
+      after: 'Hello\nUniverse\n',
+    }
+    const retainedText = `${JSON.stringify(retained, null, 2)}\n`
+    await writeFile(capturePath, retainedText)
+
+    const second = await runCli(
+      ['inspect', '--output', capturePath, '--explanations', explanationsPath],
+      repo,
+    )
+
+    expect(second.exitCode).not.toBe(0)
+    expect(second.stderr).toContain('different change blocks')
+    expect(second.stderr).toContain('new --output and --explanations paths')
+    expect(await readFile(capturePath, 'utf8')).toBe(retainedText)
   })
 
   test('pairs a custom capture path with explanations in the same directory', async () => {
@@ -2447,6 +2487,124 @@ describe('binary captures', () => {
       before: { kind: 'binary', size: 4 },
       after: { kind: 'binary', size: 5 },
     })
+  })
+})
+
+describe('inspect patch capture regressions', () => {
+  test('keeps a staged rename separate from a new file at its old path', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'old.ts'), 'original\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await git(['mv', 'old.ts', 'new.ts'], repo)
+    await writeFile(join(repo, 'old.ts'), 'replacement\n')
+    const indexBefore = await readFile(join(repo, '.git', 'index'))
+
+    expect((await runCli(['inspect'], repo)).exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files.map((file) => [file.path, file.status])).toEqual([
+      ['new.ts', 'renamed'],
+      ['old.ts', 'added'],
+    ])
+    expect(capture.changes).toContainEqual(expect.objectContaining({
+      path: 'old.ts', before: '', after: 'replacement\n',
+    }))
+    expect(await readFile(join(repo, '.git', 'index'))).toEqual(indexBefore)
+    await authorEveryChange(repo)
+    expect((await runCli(['check'], repo)).exitCode).toBe(0)
+    expect((await runCli(['export', 'json'], repo)).exitCode).toBe(0)
+  })
+
+  test('keeps an unstaged rename as delete/add alongside a staged rename', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'old.ts'), 'one\ntwo\nthree\n')
+    await writeFile(join(repo, 'tracked.ts'), 'different\ncontent\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await rename(join(repo, 'old.ts'), join(repo, 'new.ts'))
+    await git(['mv', 'tracked.ts', 'renamed.ts'], repo)
+    const indexBefore = await readFile(join(repo, '.git', 'index'))
+
+    const result = await runCli(['inspect'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files.map((file) => [file.path, file.status])).toEqual([
+      ['new.ts', 'added'],
+      ['old.ts', 'deleted'],
+      ['renamed.ts', 'renamed'],
+    ])
+    expect(capture.patch).not.toContain('rename from old.ts')
+    expect(capture.patch).toContain('rename from tracked.ts\nrename to renamed.ts')
+    expect(await readFile(join(repo, '.git', 'index'))).toEqual(indexBefore)
+    await authorEveryChange(repo)
+    expect((await runCli(['check'], repo)).exitCode).toBe(0)
+    expect((await runCli(['export', 'json'], repo)).exitCode).toBe(0)
+  })
+
+  test('captures without an index and leaves the real index absent', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'file.ts'), 'old\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await writeFile(join(repo, 'file.ts'), 'new\n')
+    await rename(join(repo, '.git', 'index'), join(repo, '.git', 'index.saved'))
+
+    const result = await runCli(['inspect'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.changes).toMatchObject([
+      { path: 'file.ts', before: 'old\n', after: 'new\n' },
+    ])
+    expect(existsSync(join(repo, '.git', 'index'))).toBe(false)
+    await authorEveryChange(repo)
+    expect((await runCli(['check'], repo)).exitCode).toBe(0)
+    expect((await runCli(['export', 'json'], repo)).exitCode).toBe(0)
+  })
+
+  test('includes a staged addition in a default working-tree inspect', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'base.ts'), 'base\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await writeFile(join(repo, 'staged.ts'), 'staged\n')
+    await git(['add', 'staged.ts'], repo)
+
+    const result = await runCli(['inspect'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files).toMatchObject([{ path: 'staged.ts', status: 'added' }])
+    expect(capture.changes.map((change) => change.path)).toEqual(['staged.ts'])
+    expect(capture.patch).toContain('+++ b/staged.ts\n@@ -0,0 +1 @@\n+staged')
+  })
+
+  test('includes a staged rename in a default working-tree inspect', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffwalk-cli-'))
+    directories.push(repo)
+    await initializeRepository(repo)
+    await writeFile(join(repo, 'old.ts'), 'same\n')
+    await git(['add', '.'], repo)
+    await git(['commit', '-q', '-m', 'fixture'], repo)
+    await git(['mv', 'old.ts', 'new.ts'], repo)
+
+    const result = await runCli(['inspect'], repo)
+
+    expect(result.exitCode).toBe(0)
+    const capture = await readCapture(repo)
+    expect(capture.files).toMatchObject([
+      { path: 'new.ts', oldPath: 'old.ts', status: 'renamed' },
+    ])
+    expect(capture.patch).toContain('rename from old.ts\nrename to new.ts')
   })
 })
 
