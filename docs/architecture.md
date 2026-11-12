@@ -102,8 +102,10 @@ exact corresponding diffs in a deliberate order.
   Publication is unlisted rather than private: the link is the only credential a reader
   needs. Each review mints a revocation token returned once and kept only as a SHA-256
   digest, so a lost token means the review stays published. Reviews also expire on their
-  own: the bucket's lifecycle rule deletes every stored document 7 days after upload, so
-  a link stops resolving even when nobody revokes it. The publish response carries
+  own: the bucket's lifecycle rule deletes every stored document under `reports/` 7 days
+  after upload, so a link stops resolving even when nobody revokes it. The homepage's
+  example review is not a publication: it lives at `examples/example.json`, outside that
+  prefix, and the Worker serves it at the fixed `/example` path. The publish response carries
   no URL; the CLI builds the link from the service origin it dialed, because deriving it
   in the Worker would trust the request's `Host` header. The CLI retains the review's ID,
   URL, service, and revocation token in the walk's `published.json`, and `diffwalk publish
@@ -185,7 +187,8 @@ exact corresponding diffs in a deliberate order.
   pairing), inspection commands, validation, HTML/JSON exports, and rejection of the
   removed `build`, `report`, and draft workflows.
 - `worker/index.ts`: the Cloudflare Worker that stores, renders, and revokes reports,
-  stamps `metadata.publishedAt` when it accepts an upload, and sets the review origin's
+  stamps `metadata.publishedAt` when it accepts an upload, serves the permanent
+  `/example` review from `examples/example.json`, and sets the review origin's
   Content Security Policy, security headers, and caching.
 - `worker/reports.ts`: report IDs, revocation tokens, token digests, constant-time secret
   comparison, and the bounded document size.
@@ -198,8 +201,11 @@ exact corresponding diffs in a deliberate order.
 - `website/cloudflare.config.ts` and `website/vite.config.ts`: the assets-only site Worker
   for `diffwalk.dev`, with `public/` as its static-asset source.
 - `infra/setup.sh`: idempotent zone configuration Wrangler does not own: the R2 bucket,
-  its lifecycle rules, WAF managed rules, and rate limits, driven through the cf CLI. The
-  7-day review retention lives in `infra/r2-lifecycle.json`.
+  its lifecycle rules, the permanent example review at `examples/example.json`, WAF
+  managed rules, and rate limits, driven through the cf CLI. The 7-day review retention
+  lives in `infra/r2-lifecycle.json`.
+- `infra/example.json`: the ExplainDocument served at `/example` and on the homepage.
+  It sits outside the expiring `reports/` prefix, and `infra/setup.sh` uploads it.
 - `worker/index.test.ts`: Worker route behavior against a stub bucket, covering
   authentication, validation, size limits, revocation, and error states.
 - `test/publish.test.ts`: CLI publish, update, and unpublish behavior against a stubbed fetch.
