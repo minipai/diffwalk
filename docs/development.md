@@ -60,7 +60,8 @@ The service uses a Cloudflare Worker, a private R2 bucket, and shared static ass
 [infra/setup.sh](../infra/setup.sh) provisions the bucket, applies its 7-day review
 lifecycle from [infra/r2-lifecycle.json](../infra/r2-lifecycle.json), and configures
 zone-level settings, including disabling public R2 access, WAF rules, and rate limits. It
-requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` in the environment.
+drives the [Cloudflare cf CLI](https://developers.cloudflare.com/cli/) and requires
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` in the environment.
 
 ```bash
 ./infra/setup.sh
