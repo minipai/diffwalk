@@ -60,6 +60,24 @@ export function renderHostedReport(
   )
 }
 
+interface ChoiceOption {
+  value: string
+  text: string
+  checked: boolean
+}
+
+// Both reading controls are the same widget: a form of radio labels whose checked
+// value is the setting, so they share one renderer and one set of styles.
+function renderChoiceForm(name: string, label: string, options: ChoiceOption[]): string {
+  const labels = options
+    .map(
+      ({ value, text, checked }) =>
+        `<label><input type="radio" name="${name}" value="${value}"${checked ? ' checked' : ''}> ${text}</label>`,
+    )
+    .join('')
+  return `<form class="choice-form" data-${name}-form aria-label="${escapeHtml(label)}">${labels}<button type="submit" hidden aria-hidden="true" tabindex="-1"></button></form>`
+}
+
 function renderReportBody(
   document: ExplainDocument,
   options: ReportOptions = {},
@@ -73,16 +91,14 @@ function renderReportBody(
     renderSection(section, index, targets[index]!),
   )
   const files = sections.reduce((total, section) => total + section.fileCount, 0)
-  const layoutForm = `<form class="layout-form" data-layout-form aria-label="Diff layout">
-    <label><input type="radio" name="layout" value="split" ${layout === 'split' ? 'checked' : ''}> Split</label>
-    <label><input type="radio" name="layout" value="unified" ${layout === 'unified' ? 'checked' : ''}> Unified</label>
-    <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
-  </form>`
-  const wrapForm = `<form class="wrap-form" data-wrap-form aria-label="Long line handling">
-    <label><input type="radio" name="wrap" value="wrap" ${wrap ? 'checked' : ''}> Wrap</label>
-    <label><input type="radio" name="wrap" value="scroll" ${wrap ? '' : 'checked'}> No wrap</label>
-    <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
-  </form>`
+  const layoutForm = renderChoiceForm('layout', 'Diff layout', [
+    { value: 'split', text: 'Split', checked: layout === 'split' },
+    { value: 'unified', text: 'Unified', checked: layout === 'unified' },
+  ])
+  const wrapForm = renderChoiceForm('wrap', 'Long line handling', [
+    { value: 'wrap', text: 'Wrap', checked: wrap },
+    { value: 'scroll', text: 'No wrap', checked: !wrap },
+  ])
   const readingControls = `<div class="review-controls">${layoutForm}${wrapForm}</div>`
   const reviewMap = renderReviewMap(
     document.sections.map((section, index) => ({
@@ -415,17 +431,18 @@ body {
   gap: 8px;
   margin: 0 10px 20px;
 }
-.layout-form, .wrap-form {
+.choice-form {
   display: flex;
   margin: 0;
   border: 1px solid #bdcbbf;
   border-radius: 7px;
-  overflow: hidden;
   background: #f3f7f3;
 }
-.layout-form label, .wrap-form label { flex: 1; padding: 5px 10px; color: #607066; font-size: 13px; text-align: center; white-space: nowrap; cursor: pointer; }
-.layout-form input, .wrap-form input { display: none; }
-.layout-form label:has(input:checked), .wrap-form label:has(input:checked) { color: #ffffff; background: var(--accent); font-weight: 600; }
+.choice-form label { flex: 1; padding: 5px 10px; color: #607066; font-size: 13px; line-height: 20px; text-align: center; white-space: nowrap; cursor: pointer; }
+.choice-form label:first-of-type { border-radius: 6px 0 0 6px; }
+.choice-form label:last-of-type { border-radius: 0 6px 6px 0; }
+.choice-form input { display: none; }
+.choice-form label:has(input:checked) { color: #ffffff; background: var(--accent); font-weight: 600; }
 .fold-all {
   padding: 6px 10px;
   border: 1px solid #bdcbbf;
@@ -650,8 +667,8 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   }
   .review-map-label, .review-map-list, .review-map-counts { display: none; }
   .review-controls { display: flex; gap: 6px; justify-content: flex-end; margin: 0; }
-  .layout-form { flex: 1 1 auto; max-width: 180px; margin: 0 0 0 auto; }
-  .wrap-form { flex: 0 0 auto; }
+  .choice-form:first-of-type { flex: 1 1 auto; max-width: 180px; margin: 0 0 0 auto; }
+  .choice-form:last-of-type { flex: 0 0 auto; }
   .fold-all { flex: none; padding: 5px 9px; font-size: 12px; }
   /* The aligned fragment target must clear the sticky strip, so push its
      scroll-margin past the strip plus breathing room. */
@@ -661,14 +678,14 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 @media (max-width: 520px) {
   .report-cover { padding: 18px 16px 8px; }
   .report-cover h1 { font-size: 21px; }
-  .layout-form label, .wrap-form label { padding: 4px 7px; font-size: 11px; }
+  .choice-form label { padding: 4px 7px; font-size: 11px; }
   .fold-all { padding: 4px 7px; font-size: 11px; }
   .section-fold > summary { font-size: 17px; }
   .file-summary-content { gap: 7px; }
   .copy-path { width: 22px; height: 20px; }
 }
 @media print {
-  .layout-form, .wrap-form, .permalink, .change-target { display: none; }
+  .choice-form, .permalink, .change-target { display: none; }
   .review-map { display: none; }
   .review-workspace { display: block; }
   .report-cover { box-shadow: none; break-inside: avoid; }

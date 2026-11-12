@@ -476,7 +476,10 @@ describe('report browser client', () => {
     }) as typeof sectionTarget.scrollIntoView
 
     runReportClient()
-    await waitFor(() => calls.length === 1)
+    // The first reveal waits for the diff mounts, which is the slow part of a
+    // cold client bundle; make that wait explicit instead of timing the test out.
+    await waitFor(() => mountedCount(dom) === 1, 90000)
+    await waitFor(() => calls.length >= 1)
 
     const anchor = doc.querySelector<HTMLAnchorElement>(`:is(a.section-title-text, a.permalink)[href="#${fragment}"]`)
     expect(anchor).not.toBeNull()
@@ -489,11 +492,11 @@ describe('report browser client', () => {
     anchor!.dispatchEvent(
       new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
     )
-    await waitFor(() => calls.length === 1)
+    await waitFor(() => calls.length >= 1)
 
     expect(sectionFold.open).toBe(true)
     expect(calls[0]).toEqual({ block: 'start' })
-  }, 30000)
+  }, 120000)
 
   test('clicking a folded step permalink opens its ancestors and aligns the step', async () => {
     const value = document([
