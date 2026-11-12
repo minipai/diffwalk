@@ -1,0 +1,130 @@
+{
+  "formatVersion": 1,
+  "title": "Stop losing customer webhooks when their endpoint is down",
+  "summary": "A customer's endpoint was allowed to decide our request latency, and a failed delivery existed only as a line in a log. This change records every webhook before the request returns, sends it from a queue worker, retries only failures that can succeed later, and gives support a way to inspect and replay a delivery.\n\n```text\npay order ──► record delivery ──► return\n                    │\n                    ▼\n              queue worker ──► customer endpoint\n                    │                 │\n                    │      retryable? │\n                    ▼                 ▼\n               next attempt       delivered\n```\n\nThe API call site keeps its shape: `dispatchWebhook` still takes an account and an event. What moved is the waiting, and with it the failure handling.\n",
+  "source": {
+    "kind": "working-tree",
+    "capturedAt": "2026-11-12T06:58:39.196Z",
+    "from": {
+      "revision": "HEAD",
+      "commit": "6beeb9e41e8504942a4d1f81f5c5210f41919e33"
+    }
+  },
+  "metadata": {
+    "explainedBy": "Kotone"
+  },
+  "sections": [
+    {
+      "title": "The request path should not wait for a customer's server",
+      "steps": [
+        {
+          "text": "`markOrderPaid` used to sign the payload and call the customer's endpoint inline. That tied our latency and success to a third party, and a crash after the order was written would drop the event with nothing recorded.\n\nThe call site keeps the same shape. `dispatchWebhook` now records the delivery and returns; signing moves to the sender, which is the only place that knows it is about to make a network call.\n",
+          "diff": "diff --git a/src/webhooks/dispatch.ts b/src/webhooks/dispatch.ts\n--- a/src/webhooks/dispatch.ts\n+++ b/src/webhooks/dispatch.ts\n@@ -1,5 +1,5 @@\n-import { createHmac } from 'node:crypto'\n import { endpointFor } from './endpoints'\n+import { enqueueDelivery } from './store'\n \n export interface WebhookEvent {\n   id: string\n@@ -8,24 +8,11 @@\n   createdAt: string\n }\n \n+// The request path now records the delivery and returns. Waiting for a customer's\n+// endpoint here would tie our latency and success to theirs, and a crash after the\n+// order write would lose the event entirely.\n export async function dispatchWebhook(accountId: string, event: WebhookEvent): Promise<void> {\n   const endpoint = endpointFor(accountId)\n   if (endpoint === null) return\n-\n-  const body = JSON.stringify(event)\n-  const signature = createHmac('sha256', endpoint.secret).update(body).digest('hex')\n-\n-  const response = await fetch(endpoint.url, {\n-    method: 'POST',\n-    headers: {\n-      'content-type': 'application/json',\n-      'x-webhook-id': event.id,\n-      'x-webhook-signature': signature,\n-    },\n-    body,\n-  })\n-\n-  if (!response.ok) {\n-    console.warn(`Webhook ${event.id} failed with ${response.status}`)\n-  }\n+  await enqueueDelivery(accountId, event, endpoint.url)\n }\n",
+          "changes": [
+            "change-009",
+            "change-010",
+            "change-011",
+            "change-012"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Record a delivery before anything can fail",
+      "steps": [
+        {
+          "text": "A delivery is a row, not a log line. `status` follows its journey, `attempts` is incremented when a worker claims it, and `next_attempt_at` is the only clock the queue reads.\n\nThe unique index on `(account_id, event_id)` makes recording idempotent: if the same API request is retried, the second insert is ignored instead of sending the customer a duplicate.\n",
+          "diff": "diff --git a/db/migrations/0042_webhook_deliveries.sql b/db/migrations/0042_webhook_deliveries.sql\nnew file mode 100644\n--- /dev/null\n+++ b/db/migrations/0042_webhook_deliveries.sql\n@@ -0,0 +1,22 @@\n+create table webhook_deliveries (\n+  id text primary key,\n+  account_id text not null,\n+  event_id text not null,\n+  event_type text not null,\n+  payload jsonb not null,\n+  endpoint text not null,\n+  status text not null default 'queued'\n+    check (status in ('queued', 'sending', 'delivered', 'exhausted')),\n+  attempts integer not null default 0,\n+  next_attempt_at timestamptz not null default now(),\n+  last_error text,\n+  created_at timestamptz not null default now(),\n+  delivered_at timestamptz\n+);\n+\n+create unique index webhook_deliveries_account_event\n+  on webhook_deliveries (account_id, event_id);\n+\n+create index webhook_deliveries_due\n+  on webhook_deliveries (next_attempt_at)\n+  where status = 'queued';\n",
+          "changes": [
+            "change-001"
+          ]
+        },
+        {
+          "text": "`enqueueDelivery` writes the event and its endpoint in one statement. The payload stays JSON so a later attempt sends exactly what was accepted, even if the order changes in the meantime.\n\n`claimDueDeliveries` is the queue's handshake. It selects due rows, marks them `sending`, and increments `attempts` in one statement; `for update skip locked` lets several workers run without handing the same row to two of them.\n\nThe remaining functions close the loop after an attempt: delivered, queued again with the next time, or exhausted with the last error.\n",
+          "diff": "diff --git a/src/webhooks/store.ts b/src/webhooks/store.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/webhooks/store.ts\n@@ -0,0 +1,101 @@\n+import { query } from '../db'\n+import type { WebhookEvent } from './dispatch'\n+\n+export interface QueuedDelivery {\n+  id: string\n+  accountId: string\n+  eventId: string\n+  eventType: string\n+  payload: WebhookEvent\n+  endpoint: string\n+  attempts: number\n+}\n+\n+export interface DeliveryRow {\n+  id: string\n+  account_id: string\n+  event_id: string\n+  event_type: string\n+  payload: WebhookEvent\n+  endpoint: string\n+  attempts: number\n+}\n+\n+export async function enqueueDelivery(\n+  accountId: string,\n+  event: WebhookEvent,\n+  endpoint: string,\n+): Promise<void> {\n+  // The event ID is part of the identity: if a caller retries the API request, the\n+  // delivery is already recorded and the second insert changes nothing.\n+  await query(\n+    `insert into webhook_deliveries (id, account_id, event_id, event_type, payload, endpoint)\n+     values ($1, $2, $3, $4, $5, $6)\n+     on conflict (account_id, event_id) do nothing`,\n+    [`dlv_${crypto.randomUUID()}`, accountId, event.id, event.type, event, endpoint],\n+  )\n+}\n+\n+export async function claimDueDeliveries(limit: number): Promise<QueuedDelivery[]> {\n+  // Claiming moves the row out of `queued` before any network call, so two workers\n+  // cannot send the same attempt. A crash after this point leaves the row in\n+  // `sending`; the next deploy can requeue stale rows.\n+  const rows = await query<DeliveryRow>(\n+    `update webhook_deliveries\n+        set status = 'sending', attempts = attempts + 1\n+      where id in (\n+        select id\n+          from webhook_deliveries\n+         where status = 'queued' and next_attempt_at <= now()\n+         order by next_attempt_at\n+         limit $1\n+         for update skip locked\n+      )\n+      returning id, account_id, event_id, event_type, payload, endpoint, attempts`,\n+    [limit],\n+  )\n+  return rows.map(toDelivery)\n+}\n+\n+export async function markDelivered(id: string): Promise<void> {\n+  await query(\n+    `update webhook_deliveries\n+        set status = 'delivered', delivered_at = now(), last_error = null\n+      where id = $1`,\n+    [id],\n+  )\n+}\n+\n+export async function scheduleRetry(\n+  id: string,\n+  nextAttemptAt: Date,\n+  error: string,\n+): Promise<void> {\n+  await query(\n+    `update webhook_deliveries\n+        set status = 'queued', next_attempt_at = $2, last_error = $3\n+      where id = $1`,\n+    [id, nextAttemptAt, error],\n+  )\n+}\n+\n+export async function markExhausted(id: string, error: string): Promise<void> {\n+  await query(\n+    `update webhook_deliveries\n+        set status = 'exhausted', last_error = $2\n+      where id = $1`,\n+    [id, error],\n+  )\n+}\n+\n+export function toDelivery(row: DeliveryRow): QueuedDelivery {\n+  return {\n+    id: row.id,\n+    accountId: row.account_id,\n+    eventId: row.event_id,\n+    eventType: row.event_type,\n+    payload: row.payload,\n+    endpoint: row.endpoint,\n+    attempts: row.attempts,\n+  }\n+}\n",
+          "changes": [
+            "change-015"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Retry only what is worth retrying",
+      "steps": [
+        {
+          "text": "`deliverOnce` sends one attempt and classifies the result. A 429 or a 5xx response means the endpoint is reachable but busy, so another try can succeed. A 4xx is a rejected payload or a missing route; repeating it would only repeat the same answer.\n\nThe ten second timeout keeps a silent endpoint from holding a worker slot indefinitely, and a thrown network error is treated as retryable.\n",
+          "diff": "diff --git a/src/webhooks/deliver.ts b/src/webhooks/deliver.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/webhooks/deliver.ts\n@@ -0,0 +1,44 @@\n+import { createHmac } from 'node:crypto'\n+import type { QueuedDelivery } from './store'\n+\n+const timeoutMs = 10_000\n+\n+export type DeliveryOutcome =\n+  | { kind: 'delivered' }\n+  | { kind: 'retry'; error: string }\n+  | { kind: 'permanent-failure'; error: string }\n+\n+export async function deliverOnce(\n+  delivery: QueuedDelivery,\n+  secret: string,\n+): Promise<DeliveryOutcome> {\n+  const body = JSON.stringify(delivery.payload)\n+  const signature = createHmac('sha256', secret).update(body).digest('hex')\n+\n+  try {\n+    const response = await fetch(delivery.endpoint, {\n+      method: 'POST',\n+      headers: {\n+        'content-type': 'application/json',\n+        'x-webhook-id': delivery.eventId,\n+        'x-webhook-signature': signature,\n+      },\n+      body,\n+      signal: AbortSignal.timeout(timeoutMs),\n+    })\n+\n+    if (response.ok) return { kind: 'delivered' }\n+\n+    // A rejected payload or a missing endpoint will fail again. A timeout, a rate\n+    // limit, or a server error is worth another attempt later.\n+    const retryable = response.status === 429 || response.status >= 500\n+    return retryable\n+      ? { kind: 'retry', error: `HTTP ${response.status}` }\n+      : { kind: 'permanent-failure', error: `HTTP ${response.status}` }\n+  } catch (error) {\n+    return {\n+      kind: 'retry',\n+      error: error instanceof Error ? error.message : 'Network error',\n+    }\n+  }\n+}\n",
+          "changes": [
+            "change-008"
+          ]
+        },
+        {
+          "text": "The schedule is short and finite: 30 seconds, then 2, 10, 60, and 360 minutes. After the fifth attempt `retryAt` returns `null`, so the delivery becomes `exhausted` instead of retrying forever.\n\nFive attempts is a product decision, not a technical limit. Keeping the delays in one array makes the policy easy to read and easy to change.\n",
+          "diff": "diff --git a/src/webhooks/retry.ts b/src/webhooks/retry.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/webhooks/retry.ts\n@@ -0,0 +1,11 @@\n+// Five attempts spread over roughly seven hours: long enough to ride out a customer's\n+// deployment, short enough that support can still reason about when an event was last\n+// sent. The last entry is the wait before the final attempt.\n+const backoffSeconds = [30, 120, 600, 3600, 21_600]\n+\n+export const maxAttempts = backoffSeconds.length\n+\n+export function retryAt(attempt: number, now = Date.now()): Date | null {\n+  const delay = backoffSeconds[attempt - 1]\n+  return delay === undefined ? null : new Date(now + delay * 1000)\n+}\n",
+          "changes": [
+            "change-014"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Let the queue own the waiting",
+      "steps": [
+        {
+          "text": "`drainWebhookQueue` is the only place that decides what happens after an attempt. Each claimed delivery is resolved on its own, so one failing endpoint does not stop the batch.\n\nThe branch order matters: a missing endpoint is exhausted immediately, a permanent failure is not retried, and only a retryable failure consults `retryAt`. A crash after claiming leaves the row in `sending`, which is visible instead of silently lost.\n",
+          "diff": "diff --git a/src/queue/webhooks.ts b/src/queue/webhooks.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/queue/webhooks.ts\n@@ -0,0 +1,48 @@\n+import { recordDelivery } from '../observability/metrics'\n+import { deliverOnce } from '../webhooks/deliver'\n+import { endpointFor } from '../webhooks/endpoints'\n+import { retryAt } from '../webhooks/retry'\n+import {\n+  claimDueDeliveries,\n+  markDelivered,\n+  markExhausted,\n+  scheduleRetry,\n+} from '../webhooks/store'\n+\n+export async function drainWebhookQueue(limit = 50): Promise<number> {\n+  const deliveries = await claimDueDeliveries(limit)\n+\n+  for (const delivery of deliveries) {\n+    const endpoint = endpointFor(delivery.accountId)\n+    if (endpoint === null) {\n+      await markExhausted(delivery.id, 'No endpoint is registered for this account')\n+      recordDelivery('exhausted')\n+      continue\n+    }\n+\n+    const outcome = await deliverOnce(delivery, endpoint.secret)\n+\n+    if (outcome.kind === 'delivered') {\n+      await markDelivered(delivery.id)\n+      recordDelivery('delivered')\n+      continue\n+    }\n+\n+    if (outcome.kind === 'permanent-failure') {\n+      await markExhausted(delivery.id, outcome.error)\n+      recordDelivery('exhausted')\n+      continue\n+    }\n+\n+    const nextAttemptAt = retryAt(delivery.attempts)\n+    if (nextAttemptAt === null) {\n+      await markExhausted(delivery.id, outcome.error)\n+      recordDelivery('exhausted')\n+    } else {\n+      await scheduleRetry(delivery.id, nextAttemptAt, outcome.error)\n+      recordDelivery('retrying')\n+    }\n+  }\n+\n+  return deliveries.length\n+}\n",
+          "changes": [
+            "change-007"
+          ]
+        },
+        {
+          "text": "Counting the three outcomes separately makes the queue's health visible. A climbing `retrying` count means a customer is struggling; a climbing `exhausted` count means someone needs to act. The counters are process-local for now; the shape is what matters.\n",
+          "diff": "diff --git a/src/observability/metrics.ts b/src/observability/metrics.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/observability/metrics.ts\n@@ -0,0 +1,15 @@\n+export type DeliveryResult = 'delivered' | 'retrying' | 'exhausted'\n+\n+const totals: Record<DeliveryResult, number> = {\n+  delivered: 0,\n+  retrying: 0,\n+  exhausted: 0,\n+}\n+\n+export function recordDelivery(result: DeliveryResult): void {\n+  totals[result] += 1\n+}\n+\n+export function webhookMetrics(): Record<DeliveryResult, number> {\n+  return { ...totals }\n+}\n",
+          "changes": [
+            "change-006"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Give support a way to look and replay",
+      "steps": [
+        {
+          "text": "Two reads make the ledger useful. `deliveriesForAccount` lists recent attempts for one account, newest first, without exposing other customers' rows.\n\n`requeueDelivery` deliberately revives only an `exhausted` row. Replaying a queued or already delivered delivery would send a duplicate, so requiring exhaustion keeps the operation safe to press.\n",
+          "diff": "diff --git a/src/webhooks/history.ts b/src/webhooks/history.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/webhooks/history.ts\n@@ -0,0 +1,30 @@\n+import { query } from '../db'\n+import { toDelivery, type DeliveryRow, type QueuedDelivery } from './store'\n+\n+export async function deliveriesForAccount(\n+  accountId: string,\n+  limit = 50,\n+): Promise<QueuedDelivery[]> {\n+  const rows = await query<DeliveryRow>(\n+    `select id, account_id, event_id, event_type, payload, endpoint, attempts\n+       from webhook_deliveries\n+      where account_id = $1\n+      order by created_at desc\n+      limit $2`,\n+    [accountId, limit],\n+  )\n+  return rows.map(toDelivery)\n+}\n+\n+// Replay only touches an exhausted delivery; a queued or delivered one already has\n+// an owner and replaying it would send the customer a duplicate.\n+export async function requeueDelivery(accountId: string, id: string): Promise<boolean> {\n+  const rows = await query<{ id: string }>(\n+    `update webhook_deliveries\n+        set status = 'queued', attempts = 0, next_attempt_at = now(), last_error = null\n+      where id = $1 and account_id = $2 and status = 'exhausted'\n+      returning id`,\n+    [id, accountId],\n+  )\n+  return rows.length > 0\n+}\n",
+          "changes": [
+            "change-013"
+          ]
+        },
+        {
+          "text": "The API layer stays thin: it names the two operations support needs and leaves the ownership rules to the store. `replayDelivery` answers whether anything changed, which the route turns into a status code.\n",
+          "diff": "diff --git a/src/api/webhooks.ts b/src/api/webhooks.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/api/webhooks.ts\n@@ -0,0 +1,9 @@\n+import { deliveriesForAccount, requeueDelivery, type QueuedDelivery } from '../webhooks/history'\n+\n+export async function listDeliveries(accountId: string): Promise<QueuedDelivery[]> {\n+  return deliveriesForAccount(accountId)\n+}\n+\n+export async function replayDelivery(accountId: string, deliveryId: string): Promise<boolean> {\n+  return requeueDelivery(accountId, deliveryId)\n+}\n",
+          "changes": [
+            "change-002"
+          ]
+        },
+        {
+          "text": "The admin routes read the account from a header, list deliveries, and replay one by ID. The route table is still a plain array; the new endpoints did not need a framework change.\n\n`deliveryIdFrom` reads the same `:id` position the route declares, so the replay handler does not need a new parameter convention.\n",
+          "diff": "diff --git a/src/http/routes.ts b/src/http/routes.ts\n--- a/src/http/routes.ts\n+++ b/src/http/routes.ts\n@@ -1,4 +1,5 @@\n import { markOrderPaid } from '../api/orders'\n+import { listDeliveries, replayDelivery } from '../api/webhooks'\n \n export interface Route {\n   method: 'GET' | 'POST'\n@@ -16,4 +17,26 @@\n       return Response.json({ ok: true })\n     },\n   },\n+  {\n+    method: 'GET',\n+    path: '/webhooks/deliveries',\n+    handler: async (request) => {\n+      const accountId = request.headers.get('x-account-id') ?? ''\n+      return Response.json(await listDeliveries(accountId))\n+    },\n+  },\n+  {\n+    method: 'POST',\n+    path: '/webhooks/deliveries/:id/replay',\n+    handler: async (request) => {\n+      const accountId = request.headers.get('x-account-id') ?? ''\n+      const replayed = await replayDelivery(accountId, deliveryIdFrom(request))\n+      return Response.json({ replayed }, { status: replayed ? 202 : 404 })\n+    },\n+  },\n ]\n+\n+function deliveryIdFrom(request: Request): string {\n+  const segments = new URL(request.url).pathname.split('/').filter(Boolean)\n+  return segments.at(-2) ?? ''\n+}\n",
+          "changes": [
+            "change-003",
+            "change-004",
+            "change-005"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Pin the schedule with a test",
+      "steps": [
+        {
+          "text": "The test fixes both halves of the contract: the wait after each attempt and the moment retries stop. It also stubs `fetch` to prove that a 503 asks for another attempt while a 400 gives up.\n\nThese tests need neither a database nor a network, so they run in milliseconds and stay honest about the policy.\n",
+          "diff": "diff --git a/test/webhooks/retry.test.ts b/test/webhooks/retry.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/test/webhooks/retry.test.ts\n@@ -0,0 +1,57 @@\n+import { describe, expect, test } from 'bun:test'\n+import { deliverOnce } from '../../src/webhooks/deliver'\n+import { maxAttempts, retryAt } from '../../src/webhooks/retry'\n+import type { QueuedDelivery } from '../../src/webhooks/store'\n+\n+function delivery(): QueuedDelivery {\n+  return {\n+    id: 'dlv_1',\n+    accountId: 'acct_1',\n+    eventId: 'evt_1',\n+    eventType: 'order.paid',\n+    payload: {\n+      id: 'evt_1',\n+      type: 'order.paid',\n+      data: { orderId: 'ord_1' },\n+      createdAt: '2026-10-01T00:00:00.000Z',\n+    },\n+    endpoint: 'https://customer.example/webhooks',\n+    attempts: 1,\n+  }\n+}\n+\n+describe('retryAt', () => {\n+  test('waits longer after each failed attempt', () => {\n+    const now = Date.parse('2026-10-01T00:00:00.000Z')\n+\n+    expect(retryAt(1, now)?.toISOString()).toBe('2026-10-01T00:00:30.000Z')\n+    expect(retryAt(2, now)?.toISOString()).toBe('2026-10-01T00:02:00.000Z')\n+    expect(retryAt(3, now)?.toISOString()).toBe('2026-10-01T00:10:00.000Z')\n+  })\n+\n+  test('stops after the last attempt', () => {\n+    expect(maxAttempts).toBe(5)\n+    expect(retryAt(maxAttempts)).toBeNull()\n+  })\n+})\n+\n+describe('deliverOnce', () => {\n+  test('keeps a 500 for another attempt and gives up on a 400', async () => {\n+    const originalFetch = globalThis.fetch\n+    try {\n+      globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch\n+      expect(await deliverOnce(delivery(), 'secret')).toEqual({\n+        kind: 'retry',\n+        error: 'HTTP 503',\n+      })\n+\n+      globalThis.fetch = (async () => new Response(null, { status: 400 })) as typeof fetch\n+      expect(await deliverOnce(delivery(), 'secret')).toEqual({\n+        kind: 'permanent-failure',\n+        error: 'HTTP 400',\n+      })\n+    } finally {\n+      globalThis.fetch = originalFetch\n+    }\n+  })\n+})\n",
+          "changes": [
+            "change-016"
+          ]
+        }
+      ]
+    }
+  ]
+}

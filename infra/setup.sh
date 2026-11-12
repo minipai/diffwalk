@@ -4,8 +4,9 @@
 #
 # cloudflare.config.ts owns the Worker, its static assets, and its R2 binding. This script owns
 # the pieces the project configuration does not manage: the bucket itself, its public URL, its
-# lifecycle rules, the free WAF managed ruleset, and the publish rate limit. Every setting is
-# declarative, so re-running this script against an already configured zone is a no-op.
+# lifecycle rules, the permanent example review, the free WAF managed ruleset, and the publish
+# rate limit. Every setting is declarative, so re-running this script against an already
+# configured zone is a no-op.
 #
 # Requires the Cloudflare cf CLI: npm install --global cf@latest
 #
@@ -25,6 +26,7 @@ main() {
   create_report_bucket
   disable_public_bucket_url
   configure_report_lifecycle
+  upload_example_review
   configure_managed_rules
   configure_publish_rate_limit
 
@@ -70,6 +72,17 @@ configure_report_lifecycle() {
   cf r2 buckets lifecycle update "$BUCKET" \
     --rules "@${REPO_ROOT}/infra/r2-lifecycle.json" --force >/dev/null
   echo "    reviews expire 7 days after upload"
+}
+
+# R2 lifecycle conditions match a prefix only, so the homepage example is permanent by
+# living outside `reports/`. The Worker serves this fixed object at /example.
+upload_example_review() {
+  echo "==> Example review"
+  cf r2 objects put examples/example.json \
+    --bucket-name "$BUCKET" \
+    --content-type application/json \
+    --file "${REPO_ROOT}/infra/example.json" >/dev/null
+  echo "    uploaded examples/example.json"
 }
 
 configure_managed_rules() {

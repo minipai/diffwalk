@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { ExplainDocument } from '../src/format/types'
+import example from '../infra/example.json'
 import worker, { type Env } from './index'
 
 interface StoredObject {
@@ -552,6 +553,36 @@ describe('updating a report', () => {
 
     expect(response.status).toBe(405)
     expect(response.headers.get('allow')).toBe('GET, PUT, DELETE')
+  })
+})
+
+describe('the example review', () => {
+  test('serves the committed example from a fixed object outside the expiring report prefix', async () => {
+    await bucket.put('examples/example.json', JSON.stringify(example))
+
+    const response = await worker.fetch(new Request('https://reports.example/example'), env)
+    const html = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('public, max-age=300')
+    expect(html).toContain('Stop losing customer webhooks when their endpoint is down')
+    expect([...bucket.objects.keys()]).toEqual(['examples/example.json'])
+  })
+
+  test('answers 404 when no example has been uploaded', async () => {
+    const response = await worker.fetch(new Request('https://reports.example/example'), env)
+
+    expect(response.status).toBe(404)
+  })
+
+  test('accepts GET and HEAD only', async () => {
+    const response = await worker.fetch(
+      new Request('https://reports.example/example', { method: 'POST' }),
+      env,
+    )
+
+    expect(response.status).toBe(405)
+    expect(response.headers.get('allow')).toBe('GET')
   })
 })
 

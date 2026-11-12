@@ -62,10 +62,16 @@ assets from `worker/public`. The Worker builds and deploys through the
 configuration.
 
 [infra/setup.sh](../infra/setup.sh) provisions the bucket, applies its 7-day review
-lifecycle from [infra/r2-lifecycle.json](../infra/r2-lifecycle.json), and configures
+lifecycle from [infra/r2-lifecycle.json](../infra/r2-lifecycle.json), uploads the
+permanent example review from [infra/example.json](../infra/example.json), and configures
 zone-level settings, including disabling public R2 access, WAF rules, and rate limits. It
 drives the [Cloudflare cf CLI](https://developers.cloudflare.com/cli/) and requires
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` in the environment.
+
+The example lives outside the expiring `reports/` prefix because R2 lifecycle conditions
+match a prefix only, not an individual object. The Worker serves it at
+`https://review.diffwalk.dev/example`; re-running the setup script replaces the stored
+document with the committed one.
 
 ```bash
 ./infra/setup.sh

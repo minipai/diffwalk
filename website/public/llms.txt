@@ -27,4 +27,4 @@ The agent runs `diffwalk inspect`, writes the walkthrough in `explanations.yaml`
 
 ## Example
 
-- [Example review](https://review.diffwalk.dev/r/P_8OK1RGULn2Wx2p6u1LuQ): a guided review of a multi-file code change
+- [Example review](https://review.diffwalk.dev/example): a guided review of a multi-file code change

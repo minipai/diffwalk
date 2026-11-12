@@ -40,11 +40,21 @@ const contentSecurityPolicy = [
 // quickly, so reads are cached briefly rather than declared immutable.
 const reportCacheControl = 'public, max-age=60'
 
+// The homepage example is permanent, so it lives outside the `reports/` prefix whose
+// lifecycle rule deletes every publication after 7 days.
+const exampleKey = 'examples/example.json'
+const exampleCacheControl = 'public, max-age=300'
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = new URL(request.url).pathname
 
     if (path === '/favicon.svg') return showFavicon(request)
+
+    if (path === '/example') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return methodNotAllowed('GET')
+      return showExample(env)
+    }
 
     if (path === '/api/reports') {
       if (request.method !== 'POST') return methodNotAllowed('POST')
@@ -218,10 +228,21 @@ async function authorizeReport(
 
 async function showReport(reportId: string, env: Env): Promise<Response> {
   if (!isReportId(reportId)) return errorPage(404, 'No such report', 'This link does not name a report.')
+  return renderStoredReport(reportKey(reportId), reportCacheControl, env)
+}
 
+async function showExample(env: Env): Promise<Response> {
+  return renderStoredReport(exampleKey, exampleCacheControl, env)
+}
+
+async function renderStoredReport(
+  key: string,
+  cacheControl: string,
+  env: Env,
+): Promise<Response> {
   let object: R2ObjectBody | null
   try {
-    object = await env.REPORTS.get(reportKey(reportId))
+    object = await env.REPORTS.get(key)
   } catch {
     return errorPage(
       503,
@@ -245,7 +266,7 @@ async function showReport(reportId: string, env: Env): Promise<Response> {
     )
   }
 
-  return new Response(html, { headers: htmlHeaders(reportCacheControl) })
+  return new Response(html, { headers: htmlHeaders(cacheControl) })
 }
 
 async function readBoundedBody(request: Request): Promise<string | null> {
