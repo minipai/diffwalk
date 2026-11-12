@@ -440,7 +440,10 @@ describe('report browser client', () => {
     runReportClient()
     await waitFor(() => optionsSeen.length > 0)
 
-    expect(optionsSeen).toEqual([{ block: 'start' }])
+    // A late navigation can repeat the same alignment. What this test guards is
+    // that no path centers a section taller than the viewport.
+    expect(optionsSeen[0]).toEqual({ block: 'start' })
+    expect(optionsSeen.every((options) => options.block === 'start')).toBe(true)
     // The section title is the section's leading edge; after alignment it sits at
     // the top of the viewport instead of thousands of pixels above it.
     const titleTopInViewport = sectionTop - scrollTop
