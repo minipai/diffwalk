@@ -520,6 +520,40 @@ describe('report browser client', () => {
     expect(calls[0]).toEqual({ block: 'start' })
   })
 
+  test('a step wrapped in extra markup still reveals and aligns', async () => {
+    const value = document([
+      {
+        title: 'Nested target',
+        steps: [{ text: 'Target this step.', diff: simplePatch() }],
+      },
+    ])
+    const fragment = reportTargets(value)[0]!.steps[0]!.fragment
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: `https://reports.example/r/report-id#${fragment}`,
+    })
+    const doc = dom.document as unknown as Document
+    const step = doc.getElementById(fragment) as HTMLElement
+    const wrapper = doc.createElement('div')
+    wrapper.className = 'step-wrap'
+    step.parentElement!.insertBefore(wrapper, step)
+    wrapper.appendChild(step)
+    const sectionFold = step.closest<HTMLDetailsElement>('.section-fold')!
+    const fileFold = step.querySelector<HTMLDetailsElement>('details.file')!
+    sectionFold.open = false
+    fileFold.open = false
+    const calls: ScrollIntoViewOptions[] = []
+    step.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
+      calls.push(options ?? {})
+    }) as typeof step.scrollIntoView
+
+    runReportClient()
+
+    await waitFor(() => calls.length === 1, 90000)
+    expect(sectionFold.open).toBe(true)
+    expect(fileFold.open).toBe(true)
+    expect(calls[0]).toEqual({ block: 'start' })
+  }, 120000)
+
   test('a target after a large async diff is aligned only after every render settles', async () => {
     const large = Array.from({ length: 400 }, (_, index) => `-line ${index}\n+LINE ${index}`).join(
       '\n',

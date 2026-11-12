@@ -158,32 +158,12 @@ function currentFragment(): string | null {
   }
 }
 
+// Authored Markdown passes its own HTML through, so a [data-target-kind] inside
+// prose is the author's, not a target this client owns.
 function generatedTargets(): HTMLElement[] {
-  const targets: HTMLElement[] = []
-  for (const section of document.querySelectorAll<HTMLElement>(
-    'main > section.section[data-target-kind="section"][id]',
-  )) {
-    targets.push(section)
-    for (const fold of section.children) {
-      if (!fold.matches('details.section-fold')) continue
-      for (const step of fold.children) {
-        if (!step.matches('.step[data-target-kind="step"][id]')) continue
-        targets.push(step as HTMLElement)
-        for (const actions of step.children) {
-          if (!actions.matches('.step-actions')) continue
-          for (const change of actions.children) {
-            if (change.matches('.change-target[data-target-kind="change"][id]')) {
-              targets.push(change as HTMLElement)
-            }
-            if (change.matches('.permalink[data-target-kind="step-id"][id]')) {
-              targets.push(change as HTMLElement)
-            }
-          }
-        }
-      }
-    }
-  }
-  return targets
+  return [...document.querySelectorAll<HTMLElement>('[data-target-kind][id]')].filter(
+    (element) => element.closest('.prose') === null,
+  )
 }
 
 function reserveGeneratedIds() {
