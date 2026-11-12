@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { z } from 'zod'
 
@@ -40,4 +40,10 @@ export async function writePublishedReview(path: string, review: PublishedReview
   await mkdir(dirname(absolutePath), { recursive: true })
   // The token is a credential, so the file is owner-only rather than world-readable.
   await writeFile(absolutePath, `${JSON.stringify(review, null, 2)}\n`, { mode: 0o600 })
+}
+
+// Revoking the review and deleting its credential are one step: a token that outlives the
+// review makes the walk look published while `--update` can only ever fail.
+export async function removePublishedReview(path: string): Promise<void> {
+  await rm(resolve(path), { force: true })
 }

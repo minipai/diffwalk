@@ -146,13 +146,18 @@ Each capture lives in its own timestamped directory under `.diffwalk/`. List the
 select one as current, or remove one by its explicit ID:
 
 ```bash
-diffwalk walks             # list walks, newest first, and mark the current one
+diffwalk walks             # list walks, newest first, mark the current one, and name its review
 diffwalk use <walk-id>     # make another walk current
 diffwalk delete <walk-id>  # remove one walk
 ```
 
-`delete` requires the walk ID. Deleting the current walk clears `.diffwalk/current`;
-select another with `use` before running later commands.
+`walks` also names the review each walk published, when it has one, so the listing shows
+which links are still attached to local work. `delete` requires the walk ID. Deleting the
+current walk clears `.diffwalk/current`; select another with `use` before running later
+commands. Deleting a walk whose review is still live is refused, because the walk holds
+the only copy of its revocation token: run `diffwalk unpublish` from that walk first, or
+pass `--force` to delete it and lose the token. A forced delete still names the review it
+leaves behind.
 
 ## Inspect captured changes
 
@@ -223,7 +228,12 @@ so only preview, export, or publish explanations you or a trusted agent authored
 ```bash
 diffwalk publish          # creates an unlisted link
 diffwalk publish --update # replaces the review at the existing link
+diffwalk publish --new    # publishes a second link when this walk already has one
 ```
+
+Once a walk has a retained review, `publish` refuses to create another one. Replacing the
+content behind the existing link takes `--update`; publishing a separate review takes
+`--new`, which prints the previous link and token so the old review can still be revoked.
 
 Publishing uploads the review document, which the service renders. Links are
 anonymous and unlisted: anyone with the link can read the review without signing in.
@@ -240,11 +250,25 @@ uploaded document without changing the authoring files. Local previews and expor
 include only `explainedBy`.
 
 The local `published.json` stores the review ID, URL, service, and revocation token.
-Keep it out of version control. Use the token to remove a review:
+Keep it out of version control. Remove a review with:
 
 ```bash
-diffwalk unpublish <review-id> --token <revocation-token>
+diffwalk unpublish <review-id> [--token <revocation-token>] [--service <url>]
 ```
+
+When the review ID and service match the walk's retained review, `unpublish` reuses the
+retained token and deletes `published.json` after the service confirms the removal. The
+walk then stops looking published, and `publish --update` asks for a fresh publish instead
+of failing with a 404. Removing a different review, or passing a different `--service`,
+still revokes that review but leaves the retained credential untouched, because the token
+only vouches for its own review at the host that issued it. If the file cannot be deleted
+after a successful removal, the command fails and names the path to delete.
+
+A retained review can also outlive its link. The service deletes every review 7 days after
+upload, and a revoked review disappears immediately. When `publish --update` finds nothing
+at the retained host, it reports that the review was revoked or expired and leaves the
+stale credential for you to delete; `unpublish` treats the same answer as already removed
+and deletes the file itself.
 
 Losing the token and `published.json` prevents revocation. Running `diffwalk publish`
 again creates a new link and replaces the saved publication details. Save the old
@@ -267,11 +291,16 @@ walks:
 version control, so this config is local to the project and separate from every walk's
 `capture.json`, `explanations.yaml`, and `published.json`.
 
-For a new publication or `diffwalk unpublish`, the service is resolved in this order:
+For a new publication, the service is resolved in this order:
 
 1. `--service <url>`.
 2. `.diffwalk/config.json`.
 3. `https://review.diffwalk.dev`.
+
+`diffwalk unpublish` uses that order only when the walk has no retained review for the
+given ID: a matching retained review supplies its own service, and an explicit `--service`
+that differs from the retained host treats the review as someone else's and keeps
+`published.json`.
 
 The config is the `.diffwalk/config.json` at the root of the Git work tree, so commands
 work from any project subdirectory. A config above the work tree is not part of the

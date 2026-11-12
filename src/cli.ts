@@ -4,7 +4,7 @@ import { Command } from 'commander'
 import { printChange } from './cli/commands/change'
 import { printChanges } from './cli/commands/changes'
 import { checkReview } from './cli/commands/check'
-import { removeWalk } from './cli/commands/delete'
+import { removeWalk, type DeleteOptions } from './cli/commands/delete'
 import { exportReview } from './cli/commands/export'
 import { printFile } from './cli/commands/file'
 import { inspectChanges } from './cli/commands/inspect'
@@ -65,7 +65,8 @@ function createCli(): Command {
   cli
     .command('delete <walk-id>')
     .description('Delete a local walk')
-    .action(removeWalk)
+    .option('--force', 'Delete the walk even when its review is still published')
+    .action((walkId: string, options: DeleteOptions) => removeWalk(walkId, options))
 
   cli
     .command('changes')
@@ -117,12 +118,13 @@ function createCli(): Command {
     .option('--explanations <path>', 'Use an explicit explanations path')
     .option('--service <url>', 'Use an explicit review service origin')
     .option('--update', 'Replace the content behind the retained review link')
+    .option('--new', 'Publish a separate review even when this walk already has one')
     .action(publishReview)
 
   cli
     .command('unpublish <id>')
     .description('Remove a published review')
-    .option('--token <token>', 'Use the review revocation token')
+    .option('--token <token>', "Use the review revocation token instead of this walk's retained one")
     .option('--service <url>', 'Use an explicit review service origin')
     .action(removeReview)
 
