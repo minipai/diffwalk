@@ -67,7 +67,19 @@ export function withPublisher(
 
 async function validateServiceResponse(response: Response, action: 'publish' | 'update' | 'remove'): Promise<void> {
   if (!response.ok) {
-    throw new Error(`Could not ${action} the review: ${await failureDetail(response)}`)
+    throw new ServiceError(`Could not ${action} the review: ${await failureDetail(response)}`, response.status)
+  }
+}
+
+// Callers distinguish "the review is gone" from "this credential is wrong", and the status
+// is the only reliable signal once the failure text is formatted for people.
+export class ServiceError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'ServiceError'
   }
 }
 

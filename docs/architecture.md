@@ -111,13 +111,22 @@ exact corresponding diffs in a deliberate order.
   URL, service, and revocation token in the walk's `published.json`, and `diffwalk publish
   --update` authenticates with that token to `PUT /api/reports/:id`. The Worker replaces
   the stored document while keeping the ID, the link, and the revocation digest, so the
-  reader's URL and the author's credential both keep working.
+  reader's URL and the author's credential both keep working. `diffwalk unpublish` reads the
+  same file: a matching ID and service let it revoke with the retained token and, once the
+  service confirms, delete `published.json`. A different ID or host still revokes that
+  review but leaves the retained credential alone, so removing one review can never orphan
+  another walk's. The credential is what makes publishing visible: `publish` refuses to
+  replace it without `--update` or `--new`, `walks` names the link beside its walk, and
+  `delete` refuses to drop a walk whose review is still live unless given `--force`. When
+  the service no longer has a retained review, `unpublish` treats the 404 as already
+  removed and clears the file, while `publish --update` reports the revoked or expired
+  review and leaves the stale credential for the author to delete.
 
 - The review service is a project-level setting in `.diffwalk/config.json`, separate from
-  each walk's capture and publication credentials. New publications and `unpublish`
-  resolve it as `--service`, then the project config, then
-  `https://review.diffwalk.dev`. The environment is not consulted. The config is
-  `<work-tree-root>/.diffwalk/config.json`, so
+  each walk's capture and publication credentials. New publications resolve it as
+  `--service`, then the project config, then `https://review.diffwalk.dev`; `unpublish`
+  falls back to that order only when no retained review matches the given ID. The
+  environment is not consulted. The config is `<work-tree-root>/.diffwalk/config.json`, so
   the lookup works from a subdirectory while a config above the work tree is ignored;
   outside a Git work tree there is no project config, and explicit `--input`/`--explanations`
   never redirect it. `publish --update` uses only the retained service, so changing the

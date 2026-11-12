@@ -1178,6 +1178,33 @@ describe('walks', () => {
     expect(lines.find((line) => line.startsWith(first))).not.toContain('current')
   })
 
+  test('names the live review beside the walk that published it', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+      const walkId = await readCurrentWalkId(repo)
+      await writeFile(join(repo, 'greeting.ts'), 'Hello\nMultiverse\n')
+      await runCli(['inspect'], repo)
+      const unpublished = await readCurrentWalkId(repo)
+
+      const result = await runCli(['walks'], repo)
+
+      expect(result.exitCode).toBe(0)
+      const lines = result.stdout.split('\n')
+      const publishedLine = lines.find((line) => line.startsWith(walkId))!
+      expect(publishedLine).toContain(`published ${service.origin}/r/${reportId}`)
+      expect(publishedLine).not.toContain('current')
+      expect(lines.find((line) => line.startsWith(unpublished))).not.toContain('published')
+      expect(lines.find((line) => line.startsWith(unpublished))).toContain('(current)')
+    } finally {
+      service.stop()
+    }
+  })
+
   test('reports an empty workspace without failing', async () => {
     const repo = await fixtureRepo()
 
@@ -1240,6 +1267,33 @@ describe('walks', () => {
     const unknown = await runCli(['delete', second], repo)
     expect(unknown.exitCode).not.toBe(0)
     expect(unknown.stderr).toContain('No Diffwalk walk')
+  })
+
+  test('delete refuses a published walk and --force removes it', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+    const walkId = await readCurrentWalkId(repo)
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+
+      const refused = await runCli(['delete', walkId], repo)
+
+      expect(refused.exitCode).not.toBe(0)
+      expect(refused.stderr).toContain('still has a live review')
+      expect(refused.stderr).toContain('--force')
+      expect(existsSync(join(diffwalkDir(repo), walkId))).toBe(true)
+
+      const forced = await runCli(['delete', walkId, '--force'], repo)
+
+      expect(forced.exitCode).toBe(0)
+      expect(forced.stdout).toContain('is still live')
+      expect(existsSync(join(diffwalkDir(repo), walkId))).toBe(false)
+    } finally {
+      service.stop()
+    }
   })
 
   test('use and delete reject malformed or path-traversal walk IDs', async () => {
@@ -1726,7 +1780,7 @@ interface FakeService {
 const reportId = 'Zm9vYmFyYmF6cXV4MTIz'
 const revocationToken = 'end-to-end-revocation-token'
 
-function startFakeService(): FakeService {
+function startFakeService(reportIds: string[] = [reportId]): FakeService {
   const published: unknown[] = []
   const updated: { id: string; token: string; body: unknown }[] = []
   const revoked: { id: string; token: string }[] = []
@@ -1737,8 +1791,9 @@ function startFakeService(): FakeService {
       const credential = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '')
 
       if (request.method === 'POST' && url.pathname === '/api/reports') {
+        const id = reportIds[published.length] ?? reportIds[reportIds.length - 1]!
         published.push(await request.json())
-        return Response.json({ id: reportId, revocationToken }, { status: 201 })
+        return Response.json({ id, revocationToken }, { status: 201 })
       }
 
       const report = /^\/api\/reports\/(.+)$/.exec(url.pathname)
@@ -1921,6 +1976,91 @@ describe('publish', () => {
       expect(await readFile(retainedPath, 'utf8')).toBe(retainedBefore)
     } finally {
       service.stop()
+    }
+  })
+
+  test('refuses a second publish and names both ways forward', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+      const retainedPath = join(await currentWalkDir(repo), 'published.json')
+      const retainedBefore = await readFile(retainedPath, 'utf8')
+
+      const result = await runCli(['publish', '--service', service.origin], repo)
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('already published')
+      expect(result.stderr).toContain('--update')
+      expect(result.stderr).toContain('--new')
+      expect(service.published).toHaveLength(1)
+      expect(await readFile(retainedPath, 'utf8')).toBe(retainedBefore)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('publish --new publishes a separate review and hands back the old credential', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const secondReportId = 'c2Vjb25kLXJldmlldy1pZGVudGlmaWVy'
+    const service = startFakeService([reportId, secondReportId])
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+
+      const result = await runCli(['publish', '--new', '--service', service.origin], repo)
+
+      expect(result.exitCode).toBe(0)
+      expect(service.published).toHaveLength(2)
+      expect(result.stdout).toContain(`diffwalk unpublish ${reportId} --token ${revocationToken}`)
+      const retained = JSON.parse(
+        await readFile(join(await currentWalkDir(repo), 'published.json'), 'utf8'),
+      ) as { id: string }
+      expect(retained.id).toBe(secondReportId)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('--update and --new together are a usage error', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+
+    const result = await runCli(['publish', '--update', '--new'], repo)
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr).toContain('not both')
+  })
+
+  test('publish --update explains a review the service no longer has', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const server = Bun.serve({ port: 0, fetch: () => new Response(null, { status: 404 }) })
+    const origin = `http://127.0.0.1:${server.port}`
+
+    try {
+      const retainedPath = join(await currentWalkDir(repo), 'published.json')
+      await writeFile(
+        retainedPath,
+        JSON.stringify({ id: reportId, url: `${origin}/r/${reportId}`, service: origin, revocationToken }),
+      )
+
+      const result = await runCli(['publish', '--update'], repo)
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('no longer exists')
+      expect(result.stderr).toContain('revoked')
+      expect(result.stderr).toContain('7 days')
+      expect(existsSync(retainedPath)).toBe(true)
+    } finally {
+      server.stop(true)
     }
   })
 
@@ -2176,6 +2316,152 @@ describe('publish', () => {
 })
 
 describe('unpublish', () => {
+  test('removes the walk\'s retained review without flags and deletes its credential', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+      const publishedPath = join(await currentWalkDir(repo), 'published.json')
+
+      const result = await runCli(['unpublish', reportId], repo)
+
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain(`Removed review ${reportId} from ${service.origin}`)
+      expect(service.revoked).toEqual([{ id: reportId, token: revocationToken }])
+      expect(existsSync(publishedPath)).toBe(false)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('publish --update after unpublish asks for a first publish instead of failing with 404', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+      await runCli(['unpublish', reportId], repo)
+
+      const result = await runCli(['publish', '--update'], repo)
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain('No published review is retained for this walk')
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('removing a different review keeps the retained credential', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+    const otherReportId = 'b3RoZXItcmVwb3J0LWlkZW50aWZpZXI'
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+      const publishedPath = join(await currentWalkDir(repo), 'published.json')
+      const retainedBefore = await readFile(publishedPath, 'utf8')
+
+      const result = await runCli(
+        ['unpublish', otherReportId, '--token', revocationToken, '--service', service.origin],
+        repo,
+      )
+
+      expect(result.exitCode).toBe(0)
+      expect(service.revoked).toEqual([{ id: otherReportId, token: revocationToken }])
+      expect(await readFile(publishedPath, 'utf8')).toBe(retainedBefore)
+      expect(result.stdout).toContain(`Review ${reportId} is still published`)
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('an explicit service other than the retained host keeps the credential', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const retainedService = startFakeService()
+    const otherService = startFakeService()
+
+    try {
+      await runCli(['publish', '--service', retainedService.origin], repo)
+      const publishedPath = join(await currentWalkDir(repo), 'published.json')
+
+      const result = await runCli(
+        ['unpublish', reportId, '--token', revocationToken, '--service', otherService.origin],
+        repo,
+      )
+
+      expect(result.exitCode).toBe(0)
+      expect(otherService.revoked).toEqual([{ id: reportId, token: revocationToken }])
+      expect(retainedService.revoked).toHaveLength(0)
+      expect(existsSync(publishedPath)).toBe(true)
+    } finally {
+      retainedService.stop()
+      otherService.stop()
+    }
+  })
+
+  test('a credential that cannot be deleted is reported, not hidden', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const service = startFakeService()
+
+    try {
+      await runCli(['publish', '--service', service.origin], repo)
+      const publishedPath = join(await currentWalkDir(repo), 'published.json')
+      const walkDir = await currentWalkDir(repo)
+
+      try {
+        // Revocation succeeds, but the walk directory no longer allows removing the file.
+        await chmod(walkDir, 0o500)
+
+        const result = await runCli(['unpublish', reportId], repo)
+
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stdout).toContain(`Removed review ${reportId} from ${service.origin}`)
+        expect(result.stderr).toContain('could not delete')
+        expect(result.stderr).toContain(publishedPath)
+        expect(service.revoked).toEqual([{ id: reportId, token: revocationToken }])
+      } finally {
+        await chmod(walkDir, 0o700)
+      }
+    } finally {
+      service.stop()
+    }
+  })
+
+  test('clears a retained credential when the review is already gone', async () => {
+    const repo = await fixtureRepo()
+    await runCli(['inspect'], repo)
+    await authorEveryChange(repo)
+    const server = Bun.serve({ port: 0, fetch: () => new Response(null, { status: 404 }) })
+    const origin = `http://127.0.0.1:${server.port}`
+
+    try {
+      const retainedPath = join(await currentWalkDir(repo), 'published.json')
+      await writeFile(
+        retainedPath,
+        JSON.stringify({ id: reportId, url: `${origin}/r/${reportId}`, service: origin, revocationToken }),
+      )
+
+      const result = await runCli(['unpublish', reportId], repo)
+
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('no longer exists')
+      expect(existsSync(retainedPath)).toBe(false)
+    } finally {
+      server.stop(true)
+    }
+  })
+
   test('removes a report with its revocation token', async () => {
     const repo = await fixtureRepo()
     const service = startFakeService()

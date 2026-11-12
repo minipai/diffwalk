@@ -109,8 +109,11 @@ explained.
    the token in the review. When the user has already published this walk and asks to
    revise it, edit `explanations.yaml` and run `diffwalk publish --update`: it authenticates
    with the retained revocation token, replaces the content behind the same link, and keeps
-   the review ID. Use `diffwalk unpublish <id> --token <token>` only when the user asks to
-   remove that exact review.
+   the review ID. A plain `diffwalk publish` on a walk that already has a review is refused;
+   only `--new` publishes a second link, and it prints the old link and token so the earlier
+   review can still be revoked. Use `diffwalk unpublish <id>` only when the user asks to remove that
+   exact review: when the ID and host match the walk's retained review, it reuses the
+   retained token and deletes `published.json`; pass `--token` only for another review.
 
 ## Writing explanations
 
@@ -223,15 +226,15 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
 diffwalk inspect [revision] [--staged] [--base <revision>] [--from <revision> --to <revision>] [--path <path>...] [--pathspec <expression>...] [--exclude <path>...] [--output <capture-path>] [--explanations <yaml-path>]
 diffwalk walks
 diffwalk use <walk-id>
-diffwalk delete <walk-id>
+diffwalk delete <walk-id> [--force]
 diffwalk changes [--json] [--input <capture-path>]
 diffwalk change <id> [--input <capture-path>]
 diffwalk file <path> (--before | --after) [--input <capture-path>]
 diffwalk check [--input <capture-path>] [--explanations <yaml-path>]
 diffwalk view [--input <capture-path>] [--explanations <yaml-path>]
 diffwalk export <html|json> [--input <capture-path>] [--explanations <yaml-path>] [--output <path>]
-diffwalk publish [--input <capture-path>] [--explanations <yaml-path>] [--service <url>] [--update]
-diffwalk unpublish <id> --token <token> [--service <url>]
+diffwalk publish [--input <capture-path>] [--explanations <yaml-path>] [--service <url>] [--update | --new]
+diffwalk unpublish <id> [--token <token>] [--service <url>]
 ```
 
 ## Trusted-text boundary
