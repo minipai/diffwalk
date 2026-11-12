@@ -54,16 +54,22 @@ function readReportData(): ReportData | null {
   return JSON.parse(element.textContent) as ReportData
 }
 
+function choiceForm(name: string): HTMLFormElement | null {
+  return document.querySelector<HTMLFormElement>(`[data-${name}-form]`)
+}
+
+function checkedChoice(name: string): string | null {
+  return (
+    choiceForm(name)?.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)?.value ?? null
+  )
+}
+
 function initialLayout(): 'split' | 'unified' {
-  const form = document.querySelector<HTMLFormElement>('[data-layout-form]')
-  const checked = form?.querySelector<HTMLInputElement>('input[name="layout"]:checked')
-  return checked?.value === 'unified' ? 'unified' : 'split'
+  return checkedChoice('layout') === 'unified' ? 'unified' : 'split'
 }
 
 function initialOverflow(): 'scroll' | 'wrap' {
-  const form = document.querySelector<HTMLFormElement>('[data-wrap-form]')
-  const checked = form?.querySelector<HTMLInputElement>('input[name="wrap"]:checked')
-  return checked?.value === 'wrap' ? 'wrap' : 'scroll'
+  return checkedChoice('wrap') === 'wrap' ? 'wrap' : 'scroll'
 }
 
 function isNarrowViewport(): boolean {
@@ -71,8 +77,9 @@ function isNarrowViewport(): boolean {
 }
 
 function reflectLayout(value: 'split' | 'unified') {
-  const form = document.querySelector<HTMLFormElement>('[data-layout-form]')
-  const input = form?.querySelector<HTMLInputElement>(`input[name="layout"][value="${value}"]`)
+  const input = choiceForm('layout')?.querySelector<HTMLInputElement>(
+    `input[name="layout"][value="${value}"]`,
+  )
   if (input) input.checked = true
 }
 
@@ -367,10 +374,8 @@ function wireFragments(initialRender: Promise<void>) {
 }
 
 function wireWrap(mounted: MountedDiff[]) {
-  const form = document.querySelector<HTMLFormElement>('[data-wrap-form]')
-  form?.addEventListener('change', (event) => {
-    if (!(event.target as Element).matches('input[name="wrap"]')) return
-    const overflow = (event.target as HTMLInputElement).value === 'wrap' ? 'wrap' : 'scroll'
+  wireChoice('wrap', (value) => {
+    const overflow = value === 'wrap' ? 'wrap' : 'scroll'
     for (const { fileDiff, instance } of mounted) {
       instance.setOptions({ ...instance.options, overflow })
       instance.render({ fileDiff, forceRender: true })
@@ -378,12 +383,18 @@ function wireWrap(mounted: MountedDiff[]) {
   })
 }
 
+function wireChoice(name: string, onChange: (value: string) => void) {
+  choiceForm(name)?.addEventListener('change', (event) => {
+    if (!(event.target as Element).matches(`input[name="${name}"]`)) return
+    onChange((event.target as HTMLInputElement).value)
+  })
+}
+
 function wireLayout(mounted: MountedDiff[]) {
-  const form = document.querySelector<HTMLFormElement>('[data-layout-form]')
-  form?.addEventListener('change', (event) => {
-    if (!(event.target as Element).matches('input[name="layout"]')) return
-    const submitter = form.querySelector<HTMLButtonElement>('button[type="submit"]')
-    form.requestSubmit(submitter ?? undefined)
+  const form = choiceForm('layout')
+  wireChoice('layout', () => {
+    const submitter = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
+    form?.requestSubmit(submitter ?? undefined)
   })
   form?.addEventListener('submit', (event) => {
     event.preventDefault()
