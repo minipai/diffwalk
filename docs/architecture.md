@@ -101,7 +101,9 @@ exact corresponding diffs in a deliberate order.
   inlining them, so the renderer is deployed once and cached across every review.
   Publication is unlisted rather than private: the link is the only credential a reader
   needs. Each review mints a revocation token returned once and kept only as a SHA-256
-  digest, so a lost token means the review stays published. The publish response carries
+  digest, so a lost token means the review stays published. Reviews also expire on their
+  own: the bucket's lifecycle rule deletes every stored document 7 days after upload, so
+  a link stops resolving even when nobody revokes it. The publish response carries
   no URL; the CLI builds the link from the service origin it dialed, because deriving it
   in the Worker would trust the request's `Host` header. The CLI retains the review's ID,
   URL, service, and revocation token in the walk's `published.json`, and `diffwalk publish
@@ -192,7 +194,8 @@ exact corresponding diffs in a deliberate order.
 - `wrangler.jsonc`: the declarative Worker deployment: Static Assets, the R2 binding,
   routes, custom domain, and observability.
 - `infra/setup.sh`: idempotent zone configuration Wrangler does not own: the R2 bucket,
-  WAF managed rules, and rate limits.
+  its lifecycle rules, WAF managed rules, and rate limits. The 7-day review retention lives
+  in `infra/r2-lifecycle.json`.
 - `worker/index.test.ts`: Worker route behavior against a stub bucket, covering
   authentication, validation, size limits, revocation, and error states.
 - `test/publish.test.ts`: CLI publish, update, and unpublish behavior against a stubbed fetch.

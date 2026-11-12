@@ -1,0 +1,28 @@
+{
+  "rules": [
+    {
+      "id": "Default Multipart Abort Rule",
+      "enabled": true,
+      "conditions": {},
+      "abortMultipartUploadsTransition": {
+        "condition": {
+          "type": "Age",
+          "maxAge": 604800
+        }
+      }
+    },
+    {
+      "id": "Expire reviews after 7 days",
+      "enabled": true,
+      "conditions": {
+        "prefix": "reports/"
+      },
+      "deleteObjectsTransition": {
+        "condition": {
+          "type": "Age",
+          "maxAge": 604800
+        }
+      }
+    }
+  ]
+}
