@@ -135,7 +135,7 @@ async function captureChanges(
       from: { revision: from, commit: git.fromCommit },
       to: { revision: to, commit: git.toCommit },
       capturedAt,
-    })
+    }, git.patch)
   } else if (revision !== undefined) {
     const commit = await commitForRevision(revision)
     const parent = await firstParent(commit)
@@ -145,7 +145,7 @@ async function captureChanges(
       from: { revision: `${revision}^1`, commit: parent },
       to: { revision, commit },
       capturedAt,
-    })
+    }, git.patch)
   } else {
     const resolvedBase = base ?? 'HEAD'
     const git = await captureGitChanges(resolvedBase, process.cwd(), {
@@ -158,7 +158,7 @@ async function captureChanges(
       kind: 'working-tree',
       from: { revision: resolvedBase, commit: git.baseCommit },
       capturedAt,
-    })
+    }, git.patch)
   }
 }
 

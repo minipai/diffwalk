@@ -76,6 +76,10 @@ export interface ExplainCapture {
   source: CaptureSource
   files: DraftFile[]
   changes: ChangeBlock[]
+  // The Git patch the text change blocks were parsed from. Captures written before patch
+  // capture omit it and materialize from the snapshots in `files` instead. Binary-only
+  // captures also omit it because they carry no textual hunks.
+  patch?: string
 }
 
 export interface ExplanationStep {

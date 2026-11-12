@@ -7,8 +7,9 @@ exact corresponding diffs in a deliberate order.
 
 - Authoring is split into two files inside `.diffwalk/<walkId>/`. `capture.json` is machine-owned capture data:
   a `captureId`, a `working-tree` `source` with a `from` commit endpoint and an ISO
-  `capturedAt`, full old/new file snapshots and modes, and derived `change-*` blocks. It
-  never contains authored sections. `explanations.yaml` is the only author-edited file: it
+  `capturedAt`, full old/new file snapshots and modes, the Git patch the text blocks were
+  parsed from, and derived `change-*` blocks. It never contains authored sections.
+  `explanations.yaml` is the only author-edited file: it
   names the `captureId` it was authored against, carries a required `title` and an
   optional `summary`, and holds ordered sections of `{ title, steps[] }` where a step is
   `{ text?, changes[]? }` with at least one of the two. An optional
@@ -23,7 +24,10 @@ exact corresponding diffs in a deliberate order.
   name. `.diffwalk/current` stores the selected walk ID.
 - `inspect` never overwrites an existing authored `explanations.yaml`. Unchanged contents
   reuse the current walk. Changed contents create a new timestamped walk, update current,
-  and leave the earlier capture plus explanations pair intact.
+  and leave the earlier capture plus explanations pair intact. An explicit `--output`
+  also refuses to replace an existing capture with the same `captureId` but different
+  change blocks, because retained explanations would silently bind to new ranges; use
+  new `--output` and `--explanations` paths for a fresh pair.
 - `explanations.yaml` is parsed as strict safe YAML 1.2 (the `yaml` package, core
   schema). Custom tags, duplicate keys, anchors, and aliases are rejected; YAML 1.1
   coercions (`yes`, `on`) stay plain strings; the result is validated by a strict Zod
@@ -50,10 +54,17 @@ exact corresponding diffs in a deliberate order.
   is required at runtime; `export json` writes the portable ExplainDocument (format
   version 1) only for integrations and archiving.
 - The agent should not hand-write unified patches for real working-tree changes.
-  `diff` v9 identifies separate line-change blocks from complete old/new files;
-  selected blocks are applied to the old content, then the same package creates a
-  legal Git patch. Blocks can be explained separately even when the browser renders
-  them inside the same visual hunk.
+  `inspect` captures Git's own patch (tracked, staged, untracked, and committed ranges)
+  and parses its hunks into independent line-change blocks. A selected step rebuilds a
+  legal Git patch from those hunks plus their context, so a block can be explained alone
+  even when the browser renders it inside a larger visual hunk. The parser and
+  selected-step builder in `src/authoring/patch.ts` need only patch text and file
+  metadata, not the snapshots, so the same core can later run in a browser. The CLI
+  keeps the snapshots for `file`, `captureId`, and legacy captures, and still validates
+  selected blocks against them before materializing. Git's diff algorithm can split
+  ambiguous or repeated lines differently from the previous snapshot-based line diff, so
+  a new capture may assign different block boundaries or IDs for the same edit. Existing
+  captures keep their stored blocks and remain readable.
 - Step `text` and the document `summary` render as Markdown with inline HTML passed
   through, so a diagram can sit exactly where the argument needs it. Authored text is
   trusted; containment is the review origin's Content Security Policy, not escaping.
@@ -119,16 +130,23 @@ exact corresponding diffs in a deliberate order.
   dropping literal `--exclude` paths. Literal paths disable Git pathspec magic while
   pathspec expressions keep it; both narrow the diff before Git pairs renames. Exclusions
   drop paths from the result, before any file is read, so a detected rename crossing an
-  exclusion keeps both paths while only the included side is read. A text side keeps its
+  exclusion keeps both paths while only the included side is read. It also captures one
+  Git-produced patch for the included text files, with diff context, algorithm, prefixes,
+  textconv, and text/binary handling pinned. A text side keeps its
   UTF-8 content; a binary side keeps only its byte size and SHA-256 content hash. Git itself
   may read excluded content while detecting renames.
 - `src/format/status.ts`: names the direction of a rename that crosses an exclusion and
   labels the omitted side.
-- `src/authoring/capture.ts`: derives text change blocks, file-level binary change blocks,
-  and the content `captureId`, and materializes exact section patches from capture plus
-  explanations. A rename crossing an exclusion becomes a file-level move block that keeps
-  the included side and names the excluded one. Text-only files hash into `captureId`
-  exactly as before binary support, so existing captures and their explanations stay matched.
+- `src/authoring/patch.ts`: browser-safe Git patch parsing into line blocks and
+  selected-step patch construction. It depends on patch text plus path/status/mode
+  metadata, never on full snapshots.
+- `src/authoring/capture.ts`: derives text change blocks from the captured Git patch,
+  file-level binary change blocks, and the content `captureId`, and materializes exact
+  section patches from capture plus explanations. A rename crossing an exclusion becomes
+  a file-level move block that keeps the included side and names the excluded one.
+  Text-only files hash into `captureId` exactly as before binary support, so existing
+  captures and their explanations stay matched. Captures written before patch capture
+  fall back to snapshot-based materialization.
 - `src/cli/explanations.ts`: strict safe YAML 1.2 parsing into the explanations schema.
 - `src/cli/commands/`: each command owns its option schema and validates inputs before
   calling internal logic. `cli.ts` registers commands and forwards their arguments.

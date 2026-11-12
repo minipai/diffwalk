@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { captureGitChanges, captureGitRevisionChanges, gitUserName } from '../src/authoring/git'
+import { parseGitPatch } from '../src/authoring/patch'
 
 const directories: string[] = []
 
@@ -1452,6 +1453,120 @@ describe('gitUserName', () => {
         else process.env[key] = value
       }
     }
+  })
+})
+
+describe('captured patches', () => {
+  test('includes staged additions and untracked files in one working-tree patch', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'kept.ts'), 'kept\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await writeFile(join(directory, 'staged.ts'), 'staged\n')
+    await git(['add', 'staged.ts'], directory)
+    await writeFile(join(directory, 'untracked.ts'), 'untracked\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files.map((file) => [file.path, file.status])).toEqual([
+      ['staged.ts', 'added'],
+      ['untracked.ts', 'added'],
+    ])
+    expect(capture.patch).toContain('+++ b/staged.ts\n@@ -0,0 +1 @@\n+staged')
+    expect(capture.patch).toContain('+++ b/untracked.ts\n@@ -0,0 +1 @@\n+untracked')
+  })
+
+  test('names both sides of a staged rename in the patch', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'old.ts'), 'same\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+
+    await git(['mv', 'old.ts', 'new.ts'], directory)
+
+    const capture = await captureGitChanges('HEAD', directory)
+
+    expect(capture.files).toMatchObject([
+      { path: 'new.ts', oldPath: 'old.ts', status: 'renamed' },
+    ])
+    expect(capture.patch).toContain('rename from old.ts\nrename to new.ts')
+  })
+
+  test('keeps quoted, spaced, tab, and non-ASCII paths parseable', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    const names = ['sp ace.ts', 'quote"name.ts', 'tab\tname.ts', 'ünïcode.ts']
+    for (const name of names) await writeFile(join(directory, name), 'old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+    for (const name of names) await writeFile(join(directory, name), 'new\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+    const parsed = parseGitPatch(capture.patch!)
+    const blocks = new Map(parsed.map((file) => [file.path, file.blocks]))
+
+    for (const name of names) {
+      expect(blocks.get(name)?.[0]).toMatchObject({ before: 'old\n', after: 'new\n' })
+    }
+  })
+
+  test('keeps a text file textual when .gitattributes marks it -diff', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, '.gitattributes'), '*.txt -diff\n')
+    await writeFile(join(directory, 'notes.txt'), 'old notes\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+    await writeFile(join(directory, 'notes.txt'), 'new notes\n')
+
+    const capture = await captureGitChanges('HEAD', directory)
+    const [file] = parseGitPatch(capture.patch!)
+
+    expect(capture.patch).not.toContain('Binary files')
+    expect(file!.path).toBe('notes.txt')
+    expect(file!.blocks[0]).toMatchObject({ before: 'old notes\n', after: 'new notes\n' })
+  })
+
+  test('preserves a missing final newline from Git output', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'ending.ts'), 'one\ntwo')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+    await writeFile(join(directory, 'ending.ts'), 'one\nTWO')
+
+    const capture = await captureGitChanges('HEAD', directory)
+    const [file] = parseGitPatch(capture.patch!)
+
+    expect(capture.patch).toContain('\\ No newline at end of file')
+    expect(file!.blocks[0]).toMatchObject({ before: 'two', after: 'TWO' })
+  })
+
+  test('leaves a split index byte-for-byte unchanged', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'diffwalk-git-'))
+    directories.push(directory)
+    await initializeRepository(directory)
+    await writeFile(join(directory, 'tracked.ts'), 'old\n')
+    await git(['add', '.'], directory)
+    await git(['commit', '-q', '-m', 'fixture'], directory)
+    await git(['update-index', '--split-index'], directory)
+    await writeFile(join(directory, 'tracked.ts'), 'new\n')
+
+    const index = join(directory, '.git', 'index')
+    const before = createHash('sha256').update(await readFile(index)).digest('hex')
+    const capture = await captureGitChanges('HEAD', directory)
+    const after = createHash('sha256').update(await readFile(index)).digest('hex')
+
+    expect(capture.patch).toContain('-old\n+new')
+    expect(after).toBe(before)
   })
 })
 

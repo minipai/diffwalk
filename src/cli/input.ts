@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { materializeExplainDocument } from '../authoring/capture'
 import { parseExplanations } from './explanations'
 import { captureSchema } from '../format/schema'
-import type { ExplainCapture, ExplainDocument, Explanations } from '../format/types'
+import type { ChangeBlock, ExplainCapture, ExplainDocument, Explanations } from '../format/types'
 import { currentWalk } from '../authoring/walk'
 
 export interface CaptureOptions {
@@ -69,6 +69,7 @@ export function authoringFiles(
 }
 
 export async function writeCapture(paths: AuthoringFiles, capture: ExplainCapture): Promise<void> {
+  await refuseChangedBlocks(paths.capture, capture)
   await writeJson(paths.capture, capture)
   if (existsSync(paths.explanations)) {
     console.log(`Kept existing ${paths.explanations} (inspect never overwrites it)`)
@@ -76,6 +77,30 @@ export async function writeCapture(paths: AuthoringFiles, capture: ExplainCaptur
     await writeText(paths.explanations, explanationsSkeleton(capture.captureId))
     console.log(`Wrote a ${paths.explanations} skeleton to author`)
   }
+}
+
+// The capture identity covers snapshots, but a different diff algorithm can keep the same
+// identity while moving block boundaries and reusing the same change IDs. Overwriting the
+// capture then silently repoints retained explanations at different ranges, so refuse only
+// that case. A changed captureId is left to the existing stale-pairing check.
+async function refuseChangedBlocks(capturePath: string, capture: ExplainCapture): Promise<void> {
+  if (!existsSync(capturePath)) return
+  const existing = await readCapture(capturePath)
+  if (existing.captureId !== capture.captureId) return
+  if (changeSignature(existing.changes) === changeSignature(capture.changes)) return
+  throw new Error(
+    `Refusing to overwrite ${capturePath}: it has capture ${capture.captureId} but different change blocks than the new capture. Use new --output and --explanations paths for a fresh pair.`,
+  )
+}
+
+function changeSignature(changes: ChangeBlock[]): string {
+  return JSON.stringify(
+    changes.map((change) =>
+      Object.fromEntries(
+        Object.entries(change).sort(([left], [right]) => left.localeCompare(right)),
+      ),
+    ),
+  )
 }
 
 export async function readCapture(path: string): Promise<ExplainCapture> {

@@ -180,7 +180,7 @@ hide ownership or order; otherwise let Diffwalk's exact diff carry the code.
 
 ## Invariants
 
-- Never hand-write the final unified diffs. Diffwalk materializes selected change blocks from captured old/new contents and generates the patches.
+- Never hand-write the final unified diffs. Diffwalk parses the captured Git patch into change blocks and materializes selected blocks as exact patches.
 - Never edit or hand-parse `capture.json`. It is machine-owned; read it only through `changes`, `change`, and `file`.
 - Treat each change ID as independently assignable even when multiple IDs appear inside one rendered hunk.
 - Keep explanations ordered for comprehension rather than source-file order when that improves the walkthrough.

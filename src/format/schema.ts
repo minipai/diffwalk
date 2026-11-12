@@ -133,6 +133,7 @@ export const captureSchema = z
     source: captureSourceSchema,
     files: z.array(draftFileSchema),
     changes: z.array(changeBlockSchema),
+    patch: z.string().min(1).optional(),
   })
   .strict() satisfies z.ZodType<ExplainCapture>
 
