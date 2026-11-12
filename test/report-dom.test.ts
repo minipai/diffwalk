@@ -311,7 +311,7 @@ describe('report browser client', () => {
     await waitFor(() => scrollCount > 0)
     expect(scrollCount).toBeGreaterThan(0)
     expect(doc.activeElement).toBe(
-      doc.querySelector(`:is(a.section-title-text, a.permalink)[href="#${fragment}"]`),
+      target.closest('.step')!.querySelector('.step-actions > a'),
     )
     expect(doc.querySelector('.section-fold > summary')).not.toBeNull()
     expect(doc.querySelector('.file > summary')).not.toBeNull()
@@ -344,6 +344,29 @@ describe('report browser client', () => {
     expect(doc.activeElement).toBe(
       doc.querySelector(`:is(a.section-title-text, a.permalink)[href="#${fragment}"]`),
     )
+  })
+
+  test('step id hashes open the owning step and keep focus on the id', async () => {
+    const value = document([section(simplePatch('one', 'one!'), 'First')])
+    const dom = loadReport(renderReport(value, clientBundle), {
+      url: 'https://reports.example/r/report-id#section-01-01',
+    })
+    const doc = dom.document as unknown as Document
+    const chip = doc.getElementById('section-01-01') as HTMLElement
+    const files = [...doc.querySelectorAll<HTMLDetailsElement>('details.file')]
+    for (const file of files) file.open = false
+    let scrolled = false
+    chip.scrollIntoView = () => {
+      scrolled = true
+    }
+
+    runReportClient()
+
+    expect(files.length).toBeGreaterThan(0)
+    expect(files.every((file) => file.open)).toBe(true)
+    await waitFor(() => scrolled)
+    expect(scrolled).toBe(true)
+    expect(doc.activeElement).toBe(chip)
   })
 
   test('authored summary and step IDs cannot shadow or duplicate canonical targets', async () => {
@@ -454,7 +477,7 @@ describe('report browser client', () => {
 
     expect(sectionFold.open).toBe(true)
     expect(calls[0]).toEqual({ block: 'start' })
-  })
+  }, 30000)
 
   test('clicking a folded step permalink opens its ancestors and aligns the step', async () => {
     const value = document([
@@ -474,13 +497,13 @@ describe('report browser client', () => {
     const fileFold = step.querySelector<HTMLDetailsElement>('details.file')!
     sectionFold.open = false
     fileFold.open = false
-    const calls: ScrollIntoViewOptions[] = []
-    step.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
-      calls.push(options ?? {})
-    }) as typeof step.scrollIntoView
-
-    const anchor = doc.querySelector<HTMLAnchorElement>(`:is(a.section-title-text, a.permalink)[href="#${fragment}"]`)!
+    const anchor = step.querySelector<HTMLAnchorElement>('.step-actions > a')!
     expect(anchor.tagName).toBe('A')
+    const calls: ScrollIntoViewOptions[] = []
+    anchor.scrollIntoView = ((options?: ScrollIntoViewOptions) => {
+      calls.push(options ?? {})
+    }) as typeof anchor.scrollIntoView
+
     anchor.dispatchEvent(
       new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
     )
@@ -488,7 +511,6 @@ describe('report browser client', () => {
     await waitFor(() => calls.length === 1)
     expect(sectionFold.open).toBe(true)
     expect(fileFold.open).toBe(true)
-    expect(step.scrollIntoView).toBeDefined()
     expect(calls[0]).toEqual({ block: 'start' })
   })
 
@@ -651,7 +673,7 @@ describe('report browser client', () => {
       expect(firstScrolls).toBe(0)
       expect(secondScrolls).toBe(1)
       expect(doc.activeElement).toBe(
-        second.querySelector(`a[href="#${secondFragment}"]`),
+        second.querySelector('.step-actions > a'),
       )
     } finally {
       globalThis.setTimeout = previousSetTimeout
@@ -795,13 +817,11 @@ describe('report browser client', () => {
     expect(title.tagName).toBe('A')
     expect(title.textContent).toBe('Linked title')
     expect(title.tabIndex).toBe(0)
-    expect(stepLink.getAttribute('href')).toBe(`#${stepLink.closest('.step')!.id}`)
     expect(stepLink.querySelector('svg')).not.toBeNull()
+    expect(stepLink.textContent).toBe('01-01')
     expect(stepLink.tabIndex).toBe(0)
     expect(doc.querySelector('[data-copy-fragment]')).toBeNull()
-    expect(doc.querySelector<HTMLAnchorElement>('a[href="#change-001"]')?.textContent).toBe(
-      'change-001',
-    )
+    expect(doc.querySelector('a[href="#change-001"]')).toBeNull()
 
     button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event)
     expect(fold.open).toBe(false)

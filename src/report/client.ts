@@ -172,6 +172,9 @@ function generatedTargets(): HTMLElement[] {
             if (change.matches('.change-target[data-target-kind="change"][id]')) {
               targets.push(change as HTMLElement)
             }
+            if (change.matches('.permalink[data-target-kind="step-id"][id]')) {
+              targets.push(change as HTMLElement)
+            }
           }
         }
       }
@@ -249,7 +252,9 @@ function revealFragment(final: boolean) {
   // taller than the viewport would push that edge far off-screen.
   target.scrollIntoView?.({ block: 'start' })
   const owner = target.matches('[data-target-kind="change"]') ? target.closest('.step') : target
-  const link = owner?.querySelector<HTMLAnchorElement>('a.section-title-text, a.permalink')
+  const link = owner?.matches('a.permalink')
+    ? (owner as HTMLAnchorElement)
+    : owner?.querySelector<HTMLAnchorElement>('a.section-title-text, a.permalink')
   link?.focus({ preventScroll: true })
 }
 

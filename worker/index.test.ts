@@ -296,7 +296,7 @@ describe('reading a report', () => {
     expect(html).toContain('<script src="/report-client.js" defer></script>')
     expect(html).toContain('id="change-001" data-target-kind="change"')
     expect(html).not.toContain('data-copy-fragment')
-    expect(html).toContain('<a class="permalink" href="#')
+    expect(html).toContain('id="section-01-01" data-target-kind="step-id" href="#section-01-01"')
     expect(html).toMatch(/<a class="section-title-text" href="#[^"]+">First section<\/a>/)
     expect(html).not.toContain('<style>')
   })
