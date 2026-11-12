@@ -60,7 +60,7 @@ function shellWithoutClient(html: string): string {
 
 function loadReport(
   html: string,
-  options: { narrow?: boolean; url?: string } = {},
+  options: { url?: string } = {},
 ): Window {
   const dom = new Window({ url: options.url ?? 'file:///tmp/diffwalk-report.html' })
   windows.push(dom)
@@ -103,19 +103,6 @@ function loadReport(
       return []
     }
   } as unknown as typeof IntersectionObserver
-  const narrow = options.narrow ?? false
-  globalThis.matchMedia = ((query: string) => ({
-    matches: narrow,
-    media: query,
-    onchange: null,
-    addListener() {},
-    removeListener() {},
-    addEventListener() {},
-    removeEventListener() {},
-    dispatchEvent() {
-      return false
-    },
-  })) as unknown as typeof matchMedia
   dom.document.write(shellWithoutClient(html))
   dom.document.close()
   return dom
@@ -936,16 +923,16 @@ describe('report browser client', () => {
   )
 
   test(
-    'narrow viewport defaults split reports to unified but preserves explicit switching',
+    'a split report mounts split and preserves explicit switching',
     async () => {
       const html = renderReport(
         document([
-          section(simplePatch('one', 'one!'), 'Narrow section'),
-          section(simplePatch('two', 'two!'), 'Second narrow'),
+          section(simplePatch('one', 'one!'), 'Default section'),
+          section(simplePatch('two', 'two!'), 'Second default'),
         ]),
         clientBundle,
       )
-      const dom = loadReport(html, { narrow: true })
+      const dom = loadReport(html)
 
       runReportClient()
 
@@ -953,18 +940,18 @@ describe('report browser client', () => {
       const doc = dom.document as unknown as Document
       const unified = doc.querySelector<HTMLInputElement>('input[name="layout"][value="unified"]')
       const split = doc.querySelector<HTMLInputElement>('input[name="layout"][value="split"]')
-      expect(unified?.checked).toBe(true)
-      expect(split?.checked).toBe(false)
-      await waitForQuiescent(dom)
-      for (let index = 0; index < 2; index++) expect(codeColumns(dom, index)).toBe(1)
-
-      submitLayout(dom, 'split')
+      expect(unified?.checked).toBe(false)
+      expect(split?.checked).toBe(true)
       await waitForQuiescent(dom)
       for (let index = 0; index < 2; index++) expect(codeColumns(dom, index)).toBe(2)
 
       submitLayout(dom, 'unified')
       await waitForQuiescent(dom)
       for (let index = 0; index < 2; index++) expect(codeColumns(dom, index)).toBe(1)
+
+      submitLayout(dom, 'split')
+      await waitForQuiescent(dom)
+      for (let index = 0; index < 2; index++) expect(codeColumns(dom, index)).toBe(2)
     },
     120000,
   )
@@ -1039,7 +1026,7 @@ describe('report browser client', () => {
   )
 
   test(
-    'narrow viewport keeps an explicitly unified report unified on initial mount',
+    'an authored unified layout mounts unified',
     async () => {
       const html = renderReport(
         document([
@@ -1049,7 +1036,7 @@ describe('report browser client', () => {
         clientBundle,
         { layout: 'unified' },
       )
-      const dom = loadReport(html, { narrow: true })
+      const dom = loadReport(html)
       runReportClient()
 
       await waitFor(() => mountedCount(dom) === 2, 90000)

@@ -27,11 +27,7 @@ export function mountReport(
   reserveGeneratedIds()
   const data = readReportData()
   if (!data) return
-  let layout = initialLayout()
-  if (isNarrowViewport() && layout === 'split') {
-    layout = 'unified'
-    reflectLayout(layout)
-  }
+  const layout = initialLayout()
   let finishInitialRender!: () => void
   const initialRender = new Promise<void>((resolve) => (finishInitialRender = resolve))
   wireSectionFolds()
@@ -70,17 +66,6 @@ function initialLayout(): 'split' | 'unified' {
 
 function initialOverflow(): 'scroll' | 'wrap' {
   return checkedChoice('wrap') === 'wrap' ? 'wrap' : 'scroll'
-}
-
-function isNarrowViewport(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(max-width: 900px)').matches
-}
-
-function reflectLayout(value: 'split' | 'unified') {
-  const input = choiceForm('layout')?.querySelector<HTMLInputElement>(
-    `input[name="layout"][value="${value}"]`,
-  )
-  if (input) input.checked = true
 }
 
 function showStepError(mount: ReportDiffMount, error: unknown) {
