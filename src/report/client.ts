@@ -19,7 +19,7 @@ interface MountedDiff {
 
 type FileDiffFactory = (options: FileDiffOptions<undefined>) => FileDiff
 
-const initialRenderTimeoutMs = 10_000
+const initialRenderTimeoutMs = 1_000
 
 export function mountReport(
   createFileDiff: FileDiffFactory = (options) => new FileDiff(options),
