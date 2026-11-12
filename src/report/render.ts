@@ -153,11 +153,12 @@ function renderSection(
       .filter((change) => change.canonical)
       .map(
         (change) =>
-          `<a class="change-target" id="${change.fragment}" data-target-kind="change" href="#${change.fragment}">${escapeHtml(change.id)}</a>`,
+          `<span class="change-target" id="${change.fragment}" data-target-kind="change"></span>`,
       )
       .join('')
+    const stepId = `${sectionIndex(index)}-${String(stepIndex + 1).padStart(2, '0')}`
     const actions = `<div class="step-actions">
-    ${renderPermalink(stepTarget.fragment, `Permalink to step ${stepIndex + 1} in ${section.title}`, linkIcon)}${changeTargets}
+    ${renderStepLink(stepId, `Permalink to step ${stepIndex + 1} in ${section.title}`)}${changeTargets}
   </div>`
     if (step.diff === undefined && step.binary === undefined) {
       return `<div class="step" id="${stepTarget.fragment}" data-step-index="${stepIndex}" data-target-kind="step">${actions}${textMarkup}</div>`
@@ -277,12 +278,13 @@ ${links}
 </nav>`
 }
 
-// The link glyph is markup, not text, so the caller owns the escaping.
+// The link glyph and the step id share one anchor so the icon reads as part of
+// the label instead of a separate control.
 const linkIcon =
-  '<svg class="permalink-icon" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.4 9.6 9.6 6.4"/><path d="M7 4.4 8.6 2.8a3 3 0 0 1 4.6 3.8l-1.8 1.8"/><path d="M9 11.6 7.4 13.2a3 3 0 0 1-4.6-3.8l1.8-1.8"/></g></svg>'
+  '<svg class="permalink-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.4 9.6 9.6 6.4"/><path d="M7 4.4 8.6 2.8a3 3 0 0 1 4.6 3.8l-1.8 1.8"/><path d="M9 11.6 7.4 13.2a3 3 0 0 1-4.6-3.8l1.8-1.8"/></g></svg>'
 
-function renderPermalink(fragment: string, label: string, content: string): string {
-  return `<a class="permalink" href="#${fragment}" aria-label="${escapeHtml(label)}">${content}</a>`
+function renderStepLink(stepId: string, label: string): string {
+  return `<a class="permalink" id="section-${stepId}" data-target-kind="step-id" href="#section-${stepId}" aria-label="${escapeHtml(label)}">${linkIcon}${stepId}</a>`
 }
 
 function pluralize(count: number, noun: string): string {
@@ -512,9 +514,10 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
 .step { position: relative; scroll-margin-top: 18px; }
 .step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 8px 20px 0; }
 .step-text { max-width: 900px; padding: 4px 20px 8px; font-size: 17px; }
-.permalink, .change-target { display: inline-flex; align-items: center; border-radius: 5px; padding: 2px 6px; color: #98a29c; font: 600 10px/14px ui-monospace, SFMono-Regular, Menlo, monospace; text-decoration: none; }
-.permalink:hover, .permalink:focus-visible, .change-target:hover, .change-target:focus-visible { color: var(--accent); background: #eef5ef; }
-.change-target { scroll-margin-top: 18px; }
+.permalink { display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; color: #98a29c; font: 600 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; text-decoration: none; scroll-margin-top: 18px; }
+.permalink-icon { display: block; }
+.permalink:hover, .permalink:focus-visible { color: var(--accent); }
+.change-target { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; scroll-margin-top: 18px; }
 .prose strong { color: #142c1d; }
 .step-files { padding: 12px; display: grid; gap: 9px; }
 .step + .step { border-top: 1px solid #e3ebe5; }
@@ -644,7 +647,7 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   .fold-all { flex: none; padding: 5px 9px; font-size: 12px; }
   /* The aligned fragment target must clear the sticky strip, so push its
      scroll-margin past the strip plus breathing room. */
-  .section, .step, .change-target { scroll-margin-top: 64px; }
+  .section, .step, .permalink, .change-target { scroll-margin-top: 64px; }
   main { padding: 14px 10px 50px; }
 }
 @media (max-width: 520px) {
