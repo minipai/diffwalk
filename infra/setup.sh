@@ -3,12 +3,12 @@
 # Zone-level configuration for the hosted report service.
 #
 # wrangler.jsonc owns the Worker, its Static Assets, and its R2 binding. This script owns the
-# pieces wrangler does not manage: the bucket itself, its public URL, the free WAF managed
-# ruleset, and the publish rate limit. Both are declarative, and re-running this script against
-# an already configured zone is a no-op.
+# pieces wrangler does not manage: the bucket itself, its public URL, its lifecycle rules, the
+# free WAF managed ruleset, and the publish rate limit. Both are declarative, and re-running
+# this script against an already configured zone is a no-op.
 #
 # Required:
-#   CLOUDFLARE_API_TOKEN   token with Zone WAF Write on the report zone
+#   CLOUDFLARE_API_TOKEN   token with R2 bucket write and Zone WAF Write on the report zone
 #   CLOUDFLARE_ZONE_ID     the zone holding review.diffwalk.dev
 # Optional:
 #   R2_BUCKET              bucket name (default diffwalk-reports)
@@ -17,11 +17,13 @@ set -euo pipefail
 
 BUCKET="${R2_BUCKET:-diffwalk-reports}"
 API="https://api.cloudflare.com/client/v4"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 main() {
   validate_prerequisites
   create_report_bucket
   disable_public_bucket_url
+  configure_report_lifecycle
   configure_managed_rules
   configure_publish_rate_limit
 
@@ -52,6 +54,15 @@ disable_public_bucket_url() {
   echo "==> Disabling the r2.dev public URL"
   wrangler r2 bucket dev-url disable "$BUCKET" --force >/dev/null
   wrangler r2 bucket dev-url get "$BUCKET"
+}
+
+# An unlisted link stops resolving on its own: retention is the whole lifetime policy, so
+# nobody has to remember to revoke a review. Deletion happens in the background and may
+# trail the 7-day boundary by a few hours.
+configure_report_lifecycle() {
+  echo "==> R2 lifecycle rules"
+  wrangler r2 bucket lifecycle set "$BUCKET" --file "${REPO_ROOT}/infra/r2-lifecycle.json" --force
+  echo "    reviews expire 7 days after upload"
 }
 
 configure_managed_rules() {

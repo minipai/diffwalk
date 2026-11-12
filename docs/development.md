@@ -57,8 +57,9 @@ the code. Failed comparisons produce actual and diff images in `test-results/`.
 The service uses a Cloudflare Worker, a private R2 bucket, and shared static assets.
 [wrangler.jsonc](../wrangler.jsonc) configures the Worker, assets, and R2 binding.
 
-[infra/setup.sh](../infra/setup.sh) provisions the bucket and configures zone-level
-settings, including disabling public R2 access, WAF rules, and rate limits. It
+[infra/setup.sh](../infra/setup.sh) provisions the bucket, applies its 7-day review
+lifecycle from [infra/r2-lifecycle.json](../infra/r2-lifecycle.json), and configures
+zone-level settings, including disabling public R2 access, WAF rules, and rate limits. It
 requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` in the environment.
 
 ```bash
