@@ -194,8 +194,8 @@ exact corresponding diffs in a deliberate order.
 - `wrangler.jsonc`: the declarative Worker deployment: Static Assets, the R2 binding,
   routes, custom domain, and observability.
 - `infra/setup.sh`: idempotent zone configuration Wrangler does not own: the R2 bucket,
-  its lifecycle rules, WAF managed rules, and rate limits. The 7-day review retention lives
-  in `infra/r2-lifecycle.json`.
+  its lifecycle rules, WAF managed rules, and rate limits, driven through the cf CLI. The
+  7-day review retention lives in `infra/r2-lifecycle.json`.
 - `worker/index.test.ts`: Worker route behavior against a stub bucket, covering
   authentication, validation, size limits, revocation, and error states.
 - `test/publish.test.ts`: CLI publish, update, and unpublish behavior against a stubbed fetch.
