@@ -652,7 +652,7 @@ describe('report browser client', () => {
     const previousClearTimeout = globalThis.clearTimeout
     const previousRequestAnimationFrame = globalThis.requestAnimationFrame
     globalThis.setTimeout = ((callback: () => void, delay?: number) => {
-      expect(delay).toBe(10_000)
+      expect(delay).toBe(1_000)
       const id = nextTimer++
       timers.set(id, callback)
       return id
@@ -741,7 +741,7 @@ describe('report browser client', () => {
     const previousClearTimeout = globalThis.clearTimeout
     const previousRequestAnimationFrame = globalThis.requestAnimationFrame
     globalThis.setTimeout = ((callback: () => void, delay?: number) => {
-      expect(delay).toBe(10_000)
+      expect(delay).toBe(1_000)
       const id = nextTimer++
       timers.set(id, callback)
       return id
