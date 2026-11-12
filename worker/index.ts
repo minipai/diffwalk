@@ -13,7 +13,10 @@ import {
   secretsMatch,
 } from './reports'
 
-export interface Env extends Cloudflare.Env {}
+export interface Env {
+  REPORTS: R2Bucket
+  ASSETS: Fetcher
+}
 
 const hostedAssets = { stylesHref: '/report.css', clientSrc: '/report-client.js' }
 

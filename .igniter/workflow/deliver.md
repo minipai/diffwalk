@@ -41,12 +41,12 @@ the pull request or merging it.
 
 - After merge, fetch and verify the landed commit on `origin/main`. Deploy
   from that clean landed revision, never from unmerged feature changes.
-- Use the Cloudflare and Wrangler skills. Read credentials from environment
-  variables; keep authentication noninteractive and never print tokens.
+- Use the Cloudflare skills. Read credentials from environment variables;
+  keep authentication noninteractive and never print tokens.
 - Run `pnpm run deploy` to build and deploy the `diffwalk-reports` Worker and
   shared report assets at `https://review.diffwalk.dev`.
-- Run `pnpm exec wrangler deploy --config website/wrangler.jsonc` to deploy
-  the `diffwalk-site` website at `https://diffwalk.dev`.
+- Run `pnpm run deploy:site` to deploy the `diffwalk-site` website at
+  `https://diffwalk.dev`.
 - Verify the homepage and an existing published review over HTTPS, including
   the delivered feature and its shared assets. Use read-only checks; do not
   create or delete production review data for deployment verification.
