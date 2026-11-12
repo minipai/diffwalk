@@ -187,8 +187,10 @@ function overflowMode(dom: Window, index: number) {
 
 function toggleWrap(dom: Window, on: boolean) {
   const doc = dom.document as unknown as Document
-  const input = doc.querySelector<HTMLInputElement>('input[name="wrap"]')
-  input!.checked = on
+  const input = doc.querySelector<HTMLInputElement>(
+    `input[name="wrap"][value="${on ? 'wrap' : 'scroll'}"]`,
+  )
+  input!.checked = true
   input!.dispatchEvent(
     new dom.window.Event('change', { bubbles: true, cancelable: true }) as unknown as Event,
   )

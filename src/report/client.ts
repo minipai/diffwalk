@@ -62,8 +62,8 @@ function initialLayout(): 'split' | 'unified' {
 
 function initialOverflow(): 'scroll' | 'wrap' {
   const form = document.querySelector<HTMLFormElement>('[data-wrap-form]')
-  const checked = form?.querySelector<HTMLInputElement>('input[name="wrap"]')
-  return checked?.checked ? 'wrap' : 'scroll'
+  const checked = form?.querySelector<HTMLInputElement>('input[name="wrap"]:checked')
+  return checked?.value === 'wrap' ? 'wrap' : 'scroll'
 }
 
 function isNarrowViewport(): boolean {
@@ -370,7 +370,7 @@ function wireWrap(mounted: MountedDiff[]) {
   const form = document.querySelector<HTMLFormElement>('[data-wrap-form]')
   form?.addEventListener('change', (event) => {
     if (!(event.target as Element).matches('input[name="wrap"]')) return
-    const overflow = (event.target as HTMLInputElement).checked ? 'wrap' : 'scroll'
+    const overflow = (event.target as HTMLInputElement).value === 'wrap' ? 'wrap' : 'scroll'
     for (const { fileDiff, instance } of mounted) {
       instance.setOptions({ ...instance.options, overflow })
       instance.render({ fileDiff, forceRender: true })

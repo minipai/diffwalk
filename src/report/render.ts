@@ -79,7 +79,9 @@ function renderReportBody(
     <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
   </form>`
   const wrapForm = `<form class="wrap-form" data-wrap-form aria-label="Long line handling">
-    <label><input type="checkbox" name="wrap" ${wrap ? 'checked' : ''}> Wrap long lines</label>
+    <label><input type="radio" name="wrap" value="wrap" ${wrap ? 'checked' : ''}> Wrap</label>
+    <label><input type="radio" name="wrap" value="scroll" ${wrap ? '' : 'checked'}> No wrap</label>
+    <button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
   </form>`
   const readingControls = `<div class="review-controls">${layoutForm}${wrapForm}</div>`
   const reviewMap = renderReviewMap(
@@ -421,7 +423,7 @@ body {
   overflow: hidden;
   background: #f3f7f3;
 }
-.layout-form label, .wrap-form label { flex: 1; padding: 5px 10px; color: #607066; font-size: 13px; text-align: center; cursor: pointer; }
+.layout-form label, .wrap-form label { flex: 1; padding: 5px 10px; color: #607066; font-size: 13px; text-align: center; white-space: nowrap; cursor: pointer; }
 .layout-form input, .wrap-form input { display: none; }
 .layout-form label:has(input:checked), .wrap-form label:has(input:checked) { color: #ffffff; background: var(--accent); font-weight: 600; }
 .fold-all {
@@ -648,8 +650,8 @@ main { max-width: none; min-width: 0; margin: 0; padding: 22px 28px 72px; }
   }
   .review-map-label, .review-map-list, .review-map-counts { display: none; }
   .review-controls { display: flex; gap: 6px; justify-content: flex-end; margin: 0; }
-  .layout-form { flex: 1 1 auto; max-width: 220px; margin: 0 0 0 auto; }
-  .wrap-form { flex: none; }
+  .layout-form { flex: 1 1 auto; max-width: 180px; margin: 0 0 0 auto; }
+  .wrap-form { flex: 0 0 auto; }
   .fold-all { flex: none; padding: 5px 9px; font-size: 12px; }
   /* The aligned fragment target must clear the sticky strip, so push its
      scroll-margin past the strip plus breathing room. */
