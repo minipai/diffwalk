@@ -13,7 +13,6 @@
     "verbatimModuleSyntax": true
   },
   "include": [
-    "env.d.ts",
     "index.ts",
     "reports.ts",
     "index.test.ts"

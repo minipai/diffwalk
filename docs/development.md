@@ -55,7 +55,11 @@ the code. Failed comparisons produce actual and diff images in `test-results/`.
 ## Review service
 
 The service uses a Cloudflare Worker, a private R2 bucket, and shared static assets.
-[wrangler.jsonc](../wrangler.jsonc) configures the Worker, assets, and R2 binding.
+[cloudflare.config.ts](../cloudflare.config.ts) declares the Worker, its R2 and assets
+bindings, and the custom domain; [vite.config.ts](../vite.config.ts) supplies the static
+assets from `worker/public`. The Worker builds and deploys through the
+[cf CLI](https://developers.cloudflare.com/cli/), so the project has no Wrangler
+configuration.
 
 [infra/setup.sh](../infra/setup.sh) provisions the bucket, applies its 7-day review
 lifecycle from [infra/r2-lifecycle.json](../infra/r2-lifecycle.json), and configures
@@ -71,6 +75,13 @@ For routine application deployments, build and deploy the Worker and report asse
 
 ```bash
 pnpm deploy
+```
+
+The static site in `website/` is a standalone package with its own lockfile and deploys
+separately:
+
+```bash
+pnpm deploy:site
 ```
 
 Infrastructure setup is separate from routine application deployment.

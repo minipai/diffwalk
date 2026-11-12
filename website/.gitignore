@@ -1,5 +1,5 @@
 .DS_Store
-/.wrangler/
+/.cloudflare/
 /node_modules/
 /.next/
 /.vinext/

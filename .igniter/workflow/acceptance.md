@@ -26,9 +26,9 @@ does not apply to Acceptance. Keep this stage black-box.
 - For CLI criteria, capture the exact command, integer exit code, and relevant
   stdout and stderr.
 - For Worker API criteria, run `pnpm build:worker`, start
-  `pnpm exec wrangler dev --local --ip 127.0.0.1 --port <unused-port>`, and use
+  `pnpm exec cf dev -- --host 127.0.0.1 --port <unused-port>`, and use
   non-secret data. Exercise `publish` and `unpublish` only against that exact
-  loopback origin with `--service`; stop Wrangler after capturing the results.
+  loopback origin with `--service`; stop cf after capturing the results.
 - For browser criteria, run `node dist/diffwalk.js view` against the disposable
   walk and use the `agent-browser` skill on the loopback URL it prints. Save
   screenshots or recordings beside the result file and visually inspect them

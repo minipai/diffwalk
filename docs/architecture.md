@@ -191,8 +191,12 @@ exact corresponding diffs in a deliberate order.
   comparison, and the bounded document size.
 - `worker/build-assets.ts`: writes the shared stylesheet and client bundle into the Static
   Assets directory before deploy.
-- `wrangler.jsonc`: the declarative Worker deployment: Static Assets, the R2 binding,
-  routes, custom domain, and observability.
+- `cloudflare.config.ts`: the declarative Worker deployment: the entrypoint, compatibility
+  settings, custom domain, observability, and the R2 and assets bindings.
+- `vite.config.ts`: the cf build's static-asset source, with `worker/public` as the public
+  directory.
+- `website/cloudflare.config.ts` and `website/vite.config.ts`: the assets-only site Worker
+  for `diffwalk.dev`, with `public/` as its static-asset source.
 - `infra/setup.sh`: idempotent zone configuration Wrangler does not own: the R2 bucket,
   its lifecycle rules, WAF managed rules, and rate limits, driven through the cf CLI. The
   7-day review retention lives in `infra/r2-lifecycle.json`.

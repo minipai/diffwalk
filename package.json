@@ -36,7 +36,9 @@
     "release:publish": "node scripts/release.mjs --publish",
     "build": "bun build ./src/cli.ts --target=node --packages=external --outfile=dist/diffwalk.js && bun build ./src/report/client.ts --target=browser --format=iife --minify --outfile=dist/report-client.js",
     "build:worker": "bun run ./worker/build-assets.ts",
-    "deploy": "pnpm build:worker && wrangler deploy",
+    "deploy": "pnpm build:worker && cf deploy",
+    "deploy:site": "pnpm --dir website install --frozen-lockfile && pnpm --dir website exec cf deploy",
+    "dev:worker": "pnpm build:worker && cf dev",
     "diffwalk": "bun run ./src/cli.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "test": "bun test",
@@ -57,13 +59,15 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.14",
     "@cloudflare/workers-types": "^5.20260828.1",
     "@playwright/test": "1.55.0",
     "@types/bun": "1.4.0",
     "@types/react": "19.2.18",
+    "cf": "1.0.0-beta.29",
     "happy-dom": "20.11.12",
     "typescript": "7.0.2",
-    "wrangler": "^4.127.1"
+    "vite": "^8.3.8"
   },
   "engines": {
     "node": "^22.0.0 || ^24.0.0"

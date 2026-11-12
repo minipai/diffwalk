@@ -2,10 +2,10 @@
 #
 # Zone-level configuration for the hosted report service.
 #
-# wrangler.jsonc owns the Worker, its Static Assets, and its R2 binding. This script owns the
-# pieces Wrangler does not manage: the bucket itself, its public URL, its lifecycle rules, the
-# free WAF managed ruleset, and the publish rate limit. Every setting is declarative, so
-# re-running this script against an already configured zone is a no-op.
+# cloudflare.config.ts owns the Worker, its static assets, and its R2 binding. This script owns
+# the pieces the project configuration does not manage: the bucket itself, its public URL, its
+# lifecycle rules, the free WAF managed ruleset, and the publish rate limit. Every setting is
+# declarative, so re-running this script against an already configured zone is a no-op.
 #
 # Requires the Cloudflare cf CLI: npm install --global cf@latest
 #
